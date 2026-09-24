@@ -1,0 +1,5 @@
+{$DOMAIN} {
+	encode gzip
+	# WebSocket (Socket.IO) проксируется автоматически → снаружи это WSS поверх TLS
+	reverse_proxy app:3000
+}

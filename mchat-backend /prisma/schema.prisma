@@ -1,0 +1,257 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum ChatType {
+  DIRECT
+  GROUP
+  CHANNEL
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MessageKind {
+  TEXT
+  VOICE
+  VIDEO_NOTE
+  IMAGE
+}
+
+enum MediaKind {
+  VOICE
+  VIDEO_NOTE
+  IMAGE
+  TRACK
+}
+
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+}
+
+model User {
+  id             String   @id @default(cuid())
+  googleId       String   @unique
+  email          String   @unique
+  username       String   @unique // всегда lowercase, [a-z0-9_]{3,20}
+  name           String
+  bio            String   @default("")
+  avatarUrl      String?
+  verified       Boolean  @default(false)
+  role           Role     @default(USER)
+
+  // настройки (соответствуют тумблерам в UI)
+  notifyMessages Boolean  @default(true)
+  hideOnline     Boolean  @default(false)
+  hideRead       Boolean  @default(false)
+
+  createdAt      DateTime @default(now())
+  lastSeenAt     DateTime @default(now())
+
+  devices        Device[]
+  sessions       Session[]
+  loginCodes     LoginCode[]
+  memberships    ChatMember[]
+  messages       Message[]
+  pushSubs       PushSubscription[]
+  media          Media[]
+  reactions      Reaction[]
+  hiddenMessages MessageHide[]
+  friendsSent     Friendship[] @relation("FriendRequester")
+  friendsReceived Friendship[] @relation("FriendAddressee")
+}
+
+/// Доверенное устройство. Пока устройство известно — код при входе не нужен.
+model Device {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String    @unique // sha256 от секрета в httpOnly cookie
+  label       String    @default("") // «Chrome · Windows»
+  ip          String    @default("")
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime  @default(now())
+  revokedAt   DateTime?
+
+  sessions    Session[]
+  pushSubs    PushSubscription[]
+
+  @@index([userId])
+}
+
+/// Конкретная сессия (JWT ссылается на неё через sid) — можно отозвать мгновенно.
+model Session {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId   String
+  device     Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  @@index([userId])
+  @@index([deviceId])
+}
+
+/// Одноразовый код входа с нового устройства (хранится только хэш).
+model LoginCode {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash   String
+  label      String    @default("") // описание нового устройства
+  ip         String    @default("")
+  attempts   Int       @default(0)
+  emailSent  Boolean   @default(false)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Chat {
+  id            String       @id @default(cuid())
+  type          ChatType     @default(DIRECT)
+  title         String?
+  /// для DIRECT: "<меньший id>:<больший id>" — не даёт создать дубль диалога
+  directKey     String?      @unique
+  description   String?
+  /// ссылка-приглашение для групп и каналов: /join/<inviteCode>
+  inviteCode    String?      @unique
+  /// закреплённое сообщение (одно на чат)
+  pinnedMessageId String?
+  createdAt     DateTime     @default(now())
+  lastMessageAt DateTime     @default(now())
+
+  members       ChatMember[]
+  messages      Message[]
+
+  @@index([lastMessageAt])
+}
+
+model ChatMember {
+  chatId     String
+  chat       Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       MemberRole @default(MEMBER)
+  joinedAt   DateTime @default(now())
+  lastReadAt DateTime @default(now())
+
+  @@id([chatId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id        String    @id @default(cuid())
+  chatId    String
+  chat      Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  senderId  String?
+  sender    User?     @relation(fields: [senderId], references: [id], onDelete: SetNull)
+  kind      MessageKind @default(TEXT)
+  text      String    @default("")
+  mediaId   String?
+  media     Media?    @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+  durationSec Int?
+  replyToId String?
+  replyTo   Message?  @relation("Replies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   Message[] @relation("Replies")
+  /// имя автора оригинала, если сообщение переслано
+  forwardedFromName String?
+  /// id, который генерирует клиент — защита от дублей при повторной отправке
+  clientId  String?
+  createdAt DateTime  @default(now())
+  editedAt  DateTime?
+  deletedAt DateTime?
+
+  reactions Reaction[]
+  hides     MessageHide[]
+
+  @@unique([senderId, clientId])
+  @@index([chatId, createdAt])
+  @@index([mediaId])
+}
+
+/// Загруженный файл: голосовое, кружок, фото или трек профиля.
+model Media {
+  id          String    @id @default(cuid())
+  ownerId     String
+  owner       User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  kind        MediaKind
+  mime        String
+  size        Int
+  title       String?
+  durationSec Int?
+  /// имя файла на диске внутри UPLOAD_DIR (не путь!)
+  file        String
+  createdAt   DateTime  @default(now())
+
+  messages    Message[]
+
+  @@index([ownerId, kind])
+}
+
+/// Одна реакция пользователя на сообщение (новая заменяет прежнюю, повтор снимает).
+model Reaction {
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji     String
+  createdAt DateTime @default(now())
+
+  @@id([messageId, userId])
+}
+
+/// «Удалить у меня»: сообщение скрыто только для этого пользователя.
+model MessageHide {
+  messageId String
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
+}
+
+model Friendship {
+  id           String       @id @default(cuid())
+  requesterId  String
+  requester    User         @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId  String
+  addressee    User         @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status       FriendStatus @default(PENDING)
+  createdAt    DateTime     @default(now())
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId  String?
+  device    Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}

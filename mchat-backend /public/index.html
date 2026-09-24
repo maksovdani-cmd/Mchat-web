@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<base href="/">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Mchat</title>
+<link rel="icon" type="image/jpeg" href="img/mchat.jpg">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#18181f">
+<meta name="mobile-web-app-capable" content="yes">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="phone" id="app">
+
+<!-- Экран ввода кода: показывается, когда вход выполняется с НОВОГО устройства -->
+<div class="screen" id="s-code">
+<div class="login-inner">
+  <button onclick="cancelCodeLogin()" style="background:none;border:none;color:var(--text);cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center;position:absolute;top:max(20px,env(safe-area-inset-top));left:16px">
+    <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+  </button>
+  <div class="ll"><svg viewBox="0 0 48 48" fill="none"><path d="M6 38L18 12L24 26L30 18L42 38H6Z" fill="#4a4af0"/><path d="M14 38L22 22L26 30L30 24L38 38H14Z" fill="#7c7cf8" opacity=".5"/></svg><img class="brand-img" src="img/Mchat.jpg" alt="Mchat" onerror="this.remove()"></div>
+  <div class="lt" style="margin-bottom:8px">Подтверди вход</div>
+  <div id="code-hint" style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:24px;line-height:1.5">Это новое устройство. Мы отправили код на твои устройства, где ты уже вошёл в Mchat</div>
+  <div class="irow">
+    <input class="ifield" type="text" id="code-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••••" autocomplete="one-time-code" style="text-align:center;letter-spacing:10px;font-size:22px;font-weight:700" oninput="this.value=this.value.replace(/\D/g,'');if(this.value.length===6)submitLoginCode()">
+  </div>
+  <button class="btn-login" id="code-btn" onclick="submitLoginCode()" type="button">Подтвердить</button>
+  <div class="auth-err" id="code-err"></div>
+  <div id="code-email-row" style="text-align:center;margin-top:14px;font-size:13px;display:none">
+    <button onclick="sendCodeByEmail()" style="background:none;border:none;color:var(--accent);cursor:pointer;text-decoration:underline;font-family:'DM Sans',sans-serif;font-size:13px;padding:0">Нет доступа к устройствам? Отправить код на почту</button>
+  </div>
+</div>
+</div>
+
+<!-- Экран входа: ник + Google. Ник нужен только при регистрации. -->
+<div class="screen active" id="s-login">
+<div class="login-inner">
+  <div class="ll"><svg viewBox="0 0 48 48" fill="none"><path d="M6 38L18 12L24 26L30 18L42 38H6Z" fill="#4a4af0"/><path d="M14 38L22 22L26 30L30 24L38 38H14Z" fill="#7c7cf8" opacity=".5"/></svg><img class="brand-img" src="img/Mchat.jpg" alt="Mchat" onerror="this.remove()"></div>
+  <div class="lt" id="auth-title">Войти</div>
+  <div class="irow">
+    <span class="iico"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></span>
+    <input class="ifield" type="text" id="login-username" placeholder="@username" maxlength="21" autocomplete="username" autocorrect="off" autocapitalize="off" onkeydown="if(event.key==='Enter')authAction()">
+  </div>
+  <button class="btn-login btn-google" id="auth-btn" onclick="authAction()" type="button"><svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg><span id="auth-btn-text">Войти через Google</span></button>
+  <div class="auth-err" id="auth-err"></div>
+  <div id="auth-note" style="font-size:12px;color:var(--text2);text-align:center;margin-top:14px;line-height:1.5">Ник нужен только при регистрации. Если аккаунт уже есть — просто нажми кнопку.</div>
+</div>
+</div>
+
+<div class="screen" id="s-feed">
+  <div class="topbar">
+    <h1 id="feed-title">Mchat</h1>
+    <div style="display:flex;gap:8px">
+      <button class="ib" onclick="openSearch()"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg></button>
+      <button class="ib" onclick="openNotifications()"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg></button>
+      <button class="ib" onclick="goTo('s-chats')"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></button>
+    </div>
+  </div>
+  <div class="fscroll" id="feed-scroll">
+    <div class="stories-row" id="stories-row"></div>
+    <div class="new-post-bar" id="new-post-card" style="flex-direction:column;align-items:stretch;gap:0;background:var(--surf);border:1px solid var(--border);border-radius:18px;margin:2px 16px 10px;padding:12px 14px">
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <div id="composer-avatar" style="width:38px;height:38px;border-radius:50%;background:var(--surf2);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center">
+          <svg width="20" height="20" fill="none" stroke="var(--text2)" stroke-width="1.4" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        </div>
+        <div style="flex:1">
+          <div id="composer-username" style="font-weight:600;font-size:13px;color:var(--text);margin-bottom:2px"></div>
+          <input class="new-post-input" type="text" id="new-post-text" placeholder="Что нового?" style="background:none;padding:0;border-radius:0;color:var(--text);width:100%">
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding-top:8px;margin-top:6px">
+        <div style="display:flex;align-items:center;gap:16px;color:var(--text2)">
+          <button class="post-media-btn" onclick="addPostWithMedia()" title="Фото/видео" style="background:none;width:30px;height:30px">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
+          </button>
+          <div class="ab" style="cursor:default;opacity:.65" title="Лайк"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg></div>
+          <div class="ab" style="cursor:default;opacity:.65" title="Комментарии"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
+          <div class="ab" style="cursor:default;opacity:.65" title="Репост"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg></div>
+        </div>
+        <button class="post-send-btn" onclick="addPost()">
+          <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="posts-container"></div>
+  </div>
+  <div class="island-nav default" id="main-nav">
+    <button class="nb active" onclick="goTo('s-feed')"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></button>
+    <button class="nb" onclick="goTo('s-chats')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></button>
+    <button class="nb" onclick="goTo('s-profile')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></button>
+    <button class="nb" onclick="goTo('s-settings')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
+  </div>
+</div>
+
+<div class="screen" id="s-chats">
+  <div class="topbar" style="padding-bottom:8px"><h1 id="chats-title">Чаты</h1></div>
+  <div class="sbar"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input placeholder="Поиск" id="chat-search" oninput="filterChats()"></div>
+  <div class="chat-item" onclick="goTo('s-mchat-news')" style="border-bottom:1px solid var(--border);padding:14px 16px">
+    <div class="chat-avatar" style="background:linear-gradient(135deg,#4a4af0,#7c3aed)"><svg viewBox="0 0 48 48" fill="none" width="26" height="26"><path d="M6 38L18 12L24 26L30 18L42 38H6Z" fill="#fff"/></svg><img class="brand-img" src="img/Mchat.jpg" alt="Mchat" onerror="this.remove()"></div>
+    <div class="chat-info"><div class="chat-name" style="font-weight:700">Mchat</div><div class="chat-last">Официальный канал · Только чтение</div></div>
+    <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0"></div>
+  </div>
+  <div class="cscroll" id="chats-list"></div>
+  <div class="mx-scrim" id="mx-fab-scrim" onclick="mxFabClose()"></div>
+  <div class="mx-fab-menu" id="mx-fab-menu">
+    <button onclick="mxOpenCreate('group')"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg><span>Создать группу</span></button>
+    <button onclick="mxOpenCreate('channel')"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 001 1h2l5 4V6L6 10H4a1 1 0 00-1 1z"/><path d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/></svg><span>Создать канал</span></button>
+  </div>
+  <button class="mx-fab" id="mx-fab" onclick="mxFabToggle()" aria-label="Создать группу или канал"><svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  <div class="island-nav default" id="main-nav-chats">
+    <button class="nb" onclick="goTo('s-feed')"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></button>
+    <button class="nb active" onclick="goTo('s-chats')"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z"/></svg></button>
+    <button class="nb" onclick="goTo('s-profile')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></button>
+    <button class="nb" onclick="goTo('s-settings')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
+  </div>
+</div>
+
+<div class="screen" id="s-chat-open">
+  <div class="coh">
+    <button class="ib ghost" onclick="goTo('s-chats')"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <div style="width:40px;height:40px;border-radius:50%;background:var(--surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;cursor:pointer" id="chat-open-av" onclick="mxChatHeaderTap()"><svg width="22" height="22" fill="none" stroke="var(--text2)" stroke-width="1.4" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
+    <div style="flex:1;min-width:0;cursor:pointer" onclick="mxChatHeaderTap()"><div style="font-weight:600;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="chat-name">—</div><div style="font-size:12px;color:#4ade80" id="chat-status">онлайн</div></div>
+    <button class="ib ghost" onclick="startVideoCall()" title="Видео"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></button>
+    <button class="ib ghost" onclick="startVoiceCall()" title="Звонок"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.15 1.21 2 2 0 012.1 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.91a16 16 0 006.15 6.15l1.37-1.37a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg></button>
+  </div>
+  <div class="mx-pinned" id="mx-pinned" style="display:none" onclick="mxScrollToPinned()">
+    <div class="mx-bar-line"></div>
+    <div class="mx-bar-body"><div class="mx-bar-title"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3z"/></svg> Закреплённое сообщение</div><div class="mx-bar-text" id="mx-pinned-text"></div></div>
+    <button class="ib ghost" id="mx-pinned-x" onclick="event.stopPropagation();mxUnpin()" title="Открепить" style="display:none"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+  </div>
+  <div class="ma" id="messages-container"></div>
+  <div class="mx-compose">
+    <div class="mx-ctxbar" id="mx-ctxbar" style="display:none">
+      <div class="mx-bar-line"></div>
+      <div class="mx-bar-body"><div class="mx-bar-title" id="mx-ctxbar-title"></div><div class="mx-bar-text" id="mx-ctxbar-text"></div></div>
+      <button class="ib ghost" onclick="mxCancelCompose()" title="Отмена"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="mir" id="mx-input-row">
+      <button class="ib ghost" id="mx-cam-btn" onclick="mxCameraOpen()" title="Камера"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+      <input class="mi2" id="message-input" placeholder="Сообщение..." autocomplete="off" onkeydown="if(event.key==='Enter')sendMessage()" oninput="mxOnComposeInput()">
+      <button class="ib ghost" id="mx-mic-btn" onclick="mxVoiceStart()" title="Голосовое сообщение"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1M12 18v4M8 22h8"/></svg></button>
+      <button class="sb2" id="mx-send-btn" onclick="sendMessage()" style="display:none"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+    </div>
+    <div class="mir mx-rec" id="mx-rec" style="display:none">
+      <button class="ib ghost" onclick="mxVoiceCancel()" title="Удалить запись"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>
+      <div class="mx-rec-live" id="mx-rec-live"><span class="mx-rec-dot"></span><span id="mx-rec-time">0:00</span><span class="mx-rec-hint">Идёт запись…</span></div>
+      <div class="mx-rec-prev" id="mx-rec-prev" style="display:none">
+        <button class="ib" id="mx-prev-play" onclick="mxPreviewToggle()" title="Прослушать"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 20 12 7 20 7 4"/></svg></button>
+        <div class="mx-prog"><div class="mx-prog-fill" id="mx-prev-fill"></div></div>
+        <span id="mx-prev-time" class="mx-rec-time2">0:00</span>
+      </div>
+      <button class="sb2" id="mx-rec-main" onclick="mxVoiceMain()" title="Остановить"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="3"/></svg></button>
+    </div>
+    <div class="mir mx-readonly" id="mx-readonly" style="display:none">Публикации в этом канале доступны только владельцу и админам</div>
+  </div>
+</div>
+
+<!-- Камера: кружок (видеосообщение) и фото -->
+<div class="overlay mx-cam" id="mx-camera">
+  <div class="mx-cam-top">
+    <button class="ib ghost" onclick="mxCameraClose()" title="Закрыть"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    <div class="mx-cam-timer" id="mx-cam-timer"></div>
+    <button class="ib ghost" id="mx-cam-flip" onclick="mxCameraFlip()" title="Сменить камеру"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 7h-9a4 4 0 00-4 4v1M4 17h9a4 4 0 004-4v-1"/><path d="M17 4l3 3-3 3M7 20l-3-3 3-3"/></svg></button>
+  </div>
+  <div class="mx-cam-stage" id="mx-cam-stage"><video id="mx-cam-video" playsinline muted autoplay></video></div>
+  <div class="mx-cam-bottom">
+    <div class="mx-cam-modes" id="mx-cam-modes">
+      <button id="mx-mode-circle" class="on" onclick="mxCameraMode('circle')">Кружок</button>
+      <button id="mx-mode-photo" onclick="mxCameraMode('photo')">Фото</button>
+    </div>
+    <div class="mx-cam-actions" id="mx-cam-live"><button class="mx-shutter" id="mx-shutter" onclick="mxCameraShutter()" aria-label="Снять"><span></span></button></div>
+    <div class="mx-cam-actions" id="mx-cam-review" style="display:none">
+      <button class="mx-cam-btn" onclick="mxCameraRetake()">Переснять</button>
+      <button class="mx-cam-btn primary" id="mx-cam-send" onclick="mxCameraSend()">Отправить</button>
+    </div>
+  </div>
+</div>
+
+<div class="screen" id="s-mchat-news">
+  <div style="display:flex;align-items:center;gap:12px;padding:max(56px, calc(env(safe-area-inset-top) + 16px)) 16px 14px;border-bottom:1px solid var(--border);flex-shrink:0;background:linear-gradient(135deg,#1a1a50,#2d1b4e)">
+    <button class="ib ghost" onclick="goTo('s-feed')"><svg width="22" height="22" fill="none" stroke="#fff" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden"><svg viewBox="0 0 48 48" fill="none" width="20" height="20"><path d="M6 38L18 12L24 26L30 18L42 38H6Z" fill="#fff"/></svg><img class="brand-img" src="img/Mchat.jpg" alt="Mchat" onerror="this.remove()"></div>
+    <div style="flex:1"><div style="font-weight:700;font-size:16px;color:#fff">Mchat</div><div style="font-size:12px;color:rgba(255,255,255,.6)">Официальный канал</div></div>
+    <div style="font-size:11px;color:rgba(255,255,255,.6);background:rgba(255,255,255,.12);padding:4px 10px;border-radius:20px">Только чтение</div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">
+    <div style="background:var(--surf);border-radius:16px;padding:16px"><div style="font-size:11px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Сегодня</div><div style="font-weight:700;font-size:15px;margin-bottom:6px">Добро пожаловать в Mchat!</div><div style="font-size:13px;color:var(--text2);line-height:1.6">Это официальный канал новостей. Здесь будут выходить обновления, анонсы и важная информация.</div></div>
+    <div style="background:var(--surf);border-radius:16px;padding:16px"><div style="font-size:11px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Сегодня</div><div style="font-weight:700;font-size:15px;margin-bottom:6px">Новое обновление</div><div style="font-size:13px;color:var(--text2);line-height:1.6">Добавлены 3 стиля для навигации: обычный, матовое стекло и жидкое стекло (Liquid Glass). Mchat растёт!</div></div>
+    <div style="background:var(--surf);border-radius:16px;padding:16px"><div style="font-size:11px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Вчера</div><div style="font-weight:700;font-size:15px;margin-bottom:6px">Совет дня</div><div style="font-size:13px;color:var(--text2);line-height:1.6">Добавляй хэштеги в свои истории — так тебя найдёт больше людей! #mchat #истории</div></div>
+  </div>
+  <div style="padding:12px 16px 28px;background:var(--bg2);border-top:1px solid var(--border);text-align:center;color:var(--text2);font-size:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Только администраторы могут писать сюда</div>
+</div>
+
+<div class="screen" id="s-profile">
+  <div class="pscroll">
+    <div class="pcov" id="cover-image">
+      <div class="topbar" style="position:absolute;top:0;left:0;right:0;background:transparent">
+        <h1 id="profile-title">Профиль</h1>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="ib ghost" onclick="editProfileBanner()" title="Изменить баннер" style="background:rgba(0,0,0,0.35);backdrop-filter:blur(6px);border-radius:50%"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg></button>
+          <button class="ib ghost" onclick="goTo('s-settings')" style="background:rgba(0,0,0,0.35);backdrop-filter:blur(6px);border-radius:50%"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l-.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
+        </div>
+      </div>
+      <div class="pavw" id="profile-av-wrap" onclick="avatarTap()" oncontextmenu="avatarLongPress(event)">
+        <div class="pavi" id="avatar-container">
+          <svg width="36" height="36" fill="none" stroke="var(--text2)" stroke-width="1.2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        </div>
+        <div id="story-ring" style="position:absolute;inset:-3px;border-radius:50%;border:3px solid transparent;display:none"></div>
+      </div>
+    </div>
+    <div class="pinfo">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+        <div class="pname" id="profile-name">Новый пользователь</div>
+      </div>
+      <div class="phandle" id="profile-username">@username</div>
+      <div id="profile-status-badges" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;margin-bottom:4px"></div>
+      <div class="pbio" id="profile-bio">Привет! Я в Mchat ✨</div>
+      <div class="pinned-tracks-strip" id="pinned-tracks-strip" style="display:none"></div>
+      <div class="pstats">
+        <div class="pstat"><span class="psnum" id="posts-count">0</span><span class="pslbl">Посты</span></div>
+        <div class="pstat"><span class="psnum" id="followers-count">0</span><span class="pslbl">Подписчики</span></div>
+        <div class="pstat"><span class="psnum" id="following-count">0</span><span class="pslbl">Подписки</span></div>
+      </div>
+      <div class="pbtns">
+        <button class="pbtn" onclick="editProfile()">Редактировать</button>
+        <button class="pbtn accent" onclick="openStoryCreator()">+ История</button>
+      </div>
+      <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:2px">
+        <button class="ptab active" id="ptab-posts" onclick="switchProfileTab('posts')" style="flex:1;padding:10px 4px;background:none;border:none;color:var(--text);font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid var(--accent);transition:all .15s;display:flex;align-items:center;justify-content:center;gap:4px"><svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
+        <button class="ptab" id="ptab-likes" onclick="switchProfileTab('likes')" style="flex:1;padding:10px 4px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg></button>
+        <button class="ptab" id="ptab-activity" onclick="switchProfileTab('activity')" style="flex:1;padding:10px 4px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg></button>
+        <button class="ptab" id="ptab-archive" onclick="switchProfileTab('archive')" style="flex:1;padding:10px 4px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a1 1 0 001 1h14a1 1 0 001-1V8"/><path d="M10 12h4"/></svg></button>
+        <button class="ptab" id="ptab-tracks" onclick="switchProfileTab('tracks')" style="flex:1;padding:10px 4px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></button>
+      </div>
+      <div id="profile-tab-content">
+        <div class="profile-grid" id="profile-grid"></div>
+      </div>
+    </div>
+    <input type="file" id="profile-banner-input" accept="image/*" style="display:none" onchange="bannerChosen(event)">
+    <input type="file" id="mx-track-input" accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac,.flac" style="display:none" onchange="mxTrackChosen(event)">
+  </div>
+  <div class="island-nav default" id="main-nav-profile">
+    <button class="nb" onclick="goTo('s-feed')"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></button>
+    <button class="nb" onclick="goTo('s-chats')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></button>
+    <button class="nb active"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/></svg></button>
+    <button class="nb" onclick="goTo('s-settings')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l-.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
+  </div>
+</div>
+
+<div class="screen" id="s-settings">
+  <div class="topbar"><h1 id="settings-title">Настройки</h1></div>
+  <div class="ss">
+    <div class="ssec">
+      <div class="slbl" id="account-label">Аккаунт</div>
+      <div class="sitem" onclick="goTo('s-profile')">
+        <div class="sico" style="background:#3b82f618"><svg fill="none" stroke="#3b82f6" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
+        <div class="stxt" id="profile-item">Профиль</div>
+        <svg class="chev" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+      <div id="admin-panel-item" class="sitem" onclick="openAdminPanel()" style="display:none">
+        <div class="sico" style="background:#f97316 18"><svg fill="none" stroke="#f97316" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v2m0 4v2m0 4v2"/><circle cx="12" cy="12" r="9"/></svg></div>
+        <div class="stxt">Админ панель</div>
+        <svg class="chev" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+      <div class="sitem" onclick="openPrivacySettings()">
+        <div class="sico" style="background:#10b98118"><svg fill="none" stroke="#10b981" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+        <div class="stxt" id="privacy-item">Конфиденциальность</div>
+        <svg class="chev" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+      <div class="sitem" onclick="openNotificationSettings()">
+        <div class="sico" style="background:#f59e0b18"><svg fill="none" stroke="#f59e0b" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg></div>
+        <div class="stxt" id="notifications-item">Уведомления</div>
+        <svg class="chev" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+    </div>
+    <div class="ssec">
+      <div class="slbl" id="appearance-label">Внешний вид</div>
+      <div class="sitem">
+        <div class="sico" style="background:#4a4af018"><svg fill="none" stroke="#4a4af0" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></div>
+        <div class="stxt" id="theme-item">Тема</div>
+        <div style="display:flex;gap:6px;margin-right:2px">
+          <div class="tchip" style="background:#18181f" onclick="setTheme('dark',this)"></div>
+          <div class="tchip" style="background:#0a0e1a" onclick="setTheme('navy',this)"></div>
+          <div class="tchip" style="background:#0f0a1a" onclick="setTheme('purple',this)"></div>
+        </div>
+      </div>
+      
+      <div class="sitem" style="flex-direction:column;align-items:flex-start;gap:10px;cursor:default">
+        <div style="display:flex;align-items:center;gap:14px;width:100%">
+          <div class="sico" style="background:#ec489918"><svg fill="none" stroke="#ec4899" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
+          <div class="stxt">Стиль острова</div>
+        </div>
+        <div class="island-theme-selector">
+          <div class="island-theme-item active" onclick="setIslandTheme('default', this)">
+            <div class="island-theme-preview" style="background:var(--surf);box-shadow:0 4px 12px rgba(0,0,0,.3);">
+              <div class="preview-dot"></div>
+              <div class="preview-dot"></div>
+              <div class="preview-dot"></div>
+            </div>
+            <span>Обычный</span>
+          </div>
+          <div class="island-theme-item" onclick="setIslandTheme('frost', this)">
+            <div class="island-theme-preview" style="background:rgba(38,38,50,0.7);backdrop-filter:blur(10px);box-shadow:0 4px 12px rgba(0,0,0,.3);">
+              <div class="preview-dot"></div>
+              <div class="preview-dot"></div>
+              <div class="preview-dot"></div>
+            </div>
+            <span>Матовое</span>
+          </div>
+          <div class="island-theme-item" onclick="setIslandTheme('liquid', this)">
+            <div class="island-theme-preview" style="background:linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05));backdrop-filter:blur(15px);box-shadow:0 4px 12px rgba(0,0,0,.4), inset 0 1px 2px rgba(255,255,255,.3);">
+              <div class="preview-dot"></div>
+              <div class="preview-dot"></div>
+              <div class="preview-dot"></div>
+            </div>
+            <span>Liquid Glass</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="sitem">
+        <div class="sico" style="background:#ec489918"><svg fill="none"c stroke="#ec4899" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
+        <div class="stxt" id="animations-item">Анимации</div>
+        <button class="tgl on" onclick="this.classList.toggle('on')"></button>
+      </div>
+    </div>
+    <div class="ssec">
+      <div class="slbl" id="language-label">Язык</div>
+      <div class="sitem" onclick="switchLanguage()">
+        <div class="sico" style="background:#8b5cf618"><svg fill="none" stroke="#8b5cf6" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></div>
+        <div class="stxt" id="language-item">Язык</div>
+        <div class="sval" id="current-language">Русский</div>
+      </div>
+    </div>
+    <div class="ssec">
+      <div class="slbl">Помощь</div>
+      <div class="sitem" onclick="openSupport()">
+        <div class="sico" style="background:#06b6d418"><svg fill="none" stroke="#06b6d4" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01"/></svg></div>
+        <div class="stxt">Техническая поддержка</div>
+        <svg class="chev" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+    </div>
+    <div class="ssec">
+      <div class="slbl" id="session-label">Сессия</div>
+      <button class="logout-btn" onclick="logout()">
+        <div class="sico" style="background:#f43f5e18"><svg fill="none" stroke="#f43f5e" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></div>
+        <div class="stxt" style="color:#f43f5e" id="logout-item">Выйти</div>
+      </button>
+      <button class="logout-btn" onclick="confirmDeleteAccount()" style="border-top:1px solid var(--border)">
+        <div class="sico" style="background:#f43f5e18"><svg fill="none" stroke="#f43f5e" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></div>
+        <div class="stxt" style="color:#f43f5e">Удалить аккаунт</div>
+      </button>
+    </div>
+  </div>
+  <div class="island-nav default" id="main-nav-settings">
+    <button class="nb" onclick="goTo('s-feed')"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></button>
+    <button class="nb" onclick="goTo('s-chats')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></button>
+    <button class="nb" onclick="goTo('s-profile')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></button>
+    <button class="nb active"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l-.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
+  </div>
+</div>
+
+<div class="overlay" id="story-viewer" style="flex-direction:column;background:#000">
+  <div style="flex:1;position:relative;overflow:hidden" id="sv-bg">
+    <div id="sv-content" style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center"></div>
+    <div style="position:absolute;top:0;left:0;right:0;padding:max(50px,env(safe-area-inset-top)) 12px 6px;display:flex;gap:4px;z-index:10" id="sv-bars"></div>
+    <div style="position:absolute;top:max(50px,env(safe-area-inset-top));left:0;right:0;display:flex;align-items:center;gap:10px;padding:8px 14px 0;z-index:10">
+      <div style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.2);border:2px solid #fff;overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0" id="sv-avatar"></div>
+      <div style="color:#fff;font-weight:600;font-size:14px" id="sv-username"></div>
+      <div style="color:rgba(255,255,255,.6);font-size:12px;margin-left:2px" id="sv-time"></div>
+      <div style="flex:1"></div>
+      <button onclick="deleteCurrentStory()" title="Удалить" style="background:rgba(0,0,0,.35);border:none;color:#fff;cursor:pointer;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:6px"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>
+      <button onclick="closeStoryViewer()" style="background:rgba(0,0,0,.35);border:none;color:#fff;cursor:pointer;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div onclick="svTapLeft()" style="position:absolute;left:0;top:0;width:35%;height:100%;z-index:8;cursor:pointer"></div>
+    <div onclick="svTapRight()" style="position:absolute;right:0;top:0;width:35%;height:100%;z-index:8;cursor:pointer"></div>
+    <div id="sv-heart-anim" style="position:absolute;bottom:100px;left:50%;transform:translateX(-50%);opacity:0;pointer-events:none;transition:opacity .3s;z-index:20"><svg width="60" height="60" fill="#f43f5e" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg></div>
+  </div>
+  <div style="background:rgba(0,0,0,.7);padding:10px 14px 28px;flex-shrink:0;backdrop-filter:blur(12px)">
+    <div id="sv-comments-list" style="max-height:80px;overflow:hidden;margin-bottom:8px;display:flex;flex-direction:column;gap:4px"></div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <input id="sv-comment-input" placeholder="Написать реакцию..." style="flex:1;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);border-radius:22px;padding:10px 16px;color:#fff;font-family:'DM Sans',sans-serif;font-size:14px;outline:none" onkeydown="if(event.key==='Enter')svSendComment()">
+      <button id="sv-like-btn" onclick="svToggleLike()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;flex-direction:column;gap:2px;flex-shrink:0">
+        <svg id="sv-like-ico" width="28" height="28" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+        <span id="sv-like-count" style="color:#fff;font-size:11px">0</span>
+      </button>
+      <button onclick="svSendComment()" style="width:40px;height:40px;border-radius:50%;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0">
+        <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="avatar-fullscreen" onclick="closeAvatarFull()" style="background:rgba(0,0,0,.95);align-items:center;justify-content:center">
+  <img id="avatar-full-img" style="max-width:90%;max-height:80%;border-radius:16px;object-fit:contain">
+</div>
+
+<div class="sheet" id="chat-sheet" onclick="if(event.target===this)closeChatSheet()">
+  <div class="sheet-body">
+    <div style="width:36px;height:4px;background:var(--surf2);border-radius:4px;margin:0 auto 18px"></div>
+    <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:800;margin-bottom:14px">Сообщения</div>
+    <div onclick="closeChatSheet();goTo('s-chats')" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surf);border-radius:16px;cursor:pointer;margin-bottom:8px">
+      <div style="width:42px;height:42px;border-radius:12px;background:var(--accent);display:flex;align-items:center;justify-content:center"><svg width="20" height="20" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
+      <div><div style="font-weight:600;font-size:15px">Чаты</div><div style="font-size:12px;color:var(--text2)">Личные сообщения</div></div>
+      <svg style="margin-left:auto;color:var(--text2)" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+    </div>
+    <div onclick="closeChatSheet();goTo('s-mchat-news')" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surf);border-radius:16px;cursor:pointer;margin-bottom:14px">
+      <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#4a4af0,#7c3aed);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden"><svg viewBox="0 0 48 48" fill="none" width="22" height="22"><path d="M6 38L18 12L24 26L30 18L42 38H6Z" fill="#fff"/></svg><img class="brand-img" src="img/Mchat.jpg" alt="Mchat" onerror="this.remove()"></div>
+      <div><div style="font-weight:600;font-size:15px">Mchat</div><div style="font-size:12px;color:var(--text2)">Новости и обновления</div></div>
+      <svg style="margin-left:auto;color:var(--text2)" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+    </div>
+    <button onclick="closeChatSheet()" style="width:100%;padding:13px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:'DM Sans',sans-serif;font-size:15px;cursor:pointer">Отмена</button>
+  </div>
+</div>
+
+<div class="sheet" id="call-sheet">
+  <div class="sheet-body" style="text-align:center;padding:40px 30px 50px">
+    <div id="call-type" style="font-size:13px;color:var(--text2);margin-bottom:14px">Голосовой звонок</div>
+    <div style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#7c3aed);margin:0 auto 16px;display:flex;align-items:center;justify-content:center" id="call-av"><svg width="36" height="36" fill="none" stroke="#fff" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
+    <div id="call-name" style="font-family:'Syne',sans-serif;font-size:22px;font-weight:800;margin-bottom:6px">—</div>
+    <div id="call-status" style="color:var(--text2);font-size:14px;margin-bottom:40px">Вызов...</div>
+    <div style="display:flex;justify-content:center;gap:28px">
+      <button onclick="endCall()" style="width:64px;height:64px;border-radius:50%;background:#f43f5e;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff"><svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      <button style="width:64px;height:64px;border-radius:50%;background:var(--surf);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text2)"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6"/><path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23M12 19v3M8 23h8"/></svg></button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="story-creator" style="background:#000;flex-direction:column">
+  <div id="sc-preview" style="flex:1;position:relative;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#4a4af0,#7c3aed);overflow:hidden">
+    <video id="sc-camera" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none" autoplay muted playsinline></video>
+    <img id="sc-preview-img" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:none;background:#000">
+    <video id="sc-preview-vid" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:none" autoplay muted loop playsinline></video>
+    <div id="sc-drag-text" style="position:absolute;top:45%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:26px;font-weight:700;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.5);z-index:6;cursor:grab;padding:8px 14px;min-width:40px;min-height:40px;touch-action:none;word-break:break-word;max-width:85%;display:none;border-radius:8px;font-family:'Syne',sans-serif"></div>
+    <div style="position:absolute;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:max(50px,env(safe-area-inset-top)) 16px 12px;z-index:10">
+      <button onclick="closeStoryCreator()" style="width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.5);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      <div style="display:flex;gap:8px" id="sc-top-btns">
+        <button onclick="scPickBg()" id="sc-bg-btn" style="background:rgba(0,0,0,.5);border:none;border-radius:20px;color:#fff;font-size:12px;padding:7px 13px;cursor:pointer;display:flex;align-items:center;gap:5px"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10c1.1 0 2-.9 2-2 0-.54-.2-1.03-.52-1.41-.31-.37-.49-.86-.49-1.35 0-1.1.9-2 2-2h2.36c3.1 0 5.65-2.55 5.65-5.65C23 6.1 18.03 2 12 2z"/><circle cx="6.5" cy="11.5" r="1.5"/><circle cx="9.5" cy="7.5" r="1.5"/><circle cx="14.5" cy="7.5" r="1.5"/><circle cx="17.5" cy="11.5" r="1.5"/></svg> Фон</button>
+        <button onclick="scPickMedia()" id="sc-media-btn" style="background:rgba(0,0,0,.5);border:none;border-radius:20px;color:#fff;font-size:12px;padding:7px 13px;cursor:pointer;display:flex;align-items:center;gap:5px"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg> Медиа</button>
+      </div>
+    </div>
+    <div id="sc-rec-badge" style="display:none;position:absolute;top:max(58px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:15;background:rgba(244,63,94,.9);color:#fff;font-family:'Syne',sans-serif;font-weight:700;font-size:13px;padding:5px 14px;border-radius:20px;align-items:center;gap:6px">
+      <div style="width:8px;height:8px;border-radius:50%;background:#fff"></div>
+      <span id="sc-rec-secs">0s / 20s</span>
+    </div>
+    <div id="sc-hint" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:rgba(255,255,255,.55);font-size:15px;text-align:center;pointer-events:none;line-height:1.6">Нажми для добавления текста</div>
+    <div id="sc-tap-zone" onclick="scTapZoneClick(event)" style="position:absolute;inset:0;z-index:3"></div>
+    <div id="sc-cam-controls" style="display:none;position:absolute;bottom:24px;left:0;right:0;z-index:12;flex-direction:column;align-items:center;gap:16px">
+      <button onclick="scExitCamera()" style="position:absolute;left:20px;top:-60px;background:rgba(0,0,0,.5);border:none;border-radius:20px;color:#fff;font-size:12px;padding:8px 14px;cursor:pointer;display:flex;align-items:center;gap:6px"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10c1.1 0 2-.9 2-2 0-.54-.2-1.03-.52-1.41-.31-.37-.49-.86-.49-1.35 0-1.1.9-2 2-2h2.36c3.1 0 5.65-2.55 5.65-5.65C23 6.1 18.03 2 12 2z"/><circle cx="6.5" cy="11.5" r="1.5"/><circle cx="9.5" cy="7.5" r="1.5"/><circle cx="14.5" cy="7.5" r="1.5"/><circle cx="17.5" cy="11.5" r="1.5"/></svg> Фон</button>
+      <div style="position:relative;display:flex;align-items:center;justify-content:center">
+        <svg width="80" height="80" style="position:absolute;transform:rotate(-90deg);pointer-events:none"><circle id="sc-rec-ring" cx="40" cy="40" r="34" fill="none" stroke="#f43f5e" stroke-width="5" stroke-dasharray="213.6" stroke-dashoffset="213.6"/></svg>
+        <button id="sc-record-btn" onpointerdown="scHandleRecordStart(event)" onpointerup="scHandleRecordEnd()" style="width:66px;height:66px;border-radius:50%;background:#fff;border:4px solid rgba(255,255,255,.35);cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative;z-index:1;touch-action:none">
+          <div id="sc-record-inner" style="width:28px;height:28px;border-radius:50%;background:#f43f5e;transition:border-radius .2s,width .2s,height .2s"></div>
+        </button>
+      </div>
+      <div style="display:flex;align-items:center;gap:32px">
+        <button onclick="scPickMedia()" style="width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.2);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg></button>
+        <button onclick="scFlipCamera()" style="width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.2);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 013.51 15"/></svg></button>
+      </div>
+    </div>
+  </div>
+  <div id="sc-text-editor" style="display:none;background:#111;padding:12px 16px 8px;flex-shrink:0;z-index:20">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <button onclick="scToggleStylePanel()" style="width:38px;height:38px;border-radius:50%;background:#222;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg></button>
+      <input id="sc-text" placeholder="Введи текст..." style="flex:1;background:#222;border:none;border-radius:20px;padding:10px 16px;color:#fff;font-family:'DM Sans',sans-serif;font-size:15px;outline:none" oninput="scUpdateText()">
+      <button onclick="scConfirmText()" style="background:var(--accent);border:none;border-radius:20px;color:#fff;padding:10px 16px;font-weight:700;cursor:pointer;font-size:14px;flex-shrink:0">Готово</button>
+    </div>
+    <div id="sc-style-panel" style="display:none;margin-bottom:10px">
+      <div style="font-size:10px;color:rgba(255,255,255,.4);margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px">Цвет текста</div>
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px">
+        <div onclick="scSetColor('#ffffff')" class="sc-color-dot" style="background:#ffffff"></div>
+        <div onclick="scSetColor('#f43f5e')" class="sc-color-dot" style="background:#f43f5e"></div>
+        <div onclick="scSetColor('#f97316')" class="sc-color-dot" style="background:#f97316"></div>
+        <div onclick="scSetColor('#f59e0b')" class="sc-color-dot" style="background:#f59e0b"></div>
+        <div onclick="scSetColor('#10b981')" class="sc-color-dot" style="background:#10b981"></div>
+        <div onclick="scSetColor('#06b6d4')" class="sc-color-dot" style="background:#06b6d4"></div>
+        <div onclick="scSetColor('#4a4af0')" class="sc-color-dot" style="background:#4a4af0"></div>
+        <div onclick="scSetColor('#a855f7')" class="sc-color-dot" style="background:#a855f7"></div>
+        <div onclick="scSetColor('#ec4899')" class="sc-color-dot" style="background:#ec4899"></div>
+        <div onclick="scSetColor('#000000')" class="sc-color-dot" style="background:#000000;border:1px solid #444"></div>
+      </div>
+      <div style="font-size:10px;color:rgba(255,255,255,.4);margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px">Шрифт</div>
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">
+        <button onclick="scSetFont('Syne')" class="sc-font-btn" style="font-family:'Syne',sans-serif;font-weight:800">Syne</button>
+        <button onclick="scSetFont('DM Sans')" class="sc-font-btn" style="font-family:'DM Sans',sans-serif">DM Sans</button>
+        <button onclick="scSetFont('serif')" class="sc-font-btn" style="font-family:serif">Serif</button>
+        <button onclick="scSetFont('monospace')" class="sc-font-btn" style="font-family:monospace;font-size:11px">Mono</button>
+        <button onclick="scSetFont('cursive')" class="sc-font-btn" style="font-family:cursive">Script</button>
+      </div>
+    </div>
+  </div>
+  <div id="sc-bottom" style="background:#111;padding:10px 16px max(16px,env(safe-area-inset-bottom));flex-shrink:0">
+    <button onclick="publishStory()" id="sc-publish-btn" style="width:100%;padding:14px;border-radius:24px;border:none;background:var(--accent);color:#fff;font-family:'Syne',sans-serif;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">Выложить <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
+  </div>
+  <input type="file" id="sc-media-input" accept="image/*,video/*" style="display:none" onchange="scMediaChosen(event)">
+</div>
+
+<div class="sheet" id="post-media-sheet" onclick="if(event.target===this)closePostMediaSheet()">
+  <div class="sheet-body">
+    <div style="width:36px;height:4px;background:var(--surf2);border-radius:4px;margin:0 auto 18px"></div>
+    <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:14px">Добавить в пост</div>
+    <div onclick="pickPostPhoto()" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surf);border-radius:16px;cursor:pointer;margin-bottom:8px">
+      <div style="width:42px;height:42px;border-radius:12px;background:#3b82f618;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" fill="none" stroke="#3b82f6" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg></div>
+      <div><div style="font-weight:600;font-size:15px">Фото из галереи</div><div style="font-size:12px;color:var(--text2)">Выбрать из галереи</div></div>
+    </div>
+    <div onclick="pickPostVideo()" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surf);border-radius:16px;cursor:pointer;margin-bottom:14px">
+      <div style="width:42px;height:42px;border-radius:12px;background:#f43f5e18;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" fill="none" stroke="#f43f5e" stroke-width="2" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div>
+      <div><div style="font-weight:600;font-size:15px">Видео</div><div style="font-size:12px;color:var(--text2)">Выбрать видео</div></div>
+    </div>
+    <button onclick="closePostMediaSheet()" style="width:100%;padding:13px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:'DM Sans',sans-serif;font-size:15px;cursor:pointer">Отмена</button>
+    <input type="file" id="post-photo-input" accept="image/*" style="display:none" onchange="postPhotoChosen(event)">
+    <input type="file" id="post-video-input" accept="video/*" style="display:none" onchange="postVideoChosen(event)">
+  </div>
+</div>
+
+<div class="modal" id="edit-modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <h3 id="modal-title">Редактировать профиль</h3>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#7c3aed);padding:2px;cursor:pointer;flex-shrink:0" onclick="pickAvatar()">
+        <div style="width:100%;height:100%;border-radius:50%;background:var(--surf2);display:flex;align-items:center;justify-content:center;overflow:hidden" id="modal-avatar">
+          <svg width="24" height="24" fill="none" stroke="var(--text2)" stroke-width="1.4" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:14px;font-weight:500">Фото профиля</div>
+        <div style="font-size:12px;color:var(--text2)">Нажми для замены</div>
+      </div>
+    </div>
+    <input class="minput" type="text" id="edit-name" placeholder="Имя">
+    <div id="name-warning" style="font-size:11px;color:#f59e0b;margin-bottom:8px;display:none;align-items:center;gap:4px"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg> Имя можно менять раз в 7 дней</div>
+    <input class="minput" type="text" id="edit-username" placeholder="@username" readonly style="opacity:.5" title="Username нельзя менять">
+    <textarea class="mtextarea" id="edit-bio" placeholder="О себе"></textarea>
+    <button id="verify-request-btn" style="width:100%;padding:12px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer;margin-bottom:12px">Запросить верификацию</button>
+    <div class="edit-tracks-section" id="edit-tracks-section" style="display:none">
+      <div class="edit-tracks-label">Закреплённые треки</div>
+      <div class="edit-tracks-list" id="edit-tracks-list"></div>
+      <div style="font-size:11px;color:var(--text2);margin-top:6px">Выбери до 3 треков для отображения в профиле</div>
+    </div>
+    <div class="mbtns">
+      <button class="mbtn-cancel" onclick="closeModal()">Отмена</button>
+      <button class="mbtn-save" onclick="saveProfile()">Сохранить</button>
+    </div>
+    <input type="file" id="avatar-input" accept="image/*" style="display:none" onchange="avatarChosen(event)">
+    <input type="file" id="banner-input" accept="image/*" style="display:none" onchange="bannerChosen(event)">
+  </div>
+</div>
+
+<div class="screen" id="s-video-reels" style="background:#000;position:relative">
+  <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+    <div class="reels-video-container" id="reels-video-container">
+  <video id="reels-video" playsinline></video>
+</div>
+    <!-- Reels overlay header -->
+    <div class="reels-header-overlay" id="reels-header-overlay" style="display:none">
+      <div class="reels-author-av" id="reels-author-av" onclick="goToUserOrOwnProfileFromReels()"></div>
+      <div class="reels-author-info" onclick="goToUserOrOwnProfileFromReels()">
+        <div class="reels-author-name" id="reels-author-name"></div>
+        <div class="reels-author-handle" id="reels-author-handle"></div>
+      </div>
+      <button class="reels-follow-btn" id="reels-follow-btn" onclick="toggleFollowFromReels()">Подписаться</button>
+    </div>
+    <!-- Audio widget -->
+    <div class="reels-audio-widget" id="reels-audio-widget" style="display:none" onclick="openAudioModal()">
+      <div class="reels-audio-square" id="reels-audio-square">
+        <div class="audio-disc-spin" id="reels-audio-disc"></div>
+      </div>
+      <div class="reels-audio-label" id="reels-audio-label">Звук</div>
+    </div>
+    <div id="reels-info" style="position:absolute;bottom:80px;left:16px;right:16px;color:#fff;z-index:5;text-shadow:0 1px 3px rgba(0,0,0,.7)">
+      <div style="font-size:13px;color:rgba(255,255,255,.85);margin-bottom:4px" id="reels-time">-</div>
+      <div style="font-weight:600;font-size:14px;margin-bottom:2px" id="reels-name">-</div>
+      <div style="font-size:13px;color:rgba(255,255,255,.9);line-height:1.4" id="reels-caption">-</div>
+    </div>
+    <div id="reels-actions" style="position:absolute;bottom:24px;right:16px;display:flex;flex-direction:column;gap:18px;z-index:5">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="reelsToggleLike()">
+        <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 1px 3px rgba(0,0,0,.7)) drop-shadow(0 0 6px rgba(0,0,0,.4))">
+          <svg id="reels-like-ico" width="26" height="26" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+        </div>
+        <div style="font-size:11px;color:#fff;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,.7)" id="reels-like-count">0</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="reelsOpenComments()">
+        <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 1px 3px rgba(0,0,0,.7)) drop-shadow(0 0 6px rgba(0,0,0,.4))">
+          <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        </div>
+        <div style="font-size:11px;color:#fff;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,.7)" id="reels-cmt-count">0</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="reelsShare()">
+        <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 1px 3px rgba(0,0,0,.7)) drop-shadow(0 0 6px rgba(0,0,0,.4))">
+          <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+        </div>
+        <div style="font-size:11px;color:#fff;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,.7)">Отправить</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="reelsDownload()">
+        <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 1px 3px rgba(0,0,0,.7)) drop-shadow(0 0 6px rgba(0,0,0,.4))">
+          <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </div>
+        <div style="font-size:11px;color:#fff;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,.7)">Скачать</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="reelsRepost()">
+        <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 1px 3px rgba(0,0,0,.7)) drop-shadow(0 0 6px rgba(0,0,0,.4))">
+          <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+        </div>
+        <div style="font-size:11px;color:#fff;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,.7)">Репост</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer" onclick="reelsDelete()" id="reels-delete" style="display:none">
+        <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 1px 3px rgba(0,0,0,.7)) drop-shadow(0 0 6px rgba(0,0,0,.4))">
+          <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </div>
+      </div>
+    </div>
+    <div style="position:absolute;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:max(12px, calc(env(safe-area-inset-top) + 8px)) 16px 8px;z-index:10">
+      <button onclick="closeVideoReels()" style="width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.3);border:none;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <button id="reels-sound-btn" onclick="reelsToggleSound()" style="width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.3);border:none;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer">
+        <svg id="reels-sound-ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="reels-comments-sheet" onclick="if(event.target===this)closeReelsComments()">
+  <div class="sheet-body" style="display:flex;flex-direction:column;max-height:80vh">
+    <div style="width:36px;height:4px;background:var(--surf2);border-radius:4px;margin:0 auto 14px"></div>
+    <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:12px">Комментарии</div>
+    <div id="reels-comments-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:8px;padding-top:12px;border-top:1px solid var(--border)">
+      <input id="reels-comment-input" placeholder="Комментарий..." style="flex:1;background:var(--surf);border:none;border-radius:20px;padding:10px 14px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;outline:none">
+      <button onclick="reelsSendComment()" style="width:40px;height:40px;border-radius:50%;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="post-creator-modal" onclick="if(event.target===this)closePostCreator()">
+  <div style="background:var(--bg);border-radius:28px;width:90%;max-width:380px;display:flex;flex-direction:column;max-height:88vh;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px;border-bottom:1px solid var(--border)">
+      <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800">Новый пост</div>
+      <button onclick="closePostCreator()" style="background:none;border:none;color:var(--text2);cursor:pointer;width:32px;height:32px;display:flex;align-items:center;justify-content:center">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="pc-upload-bar" style="display:none;padding:10px 16px 0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:12px;color:var(--text2)" id="pc-upload-label">Загрузка...</div>
+        <div style="font-size:12px;font-weight:700;color:var(--accent)" id="pc-upload-pct">0%</div>
+      </div>
+      <div style="height:4px;background:var(--surf2);border-radius:4px;overflow:hidden">
+        <div id="pc-upload-fill" style="height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;width:0%;transition:width .2s ease"></div>
+      </div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">
+      <div id="pc-media-preview" style="width:100%;aspect-ratio:1;background:var(--surf2);border-radius:16px;overflow:hidden;display:none;position:relative">
+        <img id="pc-media-img" style="width:100%;height:100%;object-fit:contain;background:#000">
+        <video id="pc-media-vid" style="width:100%;height:100%;object-fit:contain;display:none;background:#000" playsinline></video>
+        <div id="pc-cover-overlay" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,.5);align-items:center;justify-content:center;flex-direction:column;gap:8px">
+          <img id="pc-cover-img-preview" style="width:100%;height:100%;object-fit:cover;position:absolute;inset:0">
+          <div style="position:relative;z-index:2;text-align:center">
+            <div style="font-size:11px;color:rgba(255,255,255,.8);margin-bottom:6px">Обложка видео</div>
+            <button onclick="openCoverSelector()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);border-radius:20px;color:#fff;font-size:12px;padding:6px 14px;cursor:pointer">Изменить</button>
+          </div>
+        </div>
+        <div id="pc-video-cover-selector" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.9);z-index:1000;flex-direction:column;align-items:center;gap:14px;padding:20px;border-radius:20px;min-width:280px;width:88vw;max-width:320px">
+          <div style="font-size:14px;color:#fff;text-align:center;font-weight:600">Выбери обложку видео</div>
+          <div style="width:100%;height:150px;background:var(--surf2);border-radius:12px;overflow:hidden;position:relative">
+            <img id="pc-cover-preview" style="width:100%;height:100%;object-fit:cover">
+          </div>
+          <div style="width:100%">
+            <div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:6px;text-align:center">Перемотай до нужного кадра</div>
+            <input id="pc-video-slider" type="range" min="0" max="100" value="0" style="width:100%;cursor:pointer;accent-color:#4a4af0" oninput="updateVideoCoverPreview()">
+          </div>
+          <div style="display:flex;gap:8px;width:100%">
+            <button onclick="closeCoverSelector()" style="flex:1;padding:10px;background:var(--surf);color:var(--text);border:none;border-radius:12px;font-size:13px;font-weight:600;cursor:pointer">Отмена</button>
+            <button onclick="confirmVideoCover()" style="flex:1;padding:10px;background:#4a4af0;color:#fff;border:none;border-radius:12px;font-size:13px;font-weight:600;cursor:pointer">Выбрать</button>
+          </div>
+        </div>
+      </div>
+      <textarea id="pc-caption" placeholder="Напиши описание... #хэштег" style="background:var(--surf);border:none;border-radius:14px;padding:12px 14px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;min-height:90px;outline:none;resize:none" oninput="pcHighlightHashtags(this)"></textarea>
+      <div id="pc-hashtag-row" style="display:none;overflow-x:auto;padding-bottom:2px">
+        <div style="display:flex;gap:6px;width:max-content">
+          <button onclick="pcAddTag('#рилс')" style="background:var(--surf);border:none;border-radius:20px;color:var(--accent);font-size:12px;padding:5px 12px;cursor:pointer;font-weight:600">#рилс</button>
+          <button onclick="pcAddTag('#видео')" style="background:var(--surf);border:none;border-radius:20px;color:var(--accent);font-size:12px;padding:5px 12px;cursor:pointer;font-weight:600">#видео</button>
+          <button onclick="pcAddTag('#mchat')" style="background:var(--surf);border:none;border-radius:20px;color:var(--accent);font-size:12px;padding:5px 12px;cursor:pointer;font-weight:600">#mchat</button>
+          <button onclick="pcAddTag('#фото')" style="background:var(--surf);border:none;border-radius:20px;color:var(--accent);font-size:12px;padding:5px 12px;cursor:pointer;font-weight:600">#фото</button>
+          <button onclick="pcAddTag('#жизнь')" style="background:var(--surf);border:none;border-radius:20px;color:var(--accent);font-size:12px;padding:5px 12px;cursor:pointer;font-weight:600">#жизнь</button>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surf);border-radius:14px;padding:12px 16px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <svg id="pc-privacy-ico" width="16" height="16" fill="none" stroke="var(--text2)" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+          <div>
+            <div style="font-size:13px;font-weight:600" id="pc-privacy-label">Для всех</div>
+            <div style="font-size:11px;color:var(--text2)" id="pc-privacy-sub">Виден всем пользователям</div>
+          </div>
+        </div>
+        <button class="tgl on" id="pc-privacy-tgl" onclick="pcTogglePrivacy(this)" style="flex-shrink:0"></button>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;padding:14px;border-top:1px solid var(--border);background:var(--bg2)">
+      <button onclick="closePostCreator()" style="flex:1;padding:12px;border-radius:14px;border:none;background:var(--surf);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer">Отмена</button>
+      <button id="pc-submit-btn" onclick="pcPublishPost()" style="flex:1;padding:12px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer">Опубликовать</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="post-viewer" style="flex-direction:column;background:var(--bg)">
+  <div style="display:flex;align-items:center;gap:12px;padding:max(50px,env(safe-area-inset-top)) 16px 12px;flex-shrink:0;border-bottom:1px solid var(--border)">
+    <button onclick="closePostViewer()" style="background:none;border:none;color:var(--text);cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <div id="pv-av" style="width:36px;height:36px;border-radius:50%;background:var(--surf2);overflow:hidden;display:flex;align-items:center;justify-content:center"></div>
+    <div style="flex:1">
+      <div id="pv-name" style="font-weight:600;font-size:14px"></div>
+      <div id="pv-time" style="font-size:11px;color:var(--text2)"></div>
+    </div>
+    <button id="pv-delete-btn" onclick="confirmDeletePost()" style="background:none;border:none;color:var(--text2);cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>
+  </div>
+  <div style="flex:1;overflow-y:auto">
+    <div id="pv-img-wrap" style="display:none;width:100%;aspect-ratio:1;background:#000;overflow:hidden;"><img id="pv-img" class="pv-zoomable" style="width:100%;height:100%;object-fit:contain;touch-action:pinch-zoom;"></div>
+    <div id="pv-vid-wrap" style="display:none;width:100%;aspect-ratio:1;background:#000"><video id="pv-vid" style="width:100%;height:100%;object-fit:contain" controls playsinline></video></div>
+    <div id="pv-caption" style="padding:12px 16px;font-size:14px;line-height:1.6"></div>
+    <div style="display:flex;gap:16px;padding:8px 16px 12px;border-bottom:1px solid var(--border)">
+      <button id="pv-like-btn" class="ab" onclick="pvToggleLike()">
+        <svg id="pv-like-ico" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+        <span id="pv-like-count">0</span>
+      </button>
+    </div>
+    <div id="pv-comments" style="padding:12px 16px;display:flex;flex-direction:column;gap:10px"></div>
+  </div>
+  <div style="display:flex;gap:10px;padding:10px 16px 28px;border-top:1px solid var(--border);background:var(--bg2);flex-shrink:0">
+    <input id="pv-comment-input" placeholder="Написать комментарий..." style="flex:1;background:var(--surf);border:none;border-radius:22px;padding:10px 16px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;outline:none" onkeydown="if(event.key==='Enter')pvSendComment()">
+    <button onclick="pvSendComment()" style="width:40px;height:40px;border-radius:50%;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0">
+      <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div class="overlay" id="user-profile-viewer" style="flex-direction:column;background:var(--bg)">
+  <div style="display:flex;align-items:center;gap:12px;padding:max(50px,env(safe-area-inset-top)) 16px 12px;flex-shrink:0;border-bottom:1px solid var(--border)">
+    <button onclick="closeUserProfile()" style="background:none;border:none;color:var(--text);cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <div style="flex:1;font-weight:700;font-size:15px" id="up-header-username">Профиль</div>
+  </div>
+  <div style="flex:1;overflow-y:auto">
+    <div style="padding:20px 16px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">
+      <div id="up-avatar" onclick="mxOpenUserAvatar()" style="cursor:pointer;width:76px;height:76px;border-radius:50%;background:var(--surf2);overflow:hidden;display:flex;align-items:center;justify-content:center;margin-bottom:10px"><svg width="34" height="34" fill="none" stroke="var(--text2)" stroke-width="1.2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
+      <div id="up-name" style="font-family:'Syne',sans-serif;font-weight:800;font-size:18px;display:flex;align-items:center;gap:4px;justify-content:center">Пользователь</div>
+      <div id="up-username" style="font-size:13px;color:var(--text2);margin-bottom:4px">@username</div>
+      <div id="up-status" class="mx-up-status"></div>
+      <div id="up-bio" style="font-size:13px;color:var(--text);line-height:1.5;max-width:280px;margin-bottom:14px"></div>
+      <div class="pstats" style="justify-content:center;gap:28px;margin-bottom:14px">
+        <div class="pstat"><span class="psnum" id="up-posts-count">0</span><span class="pslbl">Посты</span></div>
+        <div class="pstat"><span class="psnum" id="up-reposts-count">0</span><span class="pslbl">Репосты</span></div>
+      </div>
+      <div class="mx-up-actions">
+      <button onclick="const _u=upViewedUsername;closeUserProfile();startChatWithUser(_u)" style="padding:9px 22px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        Написать
+      </button>
+        <button class="mx-friend-btn" id="up-friend-btn" onclick="mxFriendAction()" style="display:none">Добавить в друзья</button>
+        <button class="mx-friend-btn ghost" id="up-friend-decline" onclick="mxFriendDecline()" style="display:none">Отклонить</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-top:6px">
+      <button class="ptab active" id="uptab-posts" onclick="switchUserProfileTab('posts')" style="flex:1;padding:12px 4px;background:none;border:none;color:var(--text);font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid var(--accent);display:flex;align-items:center;justify-content:center;gap:6px"><svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> Посты</button>
+      <button class="ptab" id="uptab-reposts" onclick="switchUserProfileTab('reposts')" style="flex:1;padding:12px 4px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg> Репосты</button>
+      <button class="ptab" id="uptab-tracks" onclick="switchUserProfileTab('tracks')" style="flex:1;padding:12px 4px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> Репосты</button>
+    </div>
+    <div class="profile-grid" id="up-grid"></div>
+  </div>
+</div>
+
+<div class="overlay" id="foreign-post-viewer" style="flex-direction:column;background:var(--bg)">
+  <div style="display:flex;align-items:center;gap:12px;padding:max(50px,env(safe-area-inset-top)) 16px 12px;flex-shrink:0;border-bottom:1px solid var(--border)">
+    <button onclick="closeForeignPostViewer()" style="background:none;border:none;color:var(--text);cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <div id="fpv-av" style="width:36px;height:36px;border-radius:50%;background:var(--surf2);overflow:hidden;display:flex;align-items:center;justify-content:center"></div>
+    <div style="flex:1">
+      <div id="fpv-name" style="font-weight:600;font-size:14px"></div>
+      <div id="fpv-time" style="font-size:11px;color:var(--text2)"></div>
+    </div>
+  </div>
+  <div style="flex:1;overflow-y:auto">
+    <div id="fpv-img-wrap" style="display:none;width:100%;aspect-ratio:1;background:#000;overflow:hidden;"><img id="fpv-img" style="width:100%;height:100%;object-fit:contain"></div>
+    <div id="fpv-vid-wrap" style="display:none;width:100%;aspect-ratio:1;background:#000"><video id="fpv-vid" style="width:100%;height:100%;object-fit:contain" controls playsinline></video></div>
+    <div id="fpv-caption" style="padding:12px 16px;font-size:14px;line-height:1.6"></div>
+    <div style="display:flex;gap:16px;padding:8px 16px 12px;border-bottom:1px solid var(--border);color:var(--text2)">
+      <div class="ab" style="cursor:default">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+        <span id="fpv-like-count">0</span>
+      </div>
+      <div class="ab" style="cursor:default">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        <span id="fpv-cmt-count">0</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- Audio Modal -->
+<div class="audio-modal" id="audio-modal" onclick="if(event.target===this)closeAudioModal()">
+  <div class="audio-modal-body">
+    <div style="width:36px;height:4px;background:var(--surf2);border-radius:4px;margin:0 auto 16px"></div>
+    <div class="audio-modal-disc" id="audio-modal-disc">
+      <svg width="40" height="40" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+    </div>
+    <div class="audio-modal-title" id="audio-modal-title">Название трека</div>
+    <div class="audio-modal-artist" id="audio-modal-artist">@автор</div>
+    <div class="mx-audio-player" id="mx-audio-player" style="display:none">
+      <button class="ib" id="mx-audio-play" onclick="mxAudioToggle()" title="Слушать"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 20 12 7 20 7 4"/></svg></button>
+      <div class="mx-prog" onclick="mxAudioSeek(event)"><div class="mx-prog-fill" id="mx-audio-fill"></div></div>
+      <span id="mx-audio-time" class="mx-rec-time2">0:00</span>
+    </div>
+    <button class="audio-modal-btn primary" onclick="useTrackForVideo()">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+      Использовать звук
+    </button>
+    <button class="audio-modal-btn secondary" id="audio-save-btn" onclick="saveTrackFromModal()">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+      <span id="audio-save-btn-text">Сохранить в избранное</span>
+    </button>
+    <button class="audio-modal-btn secondary" onclick="closeAudioModal()">Отмена</button>
+  </div>
+</div>
+
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="mchat-api.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
