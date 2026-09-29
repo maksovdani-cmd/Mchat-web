@@ -51,6 +51,14 @@
     bad_emoji: 'Недопустимая реакция',
     too_many_reactions: 'Слишком много разных реакций',
     already_friends: 'Вы уже друзья',
+    forbidden: 'Недостаточно прав',
+    not_a_friend: 'Добавлять можно только друзей',
+    not_a_group: 'Это личный чат',
+    owner_cannot_leave: 'Владелец не может выйти из группы',
+    cannot_change_owner: 'Роль владельца изменить нельзя',
+    group_full: 'В группе уже максимум участников',
+    bad_avatar: 'Не удалось поставить эту аватарку',
+    member_not_found: 'Участник не найден',
     cannot_friend_self: 'Нельзя добавить в друзья самого себя',
     request_not_found: 'Заявка не найдена',
     invite_not_found: 'Ссылка-приглашение недействительна',
@@ -86,7 +94,7 @@
     onMessage: null, onRead: null, onTyping: null, onPresence: null,
     onLoginCode: null, onNewDevice: null, onUnauthorized: null,
     onReconnect: null, onOpenChat: null,
-    onEdited: null, onDeleted: null, onReactions: null, onPinned: null, onFriendUpdate: null,
+    onEdited: null, onDeleted: null, onReactions: null, onPinned: null, onFriendUpdate: null, onChatChanged: null, onChatRemoved: null,
   };
   let socket = null;
   let everConnected = false;
@@ -121,6 +129,8 @@
     socket.on('message:deleted', (p) => handlers.onDeleted && handlers.onDeleted(p));
     socket.on('message:reactions', (p) => handlers.onReactions && handlers.onReactions(p));
     socket.on('chat:pinned', (p) => handlers.onPinned && handlers.onPinned(p));
+    socket.on('chat:changed', (p) => handlers.onChatChanged && handlers.onChatChanged(p));
+    socket.on('chat:removed', (p) => handlers.onChatRemoved && handlers.onChatRemoved(p));
     socket.on('friend:update', (p) => handlers.onFriendUpdate && handlers.onFriendUpdate(p));
     socket.on('auth:login-code', (d) => handlers.onLoginCode && handlers.onLoginCode(d));
     socket.on('auth:new-device', (d) => handlers.onNewDevice && handlers.onNewDevice(d));
@@ -161,23 +171,31 @@
   }
 
   /** Загрузка файла: тело запроса — сам файл. kind: voice | videonote | image | track */
-  async function uploadMedia(kind, blob, opts) {
+  /** Загрузка файла. opts.onProgress(0..100) — для полосы загрузки. Документы уходят как octet-stream. */
+  function uploadMedia(kind, blob, opts) {
     opts = opts || {};
     const qs = new URLSearchParams({ kind: kind });
     if (opts.duration) qs.set('duration', String(Math.round(opts.duration)));
     if (opts.name) qs.set('name', opts.name);
-    const res = await fetch('/api/media?' + qs.toString(), {
-      method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': blob.type || 'application/octet-stream' },
-      body: blob,
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/media?' + qs.toString());
+      xhr.withCredentials = true;
+      xhr.setRequestHeader('Content-Type', kind === 'file' ? 'application/octet-stream' : (blob.type || 'application/octet-stream'));
+      if (opts.onProgress && xhr.upload) {
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) opts.onProgress(Math.round((e.loaded / e.total) * 100)); };
+      }
+      xhr.onload = () => {
+        let data = null; try { data = JSON.parse(xhr.responseText); } catch (e) { /* пусто */ }
+        if (xhr.status >= 200 && xhr.status < 300 && data && data.media) return resolve(data.media);
+        const err = new Error((data && data.error) || 'http_' + xhr.status);
+        err.status = xhr.status;
+        err.code = (data && data.error) || (xhr.status === 413 ? 'too_large' : xhr.status === 415 ? 'unsupported_type' : undefined);
+        reject(err);
+      };
+      xhr.onerror = () => { const err = new Error('network'); err.status = 0; reject(err); };
+      xhr.send(blob);
     });
-    let data = null; try { data = await res.json(); } catch (e) { /* пусто */ }
-    if (!res.ok) {
-      const err = new Error((data && data.error) || 'http_' + res.status);
-      err.status = res.status; err.code = (data && data.error) || (res.status === 413 ? 'too_large' : res.status === 415 ? 'unsupported_type' : undefined);
-      throw err;
-    }
-    return data.media;
   }
 
   let typingOn = false, typingTimer = null;
@@ -278,6 +296,11 @@
     joinChat: (code) => api('/chats/join', { method: 'POST', body: { code: code } }),
 
     // друзья
+    updateChat: (id, patch) => api('/chats/' + encodeURIComponent(id), { method: 'PATCH', body: patch }),
+    chatMembers: (id) => api('/chats/' + encodeURIComponent(id) + '/members'),
+    addMembers: (id, userIds) => api('/chats/' + encodeURIComponent(id) + '/members', { method: 'POST', body: { userIds: userIds } }),
+    removeMember: (id, userId) => api('/chats/' + encodeURIComponent(id) + '/members/' + encodeURIComponent(userId), { method: 'DELETE' }),
+    setMemberRole: (id, userId, role) => api('/chats/' + encodeURIComponent(id) + '/members/' + encodeURIComponent(userId) + '/role', { method: 'PUT', body: { role: role } }),
     friends: () => api('/friends'),
     friendRequest: (username) => api('/friends/request', { method: 'POST', body: { username: username } }),
     friendAccept: (id) => api('/friends/' + encodeURIComponent(id) + '/accept', { method: 'POST', body: {} }),

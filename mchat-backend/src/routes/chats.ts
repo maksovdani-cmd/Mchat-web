@@ -2,8 +2,10 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
-  createGroupOrChannel, getChatDTO, getOrCreateDirectChat, joinByInvite, listChats, listMessages,
+  addMembers, createGroupOrChannel, getChatDTO, getOrCreateDirectChat, joinByInvite, listChats, listMembers, listMessages,
+  removeMember, setMemberRole, updateChatInfo,
 } from '../services/chat';
+import { emitToChat, emitToUser, leaveUserFromChat } from '../realtime/hub';
 import { joinAllToChat, pinAndDispatch, readAndBroadcast, sendAndDispatch } from '../services/messaging';
 import { wrap } from '../utils/errors';
 
@@ -61,7 +63,7 @@ chatsRouter.post('/:id/messages', wrap(async (req, res) => {
   const b = z.object({
     text: z.string().max(5000).optional(),
     clientId: z.string().min(1).max(64).optional(),
-    kind: z.enum(['TEXT', 'VOICE', 'VIDEO_NOTE', 'IMAGE']).optional(),
+    kind: z.enum(['TEXT', 'VOICE', 'VIDEO_NOTE', 'IMAGE', 'VIDEO', 'FILE']).optional(),
     mediaId: id.optional(),
     durationSec: z.number().min(0).max(3600).optional(),
     replyToId: id.optional(),
@@ -78,4 +80,57 @@ chatsRouter.post('/:id/read', wrap(async (req, res) => {
 chatsRouter.put('/:id/pin', wrap(async (req, res) => {
   const { messageId } = z.object({ messageId: id.nullable() }).parse(req.body);
   res.json({ message: await pinAndDispatch(authOf(req).userId, String(req.params.id), messageId) });
+}));
+
+// ───────── профиль группы/канала, участники, роли ─────────
+
+/** Сообщаем всем участникам, что у чата изменился профиль/состав/роли — клиент перезапросит список. */
+const changed = (chatId: string) => emitToChat(chatId, 'chat:changed', { chatId });
+
+chatsRouter.patch('/:id', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const b = z.object({
+    title: z.string().trim().min(1).max(60).regex(/^[^<>]+$/).optional(),
+    description: z.string().trim().max(200).regex(/^[^<>]*$/).nullable().optional(),
+    avatarMediaId: id.nullable().optional(),
+  }).strict().parse(req.body);
+  const chatId = String(req.params.id);
+  await updateChatInfo(userId, chatId, b);
+  changed(chatId);
+  res.json({ chat: await getChatDTO(userId, chatId) });
+}));
+
+chatsRouter.get('/:id/members', wrap(async (req, res) => {
+  res.json({ members: await listMembers(authOf(req).userId, String(req.params.id)) });
+}));
+
+chatsRouter.post('/:id/members', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const b = z.object({ userIds: z.array(id).min(1).max(100) }).parse(req.body);
+  const chatId = String(req.params.id);
+  const added = await addMembers(userId, chatId, b.userIds);
+  joinAllToChat(added, chatId);
+  added.forEach((u) => emitToUser(u, 'chat:changed', { chatId })); // новичку — чат появится в списке
+  changed(chatId);
+  res.json({ added: added.length, members: await listMembers(userId, chatId) });
+}));
+
+chatsRouter.delete('/:id/members/:userId', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const chatId = String(req.params.id);
+  const target = String(req.params.userId);
+  await removeMember(userId, chatId, target);
+  leaveUserFromChat(target, chatId);
+  emitToUser(target, 'chat:removed', { chatId });
+  changed(chatId);
+  res.json({ ok: true });
+}));
+
+chatsRouter.put('/:id/members/:userId/role', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const b = z.object({ role: z.enum(['ADMIN', 'MEMBER']) }).parse(req.body);
+  const chatId = String(req.params.id);
+  await setMemberRole(userId, chatId, String(req.params.userId), b.role);
+  changed(chatId);
+  res.json({ members: await listMembers(userId, chatId) });
 }));

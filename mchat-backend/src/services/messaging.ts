@@ -1,7 +1,7 @@
 import { prisma } from '../db';
 import { emitToChat, emitToUser, isActive, joinUserToChat } from '../realtime/hub';
 import {
-  createMessage, deleteMessage, editMessage, forwardMessage, markRead, pinMessage, setReaction, toMessageDTO,
+  createMessage, deleteMessage, editMessage, forwardMessage, markRead, pinMessage, previewOf, setReaction, toMessageDTO,
   type CreateInput, type MessageDTO,
 } from './chat';
 import { sendPushToUser } from './push';
@@ -25,8 +25,7 @@ function dispatchNew(userId: string, chatId: string, r: Awaited<ReturnType<typeo
 }
 
 const preview = (d: MessageDTO) =>
-  d.kind === 'VOICE' ? '🎤 Голосовое сообщение' : d.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : d.kind === 'IMAGE' ? '📷 Фото'
-    : d.text.length > 140 ? d.text.slice(0, 137) + '…' : d.text;
+  d.kind !== 'TEXT' ? previewOf(d.kind, d.text) : d.text.length > 140 ? d.text.slice(0, 137) + '…' : d.text;
 
 async function notifyRecipients(senderId: string, chatId: string, dto: MessageDTO) {
   const [sender, chat, others] = await Promise.all([

@@ -8,6 +8,7 @@ import { visiblePresence } from './presence';
 
 export const MAX_TEXT = 4000;
 export const MAX_GROUP_INITIAL_MEMBERS = 200;
+export const MAX_GROUP_MEMBERS = 1000;
 
 /** Один эмодзи (включая составные: ❤️, 👍🏽, 👨‍👩‍👧). Защита от «реакций»-простыней текста. */
 export const EMOJI_RE = /^\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic}|\p{Emoji_Modifier})*$/u;
@@ -24,6 +25,7 @@ export const messageInclude = {
   sender: { select: { id: true, name: true, username: true } },
   replyTo: { select: { id: true, text: true, kind: true, deletedAt: true, sender: { select: { id: true, name: true } } } },
   reactions: { select: { emoji: true, userId: true } },
+  media: { select: { title: true, size: true } },
 } satisfies Prisma.MessageInclude;
 export type FullMessage = Prisma.MessageGetPayload<{ include: typeof messageInclude }>;
 
@@ -37,6 +39,8 @@ export interface MessageDTO {
   kind: MessageKind;
   text: string;
   mediaUrl: string | null;
+  fileName: string | null;
+  fileSize: number | null;
   durationSec: number | null;
   replyTo: { id: string; senderName: string | null; text: string; kind: MessageKind; deleted: boolean } | null;
   forwardedFrom: string | null;
@@ -45,6 +49,10 @@ export interface MessageDTO {
   editedAt: string | null;
   reactions: ReactionDTO[];
 }
+
+export const previewOf = (kind: MessageKind, text: string) =>
+  kind === 'TEXT' ? text : kind === 'VOICE' ? '🎤 Голосовое сообщение' : kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение'
+    : kind === 'VIDEO' ? '🎬 Видео' : kind === 'FILE' ? '📎 Файл' : '📷 Фото';
 
 export const groupReactions = (list: { emoji: string; userId: string }[]): ReactionDTO[] => {
   const map = new Map<string, string[]>();
@@ -61,6 +69,8 @@ export const toMessageDTO = (m: FullMessage): MessageDTO => ({
   kind: m.kind,
   text: m.text,
   mediaUrl: m.mediaId ? mediaUrl(m.mediaId) : null,
+  fileName: m.kind === 'FILE' ? m.media?.title ?? null : null,
+  fileSize: m.media?.size ?? null,
   durationSec: m.durationSec,
   replyTo: m.replyTo && {
     id: m.replyTo.id,
@@ -183,20 +193,22 @@ export async function getChatDTO(userId: string, chatId: string) {
     chat.type === 'DIRECT'
       ? prisma.chatMember.findFirst({
           where: { chatId, userId: { not: userId } },
-          include: { user: { select: { ...publicUserSelect, hideOnline: true, lastSeenAt: true } } },
+          include: { user: { select: { ...publicUserSelect, hideOnline: true, hideRead: true, lastSeenAt: true } } },
         })
       : null,
   ]);
 
   const peer = peerMember?.user ?? null;
   const isDirect = chat.type === 'DIRECT';
-  const lastText = last ? (last.kind === 'TEXT' ? last.text : last.kind === 'VOICE' ? '🎤 Голосовое сообщение' : last.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : '📷 Фото') : '';
+  const lastText = last ? previewOf(last.kind, last.text) : '';
   return {
     id: chatId,
     type: chat.type,
     name: isDirect ? peer?.name ?? 'Чат' : chat.title ?? 'Чат',
     description: chat.description,
-    avatar: isDirect ? peer?.avatarUrl ?? null : null,
+    avatar: isDirect ? peer?.avatarUrl ?? null : chat.avatarMediaId ? mediaUrl(chat.avatarMediaId) : null,
+    /** до какого момента собеседник прочитал чат (null — скрыл статус или это не личный чат) */
+    peerReadAt: isDirect && peerMember && !peerMember.user.hideRead ? peerMember.lastReadAt.toISOString() : null,
     role: m.role,
     canPost: canPost(chat.type, m.role),
     canModerate: canModerate(chat.type, m.role),
@@ -406,4 +418,96 @@ export async function markRead(userId: string, chatId: string) {
   const at = new Date();
   await prisma.chatMember.update({ where: { chatId_userId: { chatId, userId } }, data: { lastReadAt: at } });
   return at;
+}
+
+
+// ───────────────────────── участники, роли, профиль группы ─────────────────────────
+
+const isStaff = (role: MemberRole) => role !== 'MEMBER';
+
+/** Название, описание и аватарка группы/канала: владелец и админы. */
+export async function updateChatInfo(
+  userId: string, chatId: string,
+  patch: { title?: string; description?: string | null; avatarMediaId?: string | null },
+) {
+  const m = await assertMember(chatId, userId);
+  if (m.chat.type === 'DIRECT') throw new HttpError(400, 'not_a_group');
+  if (!isStaff(m.role)) throw new HttpError(403, 'forbidden');
+  const data: Prisma.ChatUpdateInput = {};
+  if (patch.title !== undefined) data.title = patch.title;
+  if (patch.description !== undefined) data.description = patch.description || null;
+  if (patch.avatarMediaId !== undefined) {
+    if (patch.avatarMediaId) {
+      const media = await prisma.media.findUnique({ where: { id: patch.avatarMediaId } });
+      if (!media || media.ownerId !== userId || media.kind !== 'IMAGE') throw new HttpError(400, 'bad_avatar');
+    }
+    data.avatarMediaId = patch.avatarMediaId;
+  }
+  await prisma.chat.update({ where: { id: chatId }, data });
+}
+
+export async function listMembers(userId: string, chatId: string) {
+  const m = await assertMember(chatId, userId);
+  if (m.chat.type === 'DIRECT') throw new HttpError(400, 'not_a_group');
+  if (m.chat.type === 'CHANNEL' && !isStaff(m.role)) throw new HttpError(403, 'forbidden'); // подписчики друг друга не видят
+  const rows = await prisma.chatMember.findMany({
+    where: { chatId },
+    include: { user: { select: publicUserSelect } },
+    orderBy: { joinedAt: 'asc' },
+    take: 1000,
+  });
+  const order = { OWNER: 0, ADMIN: 1, MEMBER: 2 } as const;
+  rows.sort((a, b) => order[a.role] - order[b.role]);
+  return rows.map((r) => ({
+    id: r.user.id, username: r.user.username, name: r.user.name, avatar: r.user.avatarUrl, verified: r.user.verified, role: r.role,
+  }));
+}
+
+/** Добавить людей можно только из своего списка друзей — чужих в группу не затащишь. */
+export async function addMembers(userId: string, chatId: string, userIds: string[]) {
+  const m = await assertMember(chatId, userId);
+  if (m.chat.type === 'DIRECT') throw new HttpError(400, 'not_a_group');
+  if (!isStaff(m.role)) throw new HttpError(403, 'forbidden');
+  const ids = [...new Set(userIds)].filter((u) => u !== userId);
+  if (!ids.length) return [];
+  const friendships = await prisma.friendship.findMany({
+    where: {
+      status: 'ACCEPTED',
+      OR: [{ requesterId: userId, addresseeId: { in: ids } }, { addresseeId: userId, requesterId: { in: ids } }],
+    },
+    select: { requesterId: true, addresseeId: true },
+  });
+  const friendIds = new Set(friendships.map((f) => (f.requesterId === userId ? f.addresseeId : f.requesterId)));
+  if (ids.some((u) => !friendIds.has(u))) throw new HttpError(403, 'not_a_friend');
+  const before = await prisma.chatMember.count({ where: { chatId } });
+  if (before + ids.length > MAX_GROUP_MEMBERS) throw new HttpError(400, 'group_full');
+  await prisma.chatMember.createMany({ data: ids.map((u) => ({ chatId, userId: u })), skipDuplicates: true });
+  return ids;
+}
+
+/** Удалить участника (владелец — любого, админ — только обычных) либо выйти самому. */
+export async function removeMember(userId: string, chatId: string, targetId: string) {
+  const m = await assertMember(chatId, userId);
+  if (m.chat.type === 'DIRECT') throw new HttpError(400, 'not_a_group');
+  const target = await prisma.chatMember.findUnique({ where: { chatId_userId: { chatId, userId: targetId } } });
+  if (!target) throw new HttpError(404, 'member_not_found');
+  if (targetId === userId) {
+    if (m.role === 'OWNER') throw new HttpError(400, 'owner_cannot_leave');
+  } else {
+    const allowed = m.role === 'OWNER' || (m.role === 'ADMIN' && target.role === 'MEMBER');
+    if (!allowed) throw new HttpError(403, 'forbidden');
+  }
+  await prisma.chatMember.delete({ where: { chatId_userId: { chatId, userId: targetId } } });
+}
+
+/** Назначать и снимать админов может только владелец. */
+export async function setMemberRole(userId: string, chatId: string, targetId: string, role: 'ADMIN' | 'MEMBER') {
+  const m = await assertMember(chatId, userId);
+  if (m.chat.type === 'DIRECT') throw new HttpError(400, 'not_a_group');
+  if (m.role !== 'OWNER') throw new HttpError(403, 'forbidden');
+  if (targetId === userId) throw new HttpError(400, 'cannot_change_owner');
+  const target = await prisma.chatMember.findUnique({ where: { chatId_userId: { chatId, userId: targetId } } });
+  if (!target) throw new HttpError(404, 'member_not_found');
+  if (target.role === 'OWNER') throw new HttpError(400, 'cannot_change_owner');
+  await prisma.chatMember.update({ where: { chatId_userId: { chatId, userId: targetId } }, data: { role } });
 }

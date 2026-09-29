@@ -15,7 +15,7 @@ import { mediaRouter } from './routes/media';
 import { messagesRouter } from './routes/messages';
 import { pushRouter } from './routes/push';
 import { usersRouter } from './routes/users';
-import { ensureUploadDir } from './services/media';
+import { ensureUploadDir } from './services/storage';
 import { HttpError } from './utils/errors';
 
 const app = express();

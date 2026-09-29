@@ -29,6 +29,8 @@ enum MessageKind {
   VOICE
   VIDEO_NOTE
   IMAGE
+  VIDEO
+  FILE
 }
 
 enum MediaKind {
@@ -36,6 +38,8 @@ enum MediaKind {
   VIDEO_NOTE
   IMAGE
   TRACK
+  VIDEO
+  FILE
 }
 
 enum FriendStatus {
@@ -132,6 +136,8 @@ model Chat {
   /// для DIRECT: "<меньший id>:<больший id>" — не даёт создать дубль диалога
   directKey     String?      @unique
   description   String?
+  /// аватарка группы/канала (файл Media, kind=IMAGE)
+  avatarMediaId String?
   /// ссылка-приглашение для групп и каналов: /join/<inviteCode>
   inviteCode    String?      @unique
   /// закреплённое сообщение (одно на чат)

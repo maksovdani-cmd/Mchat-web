@@ -66,6 +66,10 @@ export const disconnectUser = (userId: string) => {
   io?.in(`user:${userId}`).disconnectSockets(true);
 };
 
+export const leaveUserFromChat = (userId: string, chatId: string) => {
+  io?.in(`user:${userId}`).socketsLeave(`chat:${chatId}`);
+};
+
 export const emitToRooms = (rooms: string[], event: string, payload: unknown) => {
   if (rooms.length) io?.to(rooms).emit(event, payload);
 };

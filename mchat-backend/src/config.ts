@@ -31,6 +31,12 @@ const schema = z.object({
   ALLOW_EMAIL_FALLBACK: bool,
   /** Куда сохранять голосовые, кружки, фото и треки (в Docker — примонтированный том) */
   UPLOAD_DIR: z.string().default('./uploads'),
+  /** Постоянное хранилище файлов (S3-совместимое: Supabase, Cloudflare R2, Backblaze B2). Без него — диск сервера. */
+  S3_BUCKET: z.string().optional(),
+  S3_ENDPOINT: z.string().optional(),
+  S3_REGION: z.string().default('auto'),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
   /** Сколько прокси стоит перед приложением (Caddy/nginx = 1) */
   TRUST_PROXY: z.coerce.number().int().default(1),
 });

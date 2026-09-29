@@ -2975,7 +2975,7 @@ function msgFromServer(m) {
   return {
     id: m.id, clientId: m.clientId, chatId: m.chatId, senderId: m.senderId,
     senderName: m.senderName, senderUsername: m.senderUsername,
-    kind: m.kind || 'TEXT', text: m.text, mediaUrl: m.mediaUrl, durationSec: m.durationSec,
+    kind: m.kind || 'TEXT', text: m.text, mediaUrl: m.mediaUrl, fileName: m.fileName, fileSize: m.fileSize, durationSec: m.durationSec,
     replyTo: m.replyTo, forwardedFrom: m.forwardedFrom,
     reactions: m.reactions || [], editedAt: m.editedAt,
     time: fmtClock(m.createdAt), createdAt: m.createdAt,
@@ -3112,9 +3112,30 @@ function bubbleBodyHtml(m) {
     </div>`;
   }
   if (m.kind === 'IMAGE') {
-    return `<img class="mx-img" src="${esc(m.mediaUrl||'')}" onclick="event.stopPropagation();mxOpenImage('${esc(m.mediaUrl||'')}')">`;
+    return `<img class="mx-img" src="${esc(m.mediaUrl||'')}" onerror="mxMediaLost(this)" onclick="event.stopPropagation();mxOpenImage('${esc(m.mediaUrl||'')}')">${mxUploadBar(m)}`;
   }
-  return esc(m.text);
+  if (m.kind === 'VIDEO') {
+    if (!m.mediaUrl) return `<div class="mx-lost">Отправка видео…</div>${mxUploadBar(m)}`;
+    return `<video class="mx-video" src="${esc(m.mediaUrl)}" controls playsinline preload="metadata" onerror="mxMediaLost(this)" onclick="event.stopPropagation()"></video>`;
+  }
+  if (m.kind === 'FILE') {
+    const href = m.mediaUrl ? ` href="${esc(m.mediaUrl)}" download="${esc(m.fileName||'file')}"` : '';
+    return `<a class="mx-file"${href} onclick="event.stopPropagation()"><div class="mx-file-ico"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div class="mx-file-info"><div class="mx-file-name">${esc(m.fileName||'Файл')}</div><div class="mx-file-size">${esc(mxFmtSize(m.fileSize))}</div>${mxUploadBar(m)}</div></a>`;
+  }
+  return `<div class="mx-txt">${esc(m.text)}</div>`;
+}
+function mxFmtSize(n) {
+  if (!n) return '';
+  return n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + ' КБ' : (n / 1024 / 1024).toFixed(1) + ' МБ';
+}
+function mxUploadBar(m) {
+  return m.pending ? `<div class="mx-upbar"><i style="width:${m.progress || 0}%"></i></div>` : '';
+}
+function mxMediaLost(el) {
+  const box = document.createElement('div');
+  box.className = 'mx-lost';
+  box.textContent = 'Файл недоступен';
+  el.replaceWith(box);
 }
 function renderMessages(id) {
   const c = document.getElementById('messages-container');
@@ -3124,16 +3145,11 @@ function renderMessages(id) {
     const cls = ['msg', m.outgoing?'mo':'mi'];
     if (m.kind === 'VIDEO_NOTE') cls.push('mx-vn');
     if (m.kind === 'IMAGE') cls.push('mx-photo');
+    if (m.kind === 'VIDEO') cls.push('mx-media');
     const senderHtml = (isGroup && !m.outgoing && m.senderName) ? `<div class="mx-sender">${esc(m.senderName)}</div>` : '';
     const fwdHtml = m.forwardedFrom ? `<div class="mx-fwd">Переслано от ${esc(m.forwardedFrom)}</div>` : '';
     const editedHtml = m.editedAt ? '<span class="mx-edited">ред.</span>' : '';
-    return `<div class="${cls.join(' ')}" data-id="${esc(m.id)}"${m.pending?' style="opacity:.6"':''}
-      onclick="mxOpenReactions('${esc(m.id)}', event)"
-      oncontextmenu="event.preventDefault();mxOpenContextMenu('${esc(m.id)}', event)">
-      ${senderHtml}${fwdHtml}${replyQuoteHtml(m)}${bubbleBodyHtml(m)}
-      ${reactionsHtml(m)}
-      <div class="mt">${editedHtml}${esc(m.time)}</div>
-    </div>`;
+    return `<div class="${cls.join(' ')}" data-id="${esc(m.id)}"${m.pending?' style="opacity:.6"':''} onclick="mxOpenReactions('${esc(m.id)}', event)" oncontextmenu="event.preventDefault();mxOpenContextMenu('${esc(m.id)}', event)">${senderHtml}${fwdHtml}${replyQuoteHtml(m)}${bubbleBodyHtml(m)}${reactionsHtml(m)}<div class="mt">${editedHtml}${esc(m.time)}</div></div>`;
   }).join('');
   c.scrollTop = c.scrollHeight;
 }
@@ -3150,7 +3166,7 @@ function mxOpenImage(url) {
   document.getElementById('avatar-fullscreen').classList.add('active');
 }
 
-const msgPreview = (m) => m.kind === 'VOICE' ? '🎤 Голосовое сообщение' : m.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : m.kind === 'IMAGE' ? '📷 Фото' : m.text;
+const msgPreview = (m) => m.kind === 'VOICE' ? '🎤 Голосовое сообщение' : m.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : m.kind === 'IMAGE' ? '📷 Фото' : m.kind === 'VIDEO' ? '🎬 Видео' : m.kind === 'FILE' ? '📎 ' + (m.fileName || 'Файл') : m.text;
 
 // Новое сообщение (по сокету): своё с другого устройства, либо от собеседника
 function onIncomingMessage(m) {
@@ -3228,22 +3244,6 @@ async function startChatWithUser(username) {
   } catch (e) { showToast(MchatAPI.errorText(e)); }
 }
 
-function startVoiceCall() {
-  const name = document.getElementById('chat-name').textContent;
-  document.getElementById('call-name').textContent = name;
-  document.getElementById('call-type').textContent = 'Голосовой звонок';
-  document.getElementById('call-status').textContent = 'Вызов...';
-  document.getElementById('call-sheet').classList.add('active');
-  setTimeout(()=>{ const s=document.getElementById('call-status'); if(s) s.textContent='Соединение...'; },2000);
-}
-function startVideoCall() {
-  const name = document.getElementById('chat-name').textContent;
-  document.getElementById('call-name').textContent = name;
-  document.getElementById('call-type').textContent = 'Видеозвонок';
-  document.getElementById('call-status').textContent = 'Вызов...';
-  document.getElementById('call-sheet').classList.add('active');
-}
-function endCall() { document.getElementById('call-sheet').classList.remove('active'); }
 
 function openChatSheet() { document.getElementById('chat-sheet').classList.add('active'); }
 function closeChatSheet() { document.getElementById('chat-sheet').classList.remove('active'); }
@@ -4776,6 +4776,52 @@ async function mxDeleteTrack(id) {
     try { await MchatAPI.deleteMedia(id); if (currentProfileTab === 'tracks') renderProfileTracksTab(); }
     catch (e) { showToast(MchatAPI.errorText(e)); }
   });
+}
+
+// ============================================================
+// ВЛОЖЕНИЯ: фото, видео, документы (скрепка)
+// ============================================================
+const MX_ATTACH_LIMIT_MB = { image: 10, video: 40, file: 25 };
+const MX_ATTACH_KIND = { image: 'IMAGE', video: 'VIDEO', file: 'FILE' };
+function mxAttachOpen() {
+  if (!currentChatId) return;
+  document.getElementById('mx-file-input').click();
+}
+function mxKindOfFile(f) {
+  const t = (f.type || '').toLowerCase();
+  if (/^image\/(jpeg|png|webp|gif)$/.test(t)) return 'image';
+  if (/^video\/(mp4|webm|quicktime)$/.test(t)) return 'video';
+  return 'file'; // всё остальное уходит документом
+}
+async function mxAttachChosen(evt) {
+  const files = Array.from(evt.target.files || []).slice(0, 10);
+  evt.target.value = '';
+  const chatId = currentChatId;
+  if (!files.length || !chatId) return;
+  for (const f of files) await mxSendAttachment(chatId, f);
+}
+function mxUpdateProgress(id, pct) {
+  const bar = document.querySelector('.msg[data-id="' + id + '"] .mx-upbar i');
+  if (bar) bar.style.width = pct + '%';
+}
+async function mxSendAttachment(chatId, file) {
+  const kind = mxKindOfFile(file);
+  if (file.size > MX_ATTACH_LIMIT_MB[kind] * 1024 * 1024) { showToast('«' + file.name + '» больше ' + MX_ATTACH_LIMIT_MB[kind] + ' МБ'); return; }
+  const clientId = MchatAPI.newClientId();
+  const local = { id: clientId, clientId, chatId, kind: MX_ATTACH_KIND[kind], text: '', fileName: file.name, fileSize: file.size,
+    mediaUrl: kind === 'image' ? URL.createObjectURL(file) : '', reactions: [], time: fmtClock(new Date().toISOString()),
+    outgoing: true, pending: true, progress: 0 };
+  (messages[chatId] = messages[chatId] || []).push(local);
+  if (currentChatId === chatId) renderMessages(chatId);
+  try {
+    const media = await MchatAPI.uploadMedia(kind, file, { name: file.name, onProgress: (p) => { local.progress = p; mxUpdateProgress(clientId, p); } });
+    const saved = await MchatAPI.sendMessage(chatId, '', clientId, { kind: MX_ATTACH_KIND[kind], mediaId: media.id });
+    onIncomingMessage(saved); // склеится с заглушкой по clientId
+  } catch (e) {
+    messages[chatId] = (messages[chatId] || []).filter((x) => x !== local);
+    if (currentChatId === chatId) renderMessages(chatId);
+    showToast(MchatAPI.errorText(e));
+  }
 }
 
 init();
