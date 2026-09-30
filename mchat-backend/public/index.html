@@ -9,7 +9,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#18181f">
 <meta name="mobile-web-app-capable" content="yes">
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -30,7 +30,7 @@
   <button class="btn-login" id="code-btn" onclick="submitLoginCode()" type="button">Подтвердить</button>
   <div class="auth-err" id="code-err"></div>
   <div id="code-email-row" style="text-align:center;margin-top:14px;font-size:13px;display:none">
-    <button onclick="sendCodeByEmail()" style="background:none;border:none;color:var(--accent);cursor:pointer;text-decoration:underline;font-family:'DM Sans',sans-serif;font-size:13px;padding:0">Нет доступа к устройствам? Отправить код на почту</button>
+    <button onclick="sendCodeByEmail()" style="background:none;border:none;color:var(--accent);cursor:pointer;text-decoration:underline;font-family:var(--font);font-size:13px;padding:0">Нет доступа к устройствам? Отправить код на почту</button>
   </div>
 </div>
 </div>
@@ -366,6 +366,62 @@
   </div>
 </div>
 
+<div class="overlay" id="story-creator" style="flex-direction:column;background:#000">
+  <div id="sc-preview" style="flex:1;position:relative;overflow:hidden;background:linear-gradient(135deg,#4a4af0,#7c3aed)">
+    <video id="sc-camera" autoplay muted playsinline style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></video>
+    <img id="sc-preview-img" alt="" style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
+    <video id="sc-preview-vid" autoplay loop playsinline style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></video>
+    <div onclick="scTapZoneClick(event)" style="position:absolute;inset:0;z-index:4"></div>
+    <div id="sc-hint" style="position:absolute;left:0;right:0;top:45%;text-align:center;color:rgba(255,255,255,.75);font-size:16px;pointer-events:none;z-index:5;display:none">Нажми, чтобы добавить текст</div>
+    <div id="sc-drag-text" style="display:none;position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);z-index:6;color:#fff;font-size:26px;font-weight:700;text-align:center;max-width:86%;text-shadow:0 2px 12px rgba(0,0,0,.5);cursor:grab"></div>
+    <div style="position:absolute;top:0;left:0;right:0;padding:max(50px,env(safe-area-inset-top)) 14px 0;display:flex;align-items:center;gap:10px;z-index:10">
+      <button onclick="closeStoryCreator()" title="Закрыть" style="background:rgba(0,0,0,.4);border:none;color:#fff;cursor:pointer;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      <div id="sc-rec-badge" style="display:none;align-items:center;gap:6px;background:rgba(244,63,94,.9);color:#fff;border-radius:14px;padding:5px 10px;font-size:12px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:#fff"></span><span id="sc-rec-secs">0s / 20s</span></div>
+      <div style="flex:1"></div>
+      <button id="sc-bg-btn" onclick="scPickBg()" title="Сменить фон" style="background:rgba(0,0,0,.4);border:none;color:#fff;cursor:pointer;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18" opacity=".0"/><path d="M12 3a9 9 0 000 18z" fill="currentColor"/></svg></button>
+      <button onclick="scFocusText()" title="Текст" style="background:rgba(0,0,0,.4);border:none;color:#fff;cursor:pointer;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;font-size:15px">Aa</button>
+      <button onclick="scPickMedia()" title="Галерея" style="background:rgba(0,0,0,.4);border:none;color:#fff;cursor:pointer;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></button>
+    </div>
+    <div id="sc-cam-controls" style="display:none;position:absolute;left:0;right:0;bottom:max(28px,env(safe-area-inset-bottom));align-items:center;justify-content:center;gap:34px;z-index:10">
+      <button onclick="scExitCamera()" title="Без камеры" style="background:rgba(0,0,0,.4);border:none;color:#fff;cursor:pointer;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;width:46px;height:46px">Aa</button>
+      <div style="position:relative;width:76px;height:76px;touch-action:none;user-select:none" onmousedown="scStartRecord(event)" onmouseup="scStopRecord()" onmouseleave="scStopRecord()" ontouchstart="scStartRecord(event)" ontouchend="scStopRecord()">
+        <svg width="76" height="76" viewBox="0 0 76 76" style="position:absolute;inset:0;transform:rotate(-90deg)"><circle cx="38" cy="38" r="34" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="4"/><circle id="sc-rec-ring" cx="38" cy="38" r="34" fill="none" stroke="#f43f5e" stroke-width="4" stroke-linecap="round" stroke-dasharray="213.6" stroke-dashoffset="213.6"/></svg>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><div id="sc-record-inner" style="width:28px;height:28px;border-radius:50%;background:#fff;transition:all .15s"></div></div>
+      </div>
+      <button onclick="scFlipCamera()" title="Перевернуть камеру" style="background:rgba(0,0,0,.4);border:none;color:#fff;cursor:pointer;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;width:46px;height:46px"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 01-15.5 6.2M3 12A9 9 0 0118.5 5.8"/><polyline points="21 4 21 9 16 9"/><polyline points="3 20 3 15 8 15"/></svg></button>
+    </div>
+    <div id="sc-text-editor" style="display:none;position:absolute;left:0;right:0;bottom:0;z-index:12;background:rgba(0,0,0,.78);backdrop-filter:blur(12px);padding:12px 14px calc(14px + env(safe-area-inset-bottom))">
+      <textarea id="sc-text" rows="2" maxlength="200" oninput="scUpdateText()" placeholder="Введи текст..." style="width:100%;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:10px 14px;color:#fff;font-family:var(--font);font-size:16px;resize:none;outline:none"></textarea>
+      <div style="display:flex;gap:10px;margin-top:10px">
+        <button onclick="scToggleStylePanel()" class="sc-font-btn">Стиль</button>
+        <div style="flex:1"></div>
+        <button onclick="scConfirmText()" style="background:var(--accent);border:none;color:#fff;border-radius:20px;padding:8px 20px;font-family:var(--font);font-size:14px;font-weight:600;cursor:pointer">Готово</button>
+      </div>
+      <div id="sc-style-panel" style="display:none;margin-top:12px">
+        <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:10px">
+          <div class="sc-color-dot sel" style="background:#ffffff" onclick="scSetColor('#ffffff')"></div>
+          <div class="sc-color-dot" style="background:#000000" onclick="scSetColor('#000000')"></div>
+          <div class="sc-color-dot" style="background:#f43f5e" onclick="scSetColor('#f43f5e')"></div>
+          <div class="sc-color-dot" style="background:#f59e0b" onclick="scSetColor('#f59e0b')"></div>
+          <div class="sc-color-dot" style="background:#10b981" onclick="scSetColor('#10b981')"></div>
+          <div class="sc-color-dot" style="background:#06b6d4" onclick="scSetColor('#06b6d4')"></div>
+          <div class="sc-color-dot" style="background:#6c6cf5" onclick="scSetColor('#6c6cf5')"></div>
+        </div>
+        <div style="display:flex;gap:8px;overflow-x:auto">
+          <button class="sc-font-btn sel" onclick="scSetFont('Syne')">Обычный</button>
+          <button class="sc-font-btn" style="font-family:Georgia,serif" onclick="scSetFont('Georgia, serif')">Serif</button>
+          <button class="sc-font-btn" style="font-family:'Courier New',monospace" onclick="scSetFont('Courier New, monospace')">Mono</button>
+          <button class="sc-font-btn" style="font-style:italic" onclick="scSetFont('Georgia, serif')">Курсив</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="sc-bottom" style="display:none;background:rgba(0,0,0,.7);padding:12px 16px calc(16px + env(safe-area-inset-bottom));flex-shrink:0">
+    <button id="sc-publish-btn" onclick="publishStory()" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:50px;padding:15px;font-family:var(--font);font-size:16px;font-weight:700;cursor:pointer">Опубликовать историю</button>
+  </div>
+  <input type="file" id="sc-media-input" accept="image/*,video/*" style="display:none" onchange="scMediaChosen(event)">
+</div>
+
 <div class="overlay" id="story-viewer" style="flex-direction:column;background:#000">
   <div style="flex:1;position:relative;overflow:hidden" id="sv-bg">
     <div id="sv-content" style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center"></div>
@@ -385,7 +441,7 @@
   <div style="background:rgba(0,0,0,.7);padding:10px 14px 28px;flex-shrink:0;backdrop-filter:blur(12px)">
     <div id="sv-comments-list" style="max-height:80px;overflow:hidden;margin-bottom:8px;display:flex;flex-direction:column;gap:4px"></div>
     <div style="display:flex;align-items:center;gap:10px">
-      <input id="sv-comment-input" placeholder="Написать реакцию..." style="flex:1;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);border-radius:22px;padding:10px 16px;color:#fff;font-family:'DM Sans',sans-serif;font-size:14px;outline:none" onkeydown="if(event.key==='Enter')svSendComment()">
+      <input id="sv-comment-input" placeholder="Написать реакцию..." style="flex:1;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);border-radius:22px;padding:10px 16px;color:#fff;font-family:var(--font);font-size:14px;outline:none" onkeydown="if(event.key==='Enter')svSendComment()">
       <button id="sv-like-btn" onclick="svToggleLike()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;flex-direction:column;gap:2px;flex-shrink:0">
         <svg id="sv-like-ico" width="28" height="28" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
         <span id="sv-like-count" style="color:#fff;font-size:11px">0</span>
@@ -404,7 +460,7 @@
 <div class="sheet" id="chat-sheet" onclick="if(event.target===this)closeChatSheet()">
   <div class="sheet-body">
     <div style="width:36px;height:4px;background:var(--surf2);border-radius:4px;margin:0 auto 18px"></div>
-    <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:800;margin-bottom:14px">Сообщения</div>
+    <div style="font-family:var(--font);font-size:18px;font-weight:800;margin-bottom:14px">Сообщения</div>
     <div onclick="closeChatSheet();goTo('s-chats')" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surf);border-radius:16px;cursor:pointer;margin-bottom:8px">
       <div style="width:42px;height:42px;border-radius:12px;background:var(--accent);display:flex;align-items:center;justify-content:center"><svg width="20" height="20" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
       <div><div style="font-weight:600;font-size:15px">Чаты</div><div style="font-size:12px;color:var(--text2)">Личные сообщения</div></div>
@@ -415,14 +471,14 @@
       <div><div style="font-weight:600;font-size:15px">Mchat</div><div style="font-size:12px;color:var(--text2)">Новости и обновления</div></div>
       <svg style="margin-left:auto;color:var(--text2)" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
     </div>
-    <button onclick="closeChatSheet()" style="width:100%;padding:13px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:'DM Sans',sans-serif;font-size:15px;cursor:pointer">Отмена</button>
+    <button onclick="closeChatSheet()" style="width:100%;padding:13px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:var(--font);font-size:15px;cursor:pointer">Отмена</button>
   </div>
 </div>
 
 <div class="sheet" id="post-media-sheet" onclick="if(event.target===this)closePostMediaSheet()">
   <div class="sheet-body">
     <div style="width:36px;height:4px;background:var(--surf2);border-radius:4px;margin:0 auto 18px"></div>
-    <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:14px">Добавить в пост</div>
+    <div style="font-family:var(--font);font-size:17px;font-weight:800;margin-bottom:14px">Добавить в пост</div>
     <div onclick="pickPostPhoto()" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surf);border-radius:16px;cursor:pointer;margin-bottom:8px">
       <div style="width:42px;height:42px;border-radius:12px;background:#3b82f618;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" fill="none" stroke="#3b82f6" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg></div>
       <div><div style="font-weight:600;font-size:15px">Фото из галереи</div><div style="font-size:12px;color:var(--text2)">Выбрать из галереи</div></div>
@@ -431,7 +487,7 @@
       <div style="width:42px;height:42px;border-radius:12px;background:#f43f5e18;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" fill="none" stroke="#f43f5e" stroke-width="2" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div>
       <div><div style="font-weight:600;font-size:15px">Видео</div><div style="font-size:12px;color:var(--text2)">Выбрать видео</div></div>
     </div>
-    <button onclick="closePostMediaSheet()" style="width:100%;padding:13px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:'DM Sans',sans-serif;font-size:15px;cursor:pointer">Отмена</button>
+    <button onclick="closePostMediaSheet()" style="width:100%;padding:13px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:var(--font);font-size:15px;cursor:pointer">Отмена</button>
     <input type="file" id="post-photo-input" accept="image/*" style="display:none" onchange="postPhotoChosen(event)">
     <input type="file" id="post-video-input" accept="video/*" style="display:none" onchange="postVideoChosen(event)">
   </div>
@@ -455,7 +511,7 @@
     <div id="name-warning" style="font-size:11px;color:#f59e0b;margin-bottom:8px;display:none;align-items:center;gap:4px"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg> Имя можно менять раз в 7 дней</div>
     <input class="minput" type="text" id="edit-username" placeholder="@username" readonly style="opacity:.5" title="Username нельзя менять">
     <textarea class="mtextarea" id="edit-bio" placeholder="О себе"></textarea>
-    <button id="verify-request-btn" style="width:100%;padding:12px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer;margin-bottom:12px">Запросить верификацию</button>
+    <button id="verify-request-btn" style="width:100%;padding:12px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:var(--font);font-size:14px;cursor:pointer;margin-bottom:12px">Запросить верификацию</button>
     <div class="edit-tracks-section" id="edit-tracks-section" style="display:none">
       <div class="edit-tracks-label">Закреплённые треки</div>
       <div class="edit-tracks-list" id="edit-tracks-list"></div>
@@ -547,10 +603,10 @@
 <div class="sheet" id="reels-comments-sheet" onclick="if(event.target===this)closeReelsComments()">
   <div class="sheet-body" style="display:flex;flex-direction:column;max-height:80vh">
     <div style="width:36px;height:4px;background:var(--surf2);border-radius:4px;margin:0 auto 14px"></div>
-    <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:12px">Комментарии</div>
+    <div style="font-family:var(--font);font-size:17px;font-weight:800;margin-bottom:12px">Комментарии</div>
     <div id="reels-comments-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;margin-bottom:12px"></div>
     <div style="display:flex;gap:8px;padding-top:12px;border-top:1px solid var(--border)">
-      <input id="reels-comment-input" placeholder="Комментарий..." style="flex:1;background:var(--surf);border:none;border-radius:20px;padding:10px 14px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;outline:none">
+      <input id="reels-comment-input" placeholder="Комментарий..." style="flex:1;background:var(--surf);border:none;border-radius:20px;padding:10px 14px;color:var(--text);font-family:var(--font);font-size:14px;outline:none">
       <button onclick="reelsSendComment()" style="width:40px;height:40px;border-radius:50%;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
       </button>
@@ -561,7 +617,7 @@
 <div class="modal" id="post-creator-modal" onclick="if(event.target===this)closePostCreator()">
   <div style="background:var(--bg);border-radius:28px;width:90%;max-width:380px;display:flex;flex-direction:column;max-height:88vh;overflow:hidden">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px;border-bottom:1px solid var(--border)">
-      <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800">Новый пост</div>
+      <div style="font-family:var(--font);font-size:17px;font-weight:800">Новый пост</div>
       <button onclick="closePostCreator()" style="background:none;border:none;color:var(--text2);cursor:pointer;width:32px;height:32px;display:flex;align-items:center;justify-content:center">
         <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
@@ -601,7 +657,7 @@
           </div>
         </div>
       </div>
-      <textarea id="pc-caption" placeholder="Напиши описание... #хэштег" style="background:var(--surf);border:none;border-radius:14px;padding:12px 14px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;min-height:90px;outline:none;resize:none" oninput="pcHighlightHashtags(this)"></textarea>
+      <textarea id="pc-caption" placeholder="Напиши описание... #хэштег" style="background:var(--surf);border:none;border-radius:14px;padding:12px 14px;color:var(--text);font-family:var(--font);font-size:14px;min-height:90px;outline:none;resize:none" oninput="pcHighlightHashtags(this)"></textarea>
       <div id="pc-hashtag-row" style="display:none;overflow-x:auto;padding-bottom:2px">
         <div style="display:flex;gap:6px;width:max-content">
           <button onclick="pcAddTag('#рилс')" style="background:var(--surf);border:none;border-radius:20px;color:var(--accent);font-size:12px;padding:5px 12px;cursor:pointer;font-weight:600">#рилс</button>
@@ -623,8 +679,8 @@
       </div>
     </div>
     <div style="display:flex;gap:8px;padding:14px;border-top:1px solid var(--border);background:var(--bg2)">
-      <button onclick="closePostCreator()" style="flex:1;padding:12px;border-radius:14px;border:none;background:var(--surf);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer">Отмена</button>
-      <button id="pc-submit-btn" onclick="pcPublishPost()" style="flex:1;padding:12px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer">Опубликовать</button>
+      <button onclick="closePostCreator()" style="flex:1;padding:12px;border-radius:14px;border:none;background:var(--surf);color:var(--text);font-family:var(--font);font-size:14px;cursor:pointer">Отмена</button>
+      <button id="pc-submit-btn" onclick="pcPublishPost()" style="flex:1;padding:12px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:var(--font);font-size:14px;font-weight:600;cursor:pointer">Опубликовать</button>
     </div>
   </div>
 </div>
@@ -652,7 +708,7 @@
     <div id="pv-comments" style="padding:12px 16px;display:flex;flex-direction:column;gap:10px"></div>
   </div>
   <div style="display:flex;gap:10px;padding:10px 16px 28px;border-top:1px solid var(--border);background:var(--bg2);flex-shrink:0">
-    <input id="pv-comment-input" placeholder="Написать комментарий..." style="flex:1;background:var(--surf);border:none;border-radius:22px;padding:10px 16px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;outline:none" onkeydown="if(event.key==='Enter')pvSendComment()">
+    <input id="pv-comment-input" placeholder="Написать комментарий..." style="flex:1;background:var(--surf);border:none;border-radius:22px;padding:10px 16px;color:var(--text);font-family:var(--font);font-size:14px;outline:none" onkeydown="if(event.key==='Enter')pvSendComment()">
     <button onclick="pvSendComment()" style="width:40px;height:40px;border-radius:50%;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0">
       <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
     </button>
@@ -667,7 +723,7 @@
   <div style="flex:1;overflow-y:auto">
     <div style="padding:20px 16px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">
       <div id="up-avatar" onclick="mxOpenUserAvatar()" style="cursor:pointer;width:76px;height:76px;border-radius:50%;background:var(--surf2);overflow:hidden;display:flex;align-items:center;justify-content:center;margin-bottom:10px"><svg width="34" height="34" fill="none" stroke="var(--text2)" stroke-width="1.2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
-      <div id="up-name" style="font-family:'Syne',sans-serif;font-weight:800;font-size:18px;display:flex;align-items:center;gap:4px;justify-content:center">Пользователь</div>
+      <div id="up-name" style="font-family:var(--font);font-weight:800;font-size:18px;display:flex;align-items:center;gap:4px;justify-content:center">Пользователь</div>
       <div id="up-username" style="font-size:13px;color:var(--text2);margin-bottom:4px">@username</div>
       <div id="up-status" class="mx-up-status"></div>
       <div id="up-bio" style="font-size:13px;color:var(--text);line-height:1.5;max-width:280px;margin-bottom:14px"></div>
@@ -676,7 +732,7 @@
         <div class="pstat"><span class="psnum" id="up-reposts-count">0</span><span class="pslbl">Репосты</span></div>
       </div>
       <div class="mx-up-actions">
-      <button onclick="const _u=upViewedUsername;closeUserProfile();startChatWithUser(_u)" style="padding:9px 22px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px">
+      <button onclick="const _u=upViewedUsername;closeUserProfile();startChatWithUser(_u)" style="padding:9px 22px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px">
         <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
         Написать
       </button>

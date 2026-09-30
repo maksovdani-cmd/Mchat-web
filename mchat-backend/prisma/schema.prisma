@@ -159,6 +159,8 @@ model ChatMember {
   role       MemberRole @default(MEMBER)
   joinedAt   DateTime @default(now())
   lastReadAt DateTime @default(now())
+  /// личный фон чата: preset:N | media:<id картинки> | avatar (фото из профиля)
+  background String?
 
   @@id([chatId, userId])
   @@index([userId])

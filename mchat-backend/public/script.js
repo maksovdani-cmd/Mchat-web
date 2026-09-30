@@ -262,13 +262,13 @@ function openSearch() {
   m.style.zIndex = '800';
   m.onclick = e => { if(e.target===m) m.remove(); };
   m.innerHTML = `<div style="background:var(--bg);border-radius:28px;width:340px;max-width:92vw;padding:20px;display:flex;flex-direction:column;gap:12px">
-    <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:4px">Поиск</div>
+    <div style="font-family:var(--font);font-size:17px;font-weight:800;margin-bottom:4px">Поиск</div>
     <div style="display:flex;align-items:center;background:var(--surf);border-radius:14px;padding:10px 14px;gap:8px">
       <svg width="16" height="16" fill="none" stroke="var(--text2)" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-      <input id="search-input" placeholder="Поиск постов и пользователей..." style="background:none;border:none;outline:none;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;flex:1" oninput="runSearch()" autofocus>
+      <input id="search-input" placeholder="Поиск постов и пользователей..." style="background:none;border:none;outline:none;color:var(--text);font-family:var(--font);font-size:14px;flex:1" oninput="runSearch()" autofocus>
     </div>
     <div id="search-results" style="display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto"></div>
-    <button onclick="this.closest('.modal').remove()" style="padding:12px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer">Закрыть</button>
+    <button onclick="this.closest('.modal').remove()" style="padding:12px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:var(--font);font-size:14px;cursor:pointer">Закрыть</button>
   </div>`;
   document.getElementById('app').appendChild(m);
   setTimeout(()=>{ const inp=document.getElementById('search-input'); if(inp) inp.focus(); },100);
@@ -327,9 +327,9 @@ function openNotifications() {
     ? '<div style="color:var(--text2);font-size:13px;text-align:center;padding:20px">Уведомлений пока нет</div>'
     : notifs.slice(-20).reverse().map(n=>`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surf);border-radius:12px"><div style="width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0"></div><div style="font-size:13px;flex:1">${n.text}</div><div style="font-size:10px;color:var(--text2)">${n.time}</div></div>`).join('');
   m.innerHTML = `<div style="background:var(--bg);border-radius:28px;width:340px;max-width:92vw;padding:20px;display:flex;flex-direction:column;gap:12px">
-    <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800">Уведомления</div>${notifs.length>0?`<button onclick="localStorage.removeItem('mchat_notifs');this.closest('.modal').remove();showToast('Очищено')" style="background:none;border:none;color:var(--text2);font-size:12px;cursor:pointer">Очистить</button>`:''}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-family:var(--font);font-size:17px;font-weight:800">Уведомления</div>${notifs.length>0?`<button onclick="localStorage.removeItem('mchat_notifs');this.closest('.modal').remove();showToast('Очищено')" style="background:none;border:none;color:var(--text2);font-size:12px;cursor:pointer">Очистить</button>`:''}</div>
     <div style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto">${html}</div>
-    <button onclick="this.closest('.modal').remove()" style="padding:12px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer">Закрыть</button>
+    <button onclick="this.closest('.modal').remove()" style="padding:12px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:var(--font);font-size:14px;cursor:pointer">Закрыть</button>
   </div>`;
   document.getElementById('app').appendChild(m);
 }
@@ -352,12 +352,12 @@ function openPrivacySettings() {
     <button class="tgl ${val?'on':''}" id="priv-${key}" onclick="togglePrivacy('${key}',this)"></button>
   </div>`;
   m.innerHTML = `<div style="background:var(--bg);border-radius:28px;width:340px;max-width:92vw;padding:20px;display:flex;flex-direction:column;gap:10px">
-    <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:4px">Конфиденциальность</div>
+    <div style="font-family:var(--font);font-size:17px;font-weight:800;margin-bottom:4px">Конфиденциальность</div>
     ${tog('privateAccount','Закрытый аккаунт',saved.privateAccount)}
     ${tog('hideOnline','Скрыть статус «онлайн»',saved.hideOnline)}
     ${tog('hideRead','Скрыть прочитанность',saved.hideRead)}
     ${tog('hidePosts','Скрыть посты от чужих',saved.hidePosts)}
-    <button onclick="this.closest('.modal').remove();showToast('Настройки сохранены')" style="padding:13px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:'Syne',sans-serif;font-size:15px;font-weight:700;cursor:pointer;margin-top:4px">Сохранить</button>
+    <button onclick="this.closest('.modal').remove();showToast('Настройки сохранены')" style="padding:13px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:var(--font);font-size:15px;font-weight:700;cursor:pointer;margin-top:4px">Сохранить</button>
   </div>`;
   document.getElementById('app').appendChild(m);
 }
@@ -384,12 +384,12 @@ function openNotificationSettings() {
     <button class="tgl ${val?'on':''}" id="ns-${key}" onclick="toggleNotifSetting('${key}',this)"></button>
   </div>`;
   m.innerHTML = `<div style="background:var(--bg);border-radius:28px;width:340px;max-width:92vw;padding:20px;display:flex;flex-direction:column;gap:10px">
-    <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:4px">Уведомления</div>
+    <div style="font-family:var(--font);font-size:17px;font-weight:800;margin-bottom:4px">Уведомления</div>
     ${tog('messages','Сообщения',saved.messages)}
     ${tog('likes','Лайки',saved.likes)}
     ${tog('comments','Комментарии',saved.comments)}
     ${tog('stories','Истории',saved.stories)}
-    <button onclick="this.closest('.modal').remove();showToast('Настройки сохранены')" style="padding:13px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:'Syne',sans-serif;font-size:15px;font-weight:700;cursor:pointer;margin-top:4px">Сохранить</button>
+    <button onclick="this.closest('.modal').remove();showToast('Настройки сохранены')" style="padding:13px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:var(--font);font-size:15px;font-weight:700;cursor:pointer;margin-top:4px">Сохранить</button>
   </div>`;
   document.getElementById('app').appendChild(m);
 }
@@ -610,6 +610,7 @@ function bindRealtimeHandlers() {
   h.onLoginCode = showLoginCodeModal;
   h.onNewDevice = (d) => showToast('Новый вход в аккаунт: ' + (d && d.label ? d.label : 'устройство'));
   h.onUnauthorized = () => { resetSessionState(); goTo('s-login'); showToast('Сессия завершена. Войди снова'); };
+  h.onChatChanged = () => { refreshChats().then(mxApplyChatBackground); };
   h.onReconnect = () => { refreshChats(); if (currentChatId) loadChatHistory(currentChatId); };
   h.onOpenChat = openChatById;
 }
@@ -717,9 +718,9 @@ function showLoginCodeModal(d) {
   m.innerHTML = `<div class="modal-box" style="text-align:center">
     <h3>Вход с нового устройства</h3>
     <div style="font-size:13px;color:var(--text2);margin-bottom:6px">${esc(d.label)}</div>
-    <div style="font-family:'Syne',sans-serif;font-size:36px;font-weight:800;letter-spacing:8px;margin:10px 0 14px">${esc(d.code)}</div>
+    <div style="font-family:var(--font);font-size:36px;font-weight:800;letter-spacing:8px;margin:10px 0 14px">${esc(d.code)}</div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.5">Введи этот код на новом устройстве. Если это не ты — никому не сообщай код.</div>
-    <button onclick="this.closest('.modal').remove()" style="width:100%;padding:12px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:'Syne',sans-serif;font-size:15px;font-weight:700;cursor:pointer">Понятно</button>
+    <button onclick="this.closest('.modal').remove()" style="width:100%;padding:12px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:var(--font);font-size:15px;font-weight:700;cursor:pointer">Понятно</button>
   </div>`;
   document.getElementById('app').appendChild(m);
 }
@@ -875,7 +876,7 @@ function setupAvatarCropper(imageUrl) {
   m.onclick = (e) => { if(e.target === m) m.remove(); };
   m.innerHTML = `<div class="modal-box" style="width:380px;max-width:90vw;padding:0">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px;border-bottom:1px solid var(--border)">
-      <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800">Кадрировать аватар</div>
+      <div style="font-family:var(--font);font-size:17px;font-weight:800">Кадрировать аватар</div>
       <button onclick="this.closest('.modal').remove()" style="background:none;border:none;color:var(--text2);cursor:pointer;width:32px;height:32px;display:flex;align-items:center;justify-content:center">
         <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
@@ -890,8 +891,8 @@ function setupAvatarCropper(imageUrl) {
       </div>
     </div>
     <div style="display:flex;gap:8px;padding:14px;border-top:1px solid var(--border);background:var(--bg2)">
-      <button onclick="this.closest('.modal').remove()" style="flex:1;padding:12px;border-radius:14px;border:none;background:var(--surf);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer">Отмена</button>
-      <button onclick="applyAvatarCrop()" style="flex:1;padding:12px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer">Применить</button>
+      <button onclick="this.closest('.modal').remove()" style="flex:1;padding:12px;border-radius:14px;border:none;background:var(--surf);color:var(--text);font-family:var(--font);font-size:14px;cursor:pointer">Отмена</button>
+      <button onclick="applyAvatarCrop()" style="flex:1;padding:12px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:var(--font);font-size:14px;font-weight:600;cursor:pointer">Применить</button>
     </div>
   </div>`;
   document.getElementById('app').appendChild(m);
@@ -1197,7 +1198,7 @@ function _openStoryViewer() {
     : story.text ? [{text:story.text, color:story.textColor||'#fff', font:story.textFont||'Syne', left:story.textLeft||'50%', top:story.textTop||'45%', fontSize:26}]
     : [];
   blocksToRender.forEach(blk => {
-    const fontFamily = blk.font === 'Syne' ? "'Syne',sans-serif" : blk.font === 'DM Sans' ? "'DM Sans',sans-serif" : (blk.font || "'Syne',sans-serif");
+    const fontFamily = blk.font === 'Syne' ? "var(--font)" : blk.font === 'DM Sans' ? "var(--font)" : (blk.font || "var(--font)");
     const textEl = document.createElement('div');
     textEl.className = 'sv-text-overlay';
     textEl.style.cssText = `position:absolute;left:${blk.left||'50%'};top:${blk.top||'45%'};transform:translate(-50%,-50%);color:${blk.color||'#fff'};font-size:${blk.fontSize||26}px;font-weight:700;font-family:${fontFamily};text-align:center;padding:8px 14px;text-shadow:0 2px 16px rgba(0,0,0,.5);word-break:break-word;max-width:85%;z-index:5;pointer-events:none;border-radius:8px`;
@@ -1353,7 +1354,7 @@ function showConfirm(message, onYes) {
   m.style.zIndex = '900';
   m.innerHTML = `<div class="modal-box" style="text-align:center">
     <div style="font-size:22px;margin-bottom:10px"><svg width="28" height="28" fill="none" stroke="#f43f5e" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-    <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:6px">${message}</div>
+    <div style="font-family:var(--font);font-size:16px;font-weight:700;margin-bottom:6px">${message}</div>
     <div style="font-size:13px;color:var(--text2);margin-bottom:20px">Это действие нельзя отменить</div>
     <div class="mbtns">
       <button class="mbtn-cancel" id="confirm-no" onclick="this.closest('.modal').remove()">Нет</button>
@@ -1371,9 +1372,9 @@ function confirmDeleteAccount() {
   let countdown = 5;
   m.innerHTML = `<div class="modal-box" style="text-align:center">
     <div style="font-size:22px;margin-bottom:10px"><svg width="28" height="28" fill="none" stroke="#f43f5e" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-    <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:6px">Удалить аккаунт?</div>
+    <div style="font-family:var(--font);font-size:16px;font-weight:700;margin-bottom:6px">Удалить аккаунт?</div>
     <div style="font-size:13px;color:var(--text2);margin-bottom:6px">Все данные будут удалены навсегда</div>
-    <div id="da-countdown" style="font-size:28px;font-weight:800;font-family:'Syne',sans-serif;color:#f43f5e;margin:14px 0">${countdown}</div>
+    <div id="da-countdown" style="font-size:28px;font-weight:800;font-family:var(--font);color:#f43f5e;margin:14px 0">${countdown}</div>
     <div class="mbtns">
       <button class="mbtn-cancel" onclick="this.closest('.modal').remove()">Отмена</button>
       <button id="da-confirm-btn" disabled style="flex:1;padding:12px;border-radius:14px;border:none;background:#f43f5e44;color:#f43f5e88;font-weight:600;font-size:14px;cursor:not-allowed">Удалить (${countdown})</button>
@@ -1449,7 +1450,7 @@ function openStoryCreator() {
   document.querySelectorAll('.sc-text-block').forEach(el => el.remove());
   const dt = document.getElementById('sc-drag-text');
   dt.textContent = ''; dt.style.display = 'none'; dt.style.color = '#fff';
-  dt.style.fontFamily = "'Syne',sans-serif"; dt.style.fontSize = '26px';
+  dt.style.fontFamily = "var(--font)"; dt.style.fontSize = '26px';
   dt.style.top = '45%'; dt.style.left = '50%';
   dt.style.transform = 'translate(-50%,-50%)';
   document.getElementById('sc-preview-img').style.display = 'none';
@@ -1682,7 +1683,7 @@ function scUpdateText() {
       dt.textContent = t;
       dt.style.display = 'block';
       dt.style.color = scTextColor;
-      dt.style.fontFamily = scFont === 'Syne' ? "'Syne',sans-serif" : scFont === 'DM Sans' ? "'DM Sans',sans-serif" : scFont;
+      dt.style.fontFamily = scFont === 'Syne' ? "var(--font)" : scFont === 'DM Sans' ? "var(--font)" : scFont;
       document.getElementById('sc-hint').style.display = 'none';
     } else {
       dt.style.display = 'none';
@@ -1704,7 +1705,7 @@ function scConfirmText() {
         const span = block.querySelector('.sc-text-span');
         if (span) {
           span.style.color = scTextColor;
-          const ff = scFont==='Syne'?"'Syne',sans-serif":scFont==='DM Sans'?"'DM Sans',sans-serif":scFont;
+          const ff = scFont==='Syne'?"var(--font)":scFont==='DM Sans'?"var(--font)":scFont;
           span.style.fontFamily = ff;
         }
       }
@@ -1737,7 +1738,7 @@ function scCreateTextBlock(obj) {
   el.style.left = obj.left + '%';
   el.style.top = obj.top + '%';
   el.style.transform = 'translate(-50%,-50%)';
-  const ff = obj.font==='Syne'?"'Syne',sans-serif":obj.font==='DM Sans'?"'DM Sans',sans-serif":obj.font;
+  const ff = obj.font==='Syne'?"var(--font)":obj.font==='DM Sans'?"var(--font)":obj.font;
   el.innerHTML = '<span class="sc-text-span" style="display:block;color:'+obj.color+';font-size:'+(obj.fontSize||26)+'px;font-weight:700;font-family:'+ff+';text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.5);word-break:break-word;max-width:200px;padding:4px 8px;border-radius:6px;">'+obj.text+'</span><button class="sc-text-delete-btn" style="display:none;position:absolute;top:-12px;right:-12px;width:22px;height:22px;border-radius:50%;background:#f43f5e;border:none;color:#fff;font-size:14px;cursor:pointer;z-index:8;align-items:center;justify-content:center;line-height:1">×</button>';
   
   el.querySelector('.sc-text-delete-btn').onclick = (e) => {
@@ -1831,7 +1832,7 @@ function scSetColor(c) {
 function scSetFont(f) {
   scFont = f;
   const dt = document.getElementById('sc-drag-text');
-  const ff = f==='Syne'?"'Syne',sans-serif":f==='DM Sans'?"'DM Sans',sans-serif":f;
+  const ff = f==='Syne'?"var(--font)":f==='DM Sans'?"var(--font)":f;
   dt.style.fontFamily = ff;
   // Обновляем шрифт редактируемого блока
   if (scSelectedTextId !== null) {
@@ -2384,7 +2385,7 @@ function sharePostFromFeed(postId) {
   sheet.onclick = e => { if(e.target===sheet) sheet.remove(); };
   sheet.innerHTML = `<div class="sheet-body">
     <div style="width:36px;height:4px;background:var(--surf2);border-radius:4px;margin:0 auto 16px"></div>
-    <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:14px">Поделиться</div>
+    <div style="font-family:var(--font);font-size:17px;font-weight:800;margin-bottom:14px">Поделиться</div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
       <div onclick="this.closest('.sheet').remove();repostFromFeed(${postId})" style="display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer">
         <div style="width:52px;height:52px;border-radius:16px;background:#4a4af022;display:flex;align-items:center;justify-content:center">
@@ -2405,7 +2406,7 @@ function sharePostFromFeed(postId) {
         <div style="font-size:11px;color:var(--text2)">В чат</div>
       </div>
     </div>
-    <button onclick="this.closest('.sheet').remove()" style="width:100%;padding:13px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:'DM Sans',sans-serif;font-size:15px;cursor:pointer">Отмена</button>
+    <button onclick="this.closest('.sheet').remove()" style="width:100%;padding:13px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:var(--font);font-size:15px;cursor:pointer">Отмена</button>
   </div>`;
   document.getElementById('app').appendChild(sheet);
 }
@@ -2661,7 +2662,7 @@ function reelsShare() {
     sheet.onclick = e => { if(e.target===sheet) sheet.remove(); };
     sheet.innerHTML = `<div class="sheet-body">
       <div style="width:36px;height:4px;background:var(--surf2);border-radius:4px;margin:0 auto 16px"></div>
-      <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:14px">Поделиться</div>
+      <div style="font-family:var(--font);font-size:17px;font-weight:800;margin-bottom:14px">Поделиться</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
         <div onclick="this.closest('.sheet').remove();reelsRepost()" style="display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer">
           <div style="width:52px;height:52px;border-radius:16px;background:#4a4af022;display:flex;align-items:center;justify-content:center">
@@ -2688,7 +2689,7 @@ function reelsShare() {
           <div style="font-size:11px;color:var(--text2)">Скачать</div>
         </div>
       </div>
-      <button onclick="this.closest('.sheet').remove()" style="width:100%;padding:13px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:'DM Sans',sans-serif;font-size:15px;cursor:pointer">Отмена</button>
+      <button onclick="this.closest('.sheet').remove()" style="width:100%;padding:13px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:var(--font);font-size:15px;cursor:pointer">Отмена</button>
     </div>`;
     document.getElementById('app').appendChild(sheet);
   }
@@ -2710,9 +2711,9 @@ function showShareInChat(postId) {
     </div>`).join('');
   sheet.innerHTML = `<div class="sheet-body">
     <div style="width:36px;height:4px;background:var(--surf2);border-radius:4px;margin:0 auto 16px"></div>
-    <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:14px">Отправить в чат</div>
+    <div style="font-family:var(--font);font-size:17px;font-weight:800;margin-bottom:14px">Отправить в чат</div>
     <div style="max-height:280px;overflow-y:auto">${chatHtml}</div>
-    <button onclick="this.closest('.sheet').remove()" style="width:100%;padding:13px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:'DM Sans',sans-serif;font-size:15px;cursor:pointer;margin-top:8px">Отмена</button>
+    <button onclick="this.closest('.sheet').remove()" style="width:100%;padding:13px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:var(--font);font-size:15px;cursor:pointer;margin-top:8px">Отмена</button>
   </div>`;
   document.getElementById('app').appendChild(sheet);
 }
@@ -2965,7 +2966,7 @@ function chatFromServer(c) {
   return {
     id: c.id, type: c.type, name: c.name, description: c.description, avatar: c.avatar, peer: c.peer,
     unread: c.unread || 0, role: c.role, canPost: c.canPost !== false, canModerate: !!c.canModerate,
-    memberCount: c.memberCount || 0, inviteCode: c.inviteCode || null, pinned: c.pinned || null,
+    memberCount: c.memberCount || 0, inviteCode: c.inviteCode || null, pinned: c.pinned || null, background: c.background || null,
     lastMessage: c.lastMessage ? c.lastMessage.text : '',
     time: c.lastMessage ? fmtChatTime(c.lastMessage.createdAt) : '',
     lastMessageAt: c.lastMessageAt
@@ -3046,6 +3047,7 @@ async function openChat(id) {
     ? `<img src="${esc(ch.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">`
     : (ch.type && ch.type !== 'DIRECT' ? `<div class="mx-letter-av${ch.type === 'CHANNEL' ? ' channel' : ''}">${esc((ch.name||'#').charAt(0).toUpperCase())}</div>` : AVATAR_SVG_OPEN);
   updateChatStatus(ch);
+  mxApplyChatBackground();
   renderPinnedBar(ch.pinned || null);
   const inputRow = document.getElementById('mx-input-row');
   const readonlyRow = document.getElementById('mx-readonly');
@@ -3106,7 +3108,7 @@ function bubbleBodyHtml(m) {
   }
   if (m.kind === 'VIDEO_NOTE') {
     return `<div class="mx-vn-wrap" onclick="event.stopPropagation();mxVideoNoteToggle(this)">
-      <video src="${esc(m.mediaUrl||'')}" playsinline muted loop></video>
+      <video src="${esc(m.mediaUrl||'')}" playsinline muted loop preload="metadata" onloadedmetadata="mxFixWebmDuration(this)"></video>
       <div class="mx-vn-ico"><svg width="30" height="30" viewBox="0 0 24 24" fill="#fff"><polygon points="7 4 20 12 7 20 7 4"/></svg></div>
       <div class="mx-vn-dur">${esc(fmtDur(m.durationSec))}</div>
     </div>`;
@@ -3258,7 +3260,7 @@ function openSupport() {
       <div style="margin-top:8px;font-size:14px;color:var(--accent);font-weight:600">admin@mchat.app</div>
     </div>
     <div style="background:var(--surf);border-radius:14px;padding:12px;margin-bottom:16px;text-align:left;font-size:12px;color:var(--text2)">Время ответа: до 24 часов</div>
-    <button onclick="this.closest('.modal').remove()" style="width:100%;padding:12px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:'Syne',sans-serif;font-size:15px;font-weight:700;cursor:pointer">Понятно</button>
+    <button onclick="this.closest('.modal').remove()" style="width:100%;padding:12px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:var(--font);font-size:15px;font-weight:700;cursor:pointer">Понятно</button>
   </div>`;
   document.getElementById('app').appendChild(m);
 }
@@ -4056,6 +4058,96 @@ function mxChatHeaderTap() {
 }
 
 // ============================================================
+// МЕНЮ ЧАТА (три точки) + КАСТОМИЗАЦИЯ ФОНА
+// ============================================================
+const MX_BG_PRESETS = [
+  'linear-gradient(135deg,#4a4af0,#7c3aed)', 'linear-gradient(135deg,#f43f5e,#f97316)',
+  'linear-gradient(135deg,#10b981,#06b6d4)', 'linear-gradient(135deg,#f59e0b,#eab308)',
+  'linear-gradient(135deg,#6366f1,#ec4899)', 'linear-gradient(135deg,#111,#333)'
+];
+function mxBackgroundCss(bg) {
+  if (!bg) return '';
+  const dim = 'linear-gradient(rgba(0,0,0,.38),rgba(0,0,0,.38))';
+  if (bg.type === 'preset') return MX_BG_PRESETS[Number(bg.value)] || '';
+  if (bg.type === 'image' && bg.url) return `${dim},url("${String(bg.url).replace(/"/g, '%22')}") center/cover no-repeat`;
+  if (bg.type === 'avatar' && currentUser && currentUser.avatar) return `${dim},url("${String(currentUser.avatar).replace(/"/g, '%22')}") center/cover no-repeat`;
+  return '';
+}
+function mxApplyChatBackground() {
+  const box = document.getElementById('messages-container');
+  if (!box) return;
+  const ch = chats.find(c => c.id === currentChatId);
+  box.style.background = ch ? mxBackgroundCss(ch.background) : '';
+}
+function mxChatMenu() {
+  if (!currentChatId) return;
+  mxCloseFloating();
+  const items = [
+    mxCtxItem(MX_ICO.edit, 'Изменить чат', 'mxOpenChatCustomize()'),
+    mxCtxItem(MX_ICO.reply, currentChatMeta && currentChatMeta.type === 'DIRECT' ? 'Профиль' : 'О чате', 'mxCloseFloating();mxChatHeaderTap()')
+  ];
+  const scrim = document.createElement('div');
+  scrim.className = 'mx-ctx-scrim';
+  scrim.onclick = mxCloseFloating;
+  const panel = document.createElement('div');
+  panel.className = 'mx-ctx';
+  panel.innerHTML = items.join('');
+  const app = document.getElementById('app');
+  app.appendChild(scrim);
+  app.appendChild(panel);
+  const btn = document.getElementById('mx-chat-menu-btn').getBoundingClientRect();
+  const appR = app.getBoundingClientRect();
+  panel.style.top = (btn.bottom - appR.top + 6) + 'px';
+  panel.style.right = Math.max(8, appR.right - btn.right) + 'px';
+}
+function mxOpenChatCustomize() {
+  mxCloseFloating();
+  const ch = chats.find(c => c.id === currentChatId);
+  if (!ch) return;
+  const sw = 'width:56px;height:56px;border-radius:14px;border:2px solid var(--border);cursor:pointer;flex-shrink:0;';
+  const presets = MX_BG_PRESETS.map((g, i) => `<div style="${sw}background:${g}" onclick="mxSetChatBackground('preset:${i}')"></div>`).join('');
+  const hasAvatar = currentUser && currentUser.avatar;
+  const sheet = document.createElement('div');
+  sheet.className = 'mx-ctx-scrim';
+  sheet.id = 'mx-customize';
+  sheet.style.cssText = 'display:flex;align-items:flex-end;background:rgba(0,0,0,.6)';
+  sheet.onclick = (e) => { if (e.target === sheet) mxCloseCustomize(); };
+  sheet.innerHTML = `<div style="width:100%;background:var(--bg2);border-radius:22px 22px 0 0;padding:18px 16px calc(20px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:14px">
+    <div style="font-weight:700;font-size:17px">Фон чата</div>
+    <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:2px">${presets}</div>
+    ${hasAvatar ? `<button class="mx-cz-btn" onclick="mxSetChatBackground('avatar')">Фото из моего профиля</button>` : ''}
+    <button class="mx-cz-btn" onclick="document.getElementById('mx-bg-file').click()">Загрузить фото</button>
+    <button class="mx-cz-btn" style="color:#f43f5e" onclick="mxSetChatBackground(null)">Сбросить фон</button>
+    <input type="file" id="mx-bg-file" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="mxBackgroundChosen(event)">
+  </div>`;
+  document.getElementById('app').appendChild(sheet);
+}
+function mxCloseCustomize() {
+  const el = document.getElementById('mx-customize');
+  if (el) el.remove();
+}
+async function mxSetChatBackground(value) {
+  const chatId = currentChatId;
+  try {
+    const r = await MchatAPI.setChatBackground(chatId, value);
+    const ch = chats.find(c => c.id === chatId);
+    if (ch) ch.background = r.chat.background || null;
+    mxApplyChatBackground();
+    mxCloseCustomize();
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
+}
+async function mxBackgroundChosen(evt) {
+  const file = evt.target.files && evt.target.files[0];
+  evt.target.value = '';
+  if (!file) return;
+  try {
+    showToast('Загружаю фон…');
+    const media = await MchatAPI.uploadMedia('image', file, {});
+    await mxSetChatBackground('media:' + media.id);
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
+}
+
+// ============================================================
 // ДРУЗЬЯ
 // ============================================================
 const MX_FRIEND_LABEL = { none: 'Добавить в друзья', outgoing: 'Заявка отправлена', incoming: 'Принять заявку', friends: 'В друзьях' };
@@ -4213,7 +4305,7 @@ function mxOpenContextMenu(id, evt) {
   buttons.push(mxCtxItem(MX_ICO.fwd, 'Переслать', `mxForwardMessage('${esc(id)}')`));
   if (mine || canModerate) buttons.push(mxCtxItem(MX_ICO.pin, 'Закрепить', `mxPin('${esc(id)}')`));
   if (mine && msg.kind === 'TEXT') buttons.push(mxCtxItem(MX_ICO.edit, 'Изменить', `mxEditMessage('${esc(id)}')`));
-  if (mine || canModerate) buttons.push(mxCtxItem(MX_ICO.del, 'Удалить', `mxDeleteMessage('${esc(id)}')`, true));
+  buttons.push(mxCtxItem(MX_ICO.del, mine ? 'Удалить у всех' : 'Удалить у меня', `mxDeleteMessage('${esc(id)}')`, true));
   const scrim = document.createElement('div');
   scrim.className = 'mx-ctx-scrim';
   scrim.onclick = mxCloseFloating;
@@ -4265,7 +4357,7 @@ function mxForwardMessage(id) {
   scrim.onclick = (e) => { if (e.target === scrim) scrim.remove(); };
   scrim.innerHTML = `<div class="sheet-body">
     <div style="width:36px;height:4px;background:var(--surf2);border-radius:4px;margin:0 auto 18px"></div>
-    <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:800;margin-bottom:14px">Переслать в…</div>
+    <div style="font-family:var(--font);font-size:18px;font-weight:800;margin-bottom:14px">Переслать в…</div>
     <div style="max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px">
       ${chats.map(ch => `<div class="mx-pick" onclick="mxForwardTo('${esc(id)}','${esc(ch.id)}')">
         <div class="av">${chatAvatarHtml(ch)}</div><div class="nm">${esc(ch.name)}</div>
@@ -4302,10 +4394,14 @@ function mxEditMessage(id) {
 }
 async function mxDeleteMessage(id) {
   mxCloseFloating();
-  showConfirm('Удалить сообщение?', async () => {
+  const chatId = currentChatId;
+  const msg = (messages[chatId] || []).find(m => m.id === id);
+  if (!msg) return;
+  // своё сообщение — у всех (через сокет уйдёт собеседнику), чужое — только из моей ленты
+  const scope = msg.outgoing ? 'all' : 'me';
+  showConfirm(scope === 'all' ? 'Удалить сообщение у всех?' : 'Удалить сообщение только у вас?', async () => {
     try {
-      const chatId = currentChatId;
-      await MchatAPI.deleteMessage(id, 'all');
+      await MchatAPI.deleteMessage(id, scope);
       const list = messages[chatId];
       if (list) { messages[chatId] = list.filter(m => m.id !== id); renderMessages(chatId); }
     } catch (e) { showToast(MchatAPI.errorText(e)); }
@@ -4564,17 +4660,24 @@ function mxVoiceSeek(evt, progEl) {
   const pct = Math.min(1, Math.max(0, (evt.clientX - r.left) / r.width));
   a.currentTime = pct * a.duration;
 }
+// WebM из MediaRecorder приходит без длительности (Infinity) — из-за этого кружок «скачет»/крутится назад.
+// Один раз промотав в конец и вернувшись в начало, браузер узнаёт длительность и играет строго вперёд.
+function mxFixWebmDuration(video) {
+  if (!video || Number.isFinite(video.duration) || video._durFixed) return;
+  video._durFixed = true;
+  const back = () => { video.removeEventListener('timeupdate', back); video.currentTime = 0; };
+  video.addEventListener('timeupdate', back);
+  video.currentTime = 1e101;
+}
 function mxVideoNoteToggle(wrap) {
   const video = wrap.querySelector('video');
   if (!video) return;
-  if (video.paused) { video.muted = false; video.play().catch(()=>{}); wrap.classList.add('playing'); }
-  else { video.pause(); wrap.classList.remove('playing'); }
+  video.defaultPlaybackRate = 1; video.playbackRate = 1; // только вперёд
+  if (video.paused) {
+    if (video.ended) video.currentTime = 0;
+    video.muted = false; video.play().catch(()=>{}); wrap.classList.add('playing');
+  } else { video.pause(); wrap.classList.remove('playing'); }
 }
-
-// ============================================================
-// КАМЕРА: кружок (видеосообщение) и фото
-// ============================================================
-let mxCam = null; // { stream, facing, mode:'circle'|'photo', recorder, chunks, blob, mime, recording, timer, elapsed, photoBlob }
 async function mxCameraOpen() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { showToast('Камера недоступна в этом браузере'); return; }
   mxCam = { facing: 'user', mode: 'circle', chunks: [], blob: null, photoBlob: null, recording: false, elapsed: 0, timer: null };
@@ -4673,7 +4776,7 @@ function mxCameraStopRecording() {
     video.srcObject = null;
     video.classList.remove('mirror'); // превью записи показываем как есть — так его увидит собеседник
     video.src = URL.createObjectURL(mxCam.blob);
-    video.loop = true; video.muted = true; video.play().catch(() => {});
+    video.loop = true; video.muted = true; video.playbackRate = 1; video.onloadedmetadata = () => mxFixWebmDuration(video); video.play().catch(() => {});
     document.getElementById('mx-cam-live').style.display = 'none';
     document.getElementById('mx-cam-review').style.display = 'flex';
     document.getElementById('mx-cam-timer').textContent = '';

@@ -296,6 +296,7 @@
     joinChat: (code) => api('/chats/join', { method: 'POST', body: { code: code } }),
 
     // друзья
+    setChatBackground: (id, background) => api('/chats/' + encodeURIComponent(id) + '/background', { method: 'PUT', body: { background: background } }),
     updateChat: (id, patch) => api('/chats/' + encodeURIComponent(id), { method: 'PATCH', body: patch }),
     chatMembers: (id) => api('/chats/' + encodeURIComponent(id) + '/members'),
     addMembers: (id, userIds) => api('/chats/' + encodeURIComponent(id) + '/members', { method: 'POST', body: { userIds: userIds } }),

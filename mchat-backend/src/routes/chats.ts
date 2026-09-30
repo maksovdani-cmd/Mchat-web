@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
   addMembers, createGroupOrChannel, getChatDTO, getOrCreateDirectChat, joinByInvite, listChats, listMembers, listMessages,
-  removeMember, setMemberRole, updateChatInfo,
+  removeMember, setChatBackground, setMemberRole, updateChatInfo,
 } from '../services/chat';
 import { emitToChat, emitToUser, leaveUserFromChat } from '../realtime/hub';
 import { joinAllToChat, pinAndDispatch, readAndBroadcast, sendAndDispatch } from '../services/messaging';
@@ -80,6 +80,16 @@ chatsRouter.post('/:id/read', wrap(async (req, res) => {
 chatsRouter.put('/:id/pin', wrap(async (req, res) => {
   const { messageId } = z.object({ messageId: id.nullable() }).parse(req.body);
   res.json({ message: await pinAndDispatch(authOf(req).userId, String(req.params.id), messageId) });
+}));
+
+/** Личный фон чата (виден только мне): пресет, фото из профиля или загруженная картинка. */
+chatsRouter.put('/:id/background', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const { background } = z.object({ background: z.string().max(60).nullable() }).parse(req.body);
+  const chatId = String(req.params.id);
+  await setChatBackground(userId, chatId, background);
+  emitToUser(userId, 'chat:changed', { chatId }); // синхронизируем свои устройства
+  res.json({ chat: await getChatDTO(userId, chatId) });
 }));
 
 // ───────── профиль группы/канала, участники, роли ─────────

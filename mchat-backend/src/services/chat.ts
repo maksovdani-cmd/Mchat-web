@@ -171,6 +171,28 @@ export async function joinByInvite(userId: string, code: string) {
   return chat.id;
 }
 
+/** Личный фон чата → то, что нужно клиенту: пресет, фото из профиля или URL загруженной картинки. */
+function backgroundOf(raw: string | null) {
+  if (!raw) return null;
+  if (raw === 'avatar') return { type: 'avatar' as const };
+  if (raw.startsWith('preset:')) return { type: 'preset' as const, value: raw.slice(7) };
+  if (raw.startsWith('media:')) return { type: 'image' as const, url: mediaUrl(raw.slice(6)) };
+  return null;
+}
+
+export async function setChatBackground(userId: string, chatId: string, value: string | null) {
+  await assertMember(chatId, userId);
+  if (value !== null) {
+    if (value.startsWith('media:')) {
+      const media = await prisma.media.findUnique({ where: { id: value.slice(6) } });
+      if (!media || media.ownerId !== userId || media.kind !== 'IMAGE') throw new HttpError(400, 'bad_background');
+    } else if (!(value === 'avatar' || /^preset:\d{1,2}$/.test(value))) {
+      throw new HttpError(400, 'bad_background');
+    }
+  }
+  await prisma.chatMember.update({ where: { chatId_userId: { chatId, userId } }, data: { background: value } });
+}
+
 export async function getChatDTO(userId: string, chatId: string) {
   const m = await assertMember(chatId, userId);
   const chat = await prisma.chat.findUniqueOrThrow({
@@ -213,6 +235,7 @@ export async function getChatDTO(userId: string, chatId: string) {
     canPost: canPost(chat.type, m.role),
     canModerate: canModerate(chat.type, m.role),
     memberCount: chat._count.members,
+    background: backgroundOf(m.background),
     inviteCode: !isDirect && m.role !== 'MEMBER' ? chat.inviteCode : null,
     peer: peer && {
       id: peer.id,
