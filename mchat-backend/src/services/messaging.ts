@@ -40,6 +40,7 @@ async function notifyRecipients(senderId: string, chatId: string, dto: MessageDT
   const title = direct ? sender?.name ?? 'Mchat' : chat?.title ?? 'Mchat';
   const body = direct ? preview(dto) : `${sender?.name ?? ''}: ${preview(dto)}`;
   for (const m of others) {
+    if (m.muted) continue; // уведомления этого чата/канала выключены
     if (!m.user.notifyMessages) continue; // человек выключил уведомления о сообщениях
     if (isActive(m.userId)) continue; // смотрит в приложение — пуш не нужен
     await sendPushToUser(m.userId, { title, body, tag: `chat:${chatId}`, data: { kind: 'message', chatId } });

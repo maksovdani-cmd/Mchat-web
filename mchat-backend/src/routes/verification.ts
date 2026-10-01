@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
-import { adminOverview, approve, assertAdmin, createRequest, myVerification, reject, revoke } from './services/verification';
+import { adminOverview, approve, assertAdmin, createRequest, myVerification, reject, revoke } from '../services/verification';
 import { wrap } from '../utils/errors';
 
 export const verificationRouter = Router();

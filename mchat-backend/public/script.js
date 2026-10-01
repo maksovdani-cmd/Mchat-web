@@ -4139,10 +4139,32 @@ function mxOpenEditChat() {
   const modal = document.getElementById('mx-info-modal');
   modal.innerHTML = `<div class="mx-modal-box">
     <h3 style="margin-bottom:14px">Изменить</h3>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
+      <div id="mx-edit-av" style="width:64px;height:64px;border-radius:50%;background:var(--surf2);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:24px">${chatAvatarHtml(ch)}</div>
+      <button class="mx-btn" onclick="document.getElementById('mx-edit-av-file').click()">Сменить фото</button>
+      <input type="file" id="mx-edit-av-file" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="mxChatAvatarChosen(event)">
+    </div>
     <input class="mx-input" id="mx-edit-title" value="${esc(ch.name)}" maxlength="60" style="margin-bottom:10px">
     <textarea class="mx-input" id="mx-edit-desc" maxlength="200" style="margin-bottom:14px;min-height:70px;resize:vertical">${esc(ch.description || '')}</textarea>
     <div class="mx-row-btns"><button class="mx-btn" onclick="mxRenderChatInfo()">Назад</button><button class="mx-btn primary" onclick="mxSaveEditChat()">Сохранить</button></div>
   </div>`;
+}
+async function mxChatAvatarChosen(evt) {
+  const file = evt.target.files && evt.target.files[0];
+  evt.target.value = '';
+  if (!file) return;
+  try {
+    showToast('Загружаю фото…');
+    const up = await MchatAPI.uploadMedia('image', file, {});
+    await MchatAPI.updateChat(currentChatId, { avatarMediaId: up.id });
+    await refreshChats();
+    const ch = chats.find(c => c.id === currentChatId);
+    if (ch) {
+      const big = document.getElementById('mx-edit-av'); if (big) big.innerHTML = chatAvatarHtml(ch);
+      const head = document.getElementById('chat-open-av'); if (head && ch.avatar) head.innerHTML = chatAvatarHtml(ch);
+    }
+    showToast('Фото обновлено');
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
 }
 async function mxSaveEditChat() {
   const title = document.getElementById('mx-edit-title').value.trim();
@@ -4208,7 +4230,7 @@ function mxChatMenu() {
   mxCloseFloating();
   const items = [
     mxCtxItem(MX_ICO.edit, 'Изменить чат', 'mxOpenChatCustomize()'),
-    mxCtxItem(MX_ICO.reply, currentChatMeta && currentChatMeta.type === 'DIRECT' ? 'Профиль' : 'О чате', 'mxCloseFloating();mxChatHeaderTap()')
+    mxCtxItem(MX_ICO.reply, currentChatMeta && currentChatMeta.type === 'DIRECT' ? 'Профиль' : (currentChatMeta && currentChatMeta.type === 'CHANNEL' ? 'Настройки канала' : 'Настройки группы'), 'mxCloseFloating();mxChatHeaderTap()')
   ];
   const scrim = document.createElement('div');
   scrim.className = 'mx-ctx-scrim';
