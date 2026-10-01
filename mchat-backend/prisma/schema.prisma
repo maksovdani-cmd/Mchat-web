@@ -55,7 +55,12 @@ model User {
   name           String
   bio            String   @default("")
   avatarUrl      String?
+  /// обложка профиля (URL загруженной картинки)
+  bannerUrl      String?
   verified       Boolean  @default(false)
+  /// когда выдали галочку и до какого момента она действует (null = навсегда)
+  verifiedAt     DateTime?
+  verifiedUntil  DateTime?
   role           Role     @default(USER)
 
   // настройки (соответствуют тумблерам в UI)
@@ -77,6 +82,14 @@ model User {
   hiddenMessages MessageHide[]
   friendsSent     Friendship[] @relation("FriendRequester")
   friendsReceived Friendship[] @relation("FriendAddressee")
+  posts          Post[]
+  postLikes      PostLike[]
+  postComments   PostComment[]
+  postReposts    PostRepost[]
+  stories        Story[]
+  verifyRequests VerifyRequest[]
+  storyLikes     StoryLike[]
+  storyComments  StoryComment[]
 }
 
 /// Доверенное устройство. Пока устройство известно — код при входе не нужен.
@@ -140,6 +153,8 @@ model Chat {
   avatarMediaId String?
   /// ссылка-приглашение для групп и каналов: /join/<inviteCode>
   inviteCode    String?      @unique
+  /// публичный канал: находится глобальным поиском, вступить можно одной кнопкой
+  isPublic      Boolean      @default(false)
   /// закреплённое сообщение (одно на чат)
   pinnedMessageId String?
   createdAt     DateTime     @default(now())
@@ -161,6 +176,8 @@ model ChatMember {
   lastReadAt DateTime @default(now())
   /// личный фон чата: preset:N | media:<id картинки> | avatar (фото из профиля)
   background String?
+  /// уведомления этого чата выключены (переключатель «Вкл/Выкл» у канала)
+  muted      Boolean  @default(false)
 
   @@id([chatId, userId])
   @@index([userId])
@@ -211,6 +228,9 @@ model Media {
   createdAt   DateTime  @default(now())
 
   messages    Message[]
+  posts       Post[]    @relation("PostMedia")
+  postThumbs  Post[]    @relation("PostThumb")
+  stories     Story[]
 
   @@index([ownerId, kind])
 }
@@ -261,5 +281,128 @@ model PushSubscription {
   auth      String
   createdAt DateTime @default(now())
 
+  @@index([userId])
+}
+
+
+/// Пост в ленте: текст + (фото | видео с обложкой). Приватный виден только автору (архив).
+model Post {
+  id         Int      @id @default(autoincrement())
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  text       String   @default("")
+  mediaId    String?
+  media      Media?   @relation("PostMedia", fields: [mediaId], references: [id], onDelete: SetNull)
+  /// 'image' | 'video'
+  mediaType  String?
+  thumbId    String?
+  thumb      Media?   @relation("PostThumb", fields: [thumbId], references: [id], onDelete: SetNull)
+  /// 'public' | 'private'
+  privacy    String   @default("public")
+  createdAt  DateTime @default(now())
+
+  likes      PostLike[]
+  comments   PostComment[]
+  reposts    PostRepost[]
+
+  @@index([authorId, createdAt])
+  @@index([createdAt])
+}
+
+model PostLike {
+  postId Int
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([postId, userId])
+  @@index([userId])
+}
+
+model PostComment {
+  id        Int      @id @default(autoincrement())
+  postId    Int
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([postId, createdAt])
+}
+
+model PostRepost {
+  postId    Int
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([postId, userId])
+  @@index([userId, createdAt])
+}
+
+/// История: живёт 24 часа. Оформление (текстовые блоки, фон) хранится как JSON.
+model Story {
+  id         Int      @id @default(autoincrement())
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  mediaId    String?
+  media      Media?   @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+  /// 'image' | 'video'
+  mediaType  String?
+  bg         String?
+  textBlocks Json     @default("[]")
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+
+  likes      StoryLike[]
+  comments   StoryComment[]
+
+  @@index([authorId, createdAt])
+  @@index([expiresAt])
+}
+
+model StoryLike {
+  storyId Int
+  story   Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([storyId, userId])
+}
+
+model StoryComment {
+  id        Int      @id @default(autoincrement())
+  storyId   Int
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([storyId, createdAt])
+}
+
+
+enum VerifyStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Запрос на галочку. Админ выбирает срок при одобрении (5/10/15/30 дней или навсегда).
+model VerifyRequest {
+  id        Int          @id @default(autoincrement())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason    String
+  status    VerifyStatus @default(PENDING)
+  createdAt DateTime     @default(now())
+  decidedAt DateTime?
+  /// на сколько дней одобрено (null = навсегда); имеет смысл только для APPROVED
+  days      Int?
+
+  @@index([status, createdAt])
   @@index([userId])
 }

@@ -20,105 +20,111 @@ function esc(s) {
 }
 const VERIFIED_BADGE_HTML = ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 
-// Ключи для локального хранилища с привязкой к пользователю
+// Ключи для локального хранилища с привязкой к пользователю (только настройки интерфейса)
 function getUserKey(baseKey) {
   return currentUser ? `${baseKey}_${currentUser.username}` : baseKey;
 }
 
+// ============================================================
+// ДАННЫЕ: профиль, посты, видео, истории, репосты живут на сервере (REST /api/...).
+// В браузере остаётся только минимум для быстрого старта (кто вошёл) и настройки интерфейса.
+// ============================================================
+const userCache = {};   // username -> { name, avatar, verified, bio, banner } — из ответов сервера
+let postsByUser = {};   // username -> посты этого пользователя
+let repostsByUser = {}; // username -> его репосты
+
+function cacheUser(username, data) {
+  if (!username) return;
+  userCache[username] = Object.assign(userCache[username] || {}, data);
+}
+
 function saveUser() {
   if (!currentUser) return;
-  localStorage.setItem('mchat_user', JSON.stringify(currentUser));
-  // Сохраняем данные пользователя отдельно
-  const usersData = JSON.parse(localStorage.getItem('mchat_users_data') || '{}');
-  usersData[currentUser.username] = {
-    avatar: currentUser.avatar,
-    name: currentUser.name,
-    bio: currentUser.bio,
-    nameChangedAt: currentUser.nameChangedAt,
-    verified: currentUser.verified || false,
-    banner: currentUser.banner
-  };
-  localStorage.setItem('mchat_users_data', JSON.stringify(usersData));
+  try { localStorage.setItem('mchat_user', JSON.stringify({ id: currentUser.id, username: currentUser.username, role: currentUser.role })); } catch (e) {}
+  if (currentUser.nameChangedAt) { try { localStorage.setItem('mchat_name_changed_' + currentUser.username, String(currentUser.nameChangedAt)); } catch (e) {} }
+  cacheUser(currentUser.username, { name: currentUser.name, avatar: currentUser.avatar, verified: currentUser.verified, bio: currentUser.bio, banner: currentUser.banner });
 }
 
-function savePosts() {
-  if (!currentUser) return;
-  try {
-    // Сохраняем видео отдельно, чтобы не потерять при обновлении страницы
-    const postsToSave = posts.map(p => {
-      if (p.mediaType === 'video' && p.mediaUrl && p.mediaUrl.length > 1000) {
-        // Сохраняем видео отдельно по ключу
-        try {
-          localStorage.setItem('mchat_video_' + p.id, p.mediaUrl);
-        } catch(e) {}
-        // В основном объекте храним ссылку-маркер
-        return Object.assign({}, p, {mediaUrl: '__video_ref__' + p.id});
-      }
-      return p;
-    });
-    const allPosts = JSON.parse(localStorage.getItem('mchat_all_posts') || '{}');
-    allPosts[currentUser.username] = postsToSave;
-    localStorage.setItem('mchat_all_posts', JSON.stringify(allPosts));
-  } catch(e) {
-    try {
-      const postsToSave = posts.slice(0, 15).map(p => {
-        if (p.mediaType === 'video' && p.mediaUrl && p.mediaUrl.length > 1000) {
-          try { localStorage.setItem('mchat_video_' + p.id, p.mediaUrl); } catch(e2) {}
-          return Object.assign({}, p, {mediaUrl: '__video_ref__' + p.id});
-        }
-        return p;
-      });
-      const allPosts = JSON.parse(localStorage.getItem('mchat_all_posts') || '{}');
-      allPosts[currentUser.username] = postsToSave;
-      localStorage.setItem('mchat_all_posts', JSON.stringify(allPosts));
-    } catch(e2) {}
-  }
-}
-
+function savePosts() { /* посты хранятся на сервере */ }
 function saveChats() { /* чаты хранятся на сервере */ }
-
 function saveMessages() { /* сообщения хранятся на сервере */ }
-
-function saveStories() {
-  if (!currentUser) return;
-  const allStories = JSON.parse(localStorage.getItem('mchat_all_stories') || '{}');
-  allStories[currentUser.username] = myStories;
-  localStorage.setItem('mchat_all_stories', JSON.stringify(allStories));
-}
+function saveStories() { /* истории хранятся на сервере */ }
 
 function loadUserData(username) {
-  const usersData = JSON.parse(localStorage.getItem('mchat_users_data') || '{}');
-  const userData = usersData[username] || {};
+  const c = userCache[username] || {};
+  let changedAt = 0;
+  try { changedAt = Number(localStorage.getItem('mchat_name_changed_' + username)) || 0; } catch (e) {}
   return {
-    avatar: userData.avatar || null,
-    name: userData.name || username,
-    bio: userData.bio || 'Привет! Я в Mchat ✨',
-    nameChangedAt: userData.nameChangedAt || 0,
-    verified: userData.verified || false,
-    banner: userData.banner || null,
+    avatar: c.avatar || null,
+    name: c.name || username,
+    bio: c.bio != null ? c.bio : '',
+    nameChangedAt: changedAt,
+    verified: !!c.verified,
+    banner: c.banner || null,
     username: username,
     followers: 0,
     following: 0
   };
 }
 
-function loadUserPosts(username) {
-  const allPosts = JSON.parse(localStorage.getItem('mchat_all_posts') || '{}');
-  const savedPosts = allPosts[username] || [];
-  // Восстанавливаем видео из отдельного хранилища
-  return savedPosts.map(p => {
-    if (p.mediaType === 'video' && p.mediaUrl && p.mediaUrl.startsWith('__video_ref__')) {
-      const videoId = p.mediaUrl.replace('__video_ref__', '');
-      const videoData = localStorage.getItem('mchat_video_' + videoId);
-      return Object.assign({}, p, {mediaUrl: videoData || null});
-    }
-    return p;
+function loadUserPosts(username) { return postsByUser[username] || []; }
+
+function commentFromServer(c) { return Object.assign({}, c, { time: fmtClock(c.createdAt) }); }
+
+function postFromServer(p) {
+  cacheUser(p.username, { name: p.name, avatar: p.avatar, verified: p.verified });
+  return Object.assign({}, p, {
+    time: fmtClock(p.createdAt),
+    comments: (p.comments || []).map(commentFromServer),
+    repostedBy: p.repostedBy || []
   });
 }
 
-function loadUserStories(username) {
-  const allStories = JSON.parse(localStorage.getItem('mchat_all_stories') || '{}');
-  return allStories[username] || [];
+function storyFromServer(st) {
+  const b = (st.textBlocks && st.textBlocks[0]) || null;
+  return Object.assign({}, st, {
+    text: b ? b.text : '', textColor: b ? b.color : undefined, textFont: b ? b.font : undefined,
+    textLeft: b ? b.left : undefined, textTop: b ? b.top : undefined,
+    time: fmtClock(new Date(st.publishedAt).toISOString()),
+    comments: (st.comments || []).map(commentFromServer)
+  });
+}
+
+/** Лента: мои посты (включая архив) + публичные посты остальных — с сервера. */
+async function refreshPosts() {
+  if (!currentUser) return;
+  try {
+    const r = await MchatAPI.listPosts();
+    posts = r.posts.map(postFromServer);
+    postsByUser[currentUser.username] = posts.filter(p => p.username === currentUser.username);
+  } catch (e) { /* остаёмся с тем, что есть */ }
+  renderFeed(); updateProfileUI();
+}
+
+async function refreshMyStories() {
+  if (!currentUser) return;
+  try { myStories = (await MchatAPI.listStories(currentUser.username)).stories.map(storyFromServer); } catch (e) {}
+  renderStories(); updateProfileUI();
+}
+
+async function fetchUserPosts(username) {
+  const r = await MchatAPI.listPosts(username);
+  postsByUser[username] = r.posts.map(postFromServer);
+  return postsByUser[username];
+}
+
+async function fetchUserReposts(username) {
+  const r = await MchatAPI.listReposts(username);
+  repostsByUser[username] = r.posts.map(postFromServer);
+  return repostsByUser[username];
+}
+
+/** Лайк/снятие лайка на сервере (интерфейс уже обновлён оптимистично). */
+function mxSendLike(p) {
+  MchatAPI.likePost(p.id, p.liked).then(r => { p.likes = r.likes; p.liked = r.liked; }).catch(e => {
+    p.liked = !p.liked; p.likes = Math.max(0, (p.likes || 0) + (p.liked ? 1 : -1));
+    showToast(MchatAPI.errorText(e)); renderFeed();
+  });
 }
 
 // ============================================================
@@ -145,10 +151,9 @@ function openUserProfile(username) {
   document.getElementById('up-avatar').innerHTML = data.avatar
     ? `<img src="${data.avatar}" style="width:100%;height:100%;object-fit:cover">`
     : `<svg width="34" height="34" fill="none" stroke="var(--text2)" stroke-width="1.2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
-  const userPosts = loadUserPosts(username).filter(p => p.privacy !== 'private' && !p.isRepost);
-  const userReposts = JSON.parse(localStorage.getItem('mchat_reposts_' + username) || '[]');
-  document.getElementById('up-posts-count').textContent = userPosts.length;
-  document.getElementById('up-reposts-count').textContent = userReposts.length;
+  postsByUser[username] = []; repostsByUser[username] = [];
+  document.getElementById('up-posts-count').textContent = '0';
+  document.getElementById('up-reposts-count').textContent = '0';
   document.getElementById('uptab-posts').click ? null : null;
   upFriendState = { status: 'none', id: null };
   mxRenderFriendButton();
@@ -156,11 +161,19 @@ function openUserProfile(username) {
   if (statusEl) statusEl.textContent = '';
   switchUserProfileTab('posts');
   document.getElementById('user-profile-viewer').classList.add('active');
+  // посты и репосты этого пользователя — с сервера
+  Promise.all([fetchUserPosts(username), fetchUserReposts(username)]).then(() => {
+    if (upViewedUsername !== username) return;
+    document.getElementById('up-posts-count').textContent = postsByUser[username].filter(p => p.privacy !== 'private').length;
+    document.getElementById('up-reposts-count').textContent = repostsByUser[username].length;
+    renderUserProfileGrid();
+  }).catch(e => { if (upViewedUsername === username) showToast(MchatAPI.errorText(e)); });
   // имя, био, аватар, галочка, статус и дружба — с сервера (локально чужих данных нет)
   MchatAPI.getUser(username).then(u => {
     if (upViewedUsername !== username) return;
     document.getElementById('up-name').innerHTML = esc(u.name || u.username) + (u.verified ? VERIFIED_BADGE_HTML : '');
     document.getElementById('up-bio').textContent = u.bio || '';
+    cacheUser(username, { name: u.name, avatar: u.avatar, verified: u.verified, bio: u.bio, banner: u.banner });
     if (u.avatar) document.getElementById('up-avatar').innerHTML = `<img src="${esc(u.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">`;
     upFriendState = u.friendship || { status: 'none', id: null };
     mxRenderFriendButton();
@@ -193,12 +206,9 @@ function renderUserProfileGrid() {
     if (userPosts.length === 0) { grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px 16px;color:var(--text2);font-size:13px">Пока нет постов</div>'; return; }
     userPosts.forEach(p => { html += foreignGridItemHtml(p, upViewedUsername); });
   } else {
-    const userReposts = JSON.parse(localStorage.getItem('mchat_reposts_' + upViewedUsername) || '[]');
+    const userReposts = repostsByUser[upViewedUsername] || [];
     if (userReposts.length === 0) { grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px 16px;color:var(--text2);font-size:13px">Пока нет репостов</div>'; return; }
-    userReposts.forEach(r => {
-      const asPost = {id:r.postId, username:r.fromUser, name:r.fromName, text:r.postText, mediaUrl:r.mediaUrl, mediaType:r.mediaType, thumbnail:r.thumbnail, time:r.time, likes:0, comments:[]};
-      html += foreignGridItemHtml(asPost, upViewedUsername);
-    });
+    userReposts.forEach(p => { html += foreignGridItemHtml(p, upViewedUsername); });
   }
   grid.innerHTML = html;
 }
@@ -214,14 +224,14 @@ function foreignGridItemHtml(p, ownerUsername) {
   return `<div class="grid-item" ${onclick} style="background:var(--surf2);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px"><svg width="20" height="20" fill="none" stroke="var(--text2)" stroke-width="1.4" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><div style="font-size:9px;color:var(--text2);text-align:center;padding:0 4px;overflow:hidden;max-height:24px">${p.text?p.text.slice(0,20):''}</div></div>`;
 }
 
-function openForeignPostByRef(ref) {
-  const posts_ = loadUserPosts(ref.username);
-  const p = posts_.find(x => x.id === ref.id);
-  if (p) { openForeignPostViewer(p, ref.username); return; }
-  // Возможно это репост — ищем в репостах владельца
-  const reposts_ = JSON.parse(localStorage.getItem('mchat_reposts_' + ref.username) || '[]');
-  const r = reposts_.find(x => x.postId === ref.id);
-  if (r) openForeignPostViewer({id:r.postId, username:r.fromUser, name:r.fromName, text:r.postText, mediaUrl:r.mediaUrl, mediaType:r.mediaType, thumbnail:r.thumbnail, time:r.time, likes:0, comments:[]}, r.fromUser);
+async function openForeignPostByRef(ref) {
+  let p = (postsByUser[ref.username] || []).find(x => x.id === ref.id) || posts.find(x => x.id === ref.id);
+  if (!p) for (const list of Object.values(repostsByUser)) { p = list.find(x => x.id === ref.id); if (p) break; }
+  if (!p) {
+    try { p = postFromServer((await MchatAPI.getPost(ref.id)).post); }
+    catch (e) { showToast(MchatAPI.errorText(e)); return; }
+  }
+  openForeignPostViewer(p, ref.username);
 }
 
 function openForeignPostViewer(p, ownerUsername) {
@@ -229,7 +239,7 @@ function openForeignPostViewer(p, ownerUsername) {
   document.getElementById('fpv-av').innerHTML = authorData.avatar
     ? `<img src="${authorData.avatar}" style="width:100%;height:100%;object-fit:cover">`
     : `<svg width="18" height="18" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
-  document.getElementById('fpv-name').innerHTML = (p.name || authorData.name) + (authorData.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
+  document.getElementById('fpv-name').innerHTML = esc(p.name || authorData.name) + (authorData.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
   document.getElementById('fpv-time').textContent = p.time || '';
   document.getElementById('fpv-caption').textContent = p.text || '';
   document.getElementById('fpv-like-count').textContent = p.likes || 0;
@@ -286,15 +296,9 @@ async function runSearch() {
   let matchedUsers = [];
   try { matchedUsers = (await MchatAPI.searchUsers(q)).users.map(u => ({ name: u.name, username: u.username, avatar: u.avatar })); } catch (e) {}
   if (seq !== _searchSeq) return; // пришёл более свежий запрос
-  const allPostsAllUsers = JSON.parse(localStorage.getItem('mchat_all_posts') || '{}');
   let matchedPosts = [];
-  for (const [un, userPosts] of Object.entries(allPostsAllUsers)) {
-    userPosts.forEach(p => {
-      if (p.privacy !== 'private' && ((p.text&&p.text.toLowerCase().includes(q)) || (p.name&&p.name.toLowerCase().includes(q)))) {
-        matchedPosts.push(p);
-      }
-    });
-  }
+  try { matchedPosts = (await MchatAPI.searchPosts(q)).posts.map(postFromServer); } catch (e) {}
+  if (seq !== _searchSeq) return;
   
   let html = '';
   if (matchedUsers.length > 0) {
@@ -310,7 +314,7 @@ async function runSearch() {
     html += matchedPosts.slice(0,5).map(p=>`
       <div onclick="this.closest('.modal').remove();${p.username===currentUser?.username?`openPostViewer(${p.id})`:`openForeignPostByRef({id:${p.id},username:'${p.username}'})`}" style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surf);border-radius:12px;cursor:pointer">
         <div style="width:42px;height:42px;border-radius:10px;background:var(--surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">${p.thumbnail?`<img src="${p.thumbnail}" style="width:100%;height:100%;object-fit:cover">`:p.mediaType==='image'&&p.mediaUrl?`<img src="${p.mediaUrl}" style="width:100%;height:100%;object-fit:cover">`:`<svg width="16" height="16" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`}</div>
-        <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">${p.name}</div><div style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.text||'Без описания'}</div></div>
+        <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">${esc(p.name)}</div><div style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.text||'Без описания')}</div></div>
       </div>`).join('');
   }
   if (!html) html = '<div style="color:var(--text2);font-size:13px;text-align:center;padding:8px">Ничего не найдено</div>';
@@ -491,12 +495,9 @@ async function bootSession() {
   if (cached && !authErr) {
     try {
       const su = JSON.parse(cached);
-      const userData = loadUserData(su.username);
-      currentUser = { id: su.id, username: su.username, name: userData.name, bio: userData.bio, avatar: userData.avatar,
-        nameChangedAt: userData.nameChangedAt, verified: userData.verified, role: su.role, banner: userData.banner, followers: 0, following: 0 };
-      posts = loadUserPosts(currentUser.username);
-      myStories = loadUserStories(currentUser.username);
-      pruneExpiredStories();
+      currentUser = { id: su.id, username: su.username, name: su.username, bio: '', avatar: null,
+        nameChangedAt: loadUserData(su.username).nameChangedAt, verified: false, role: su.role, banner: null, followers: 0, following: 0 };
+      posts = []; myStories = [];
       updateProfileUI(); renderFeed(); goTo('s-feed');
     } catch (e) { currentUser = null; }
   }
@@ -518,25 +519,22 @@ async function bootSession() {
 }
 
 async function onLoggedIn(me) {
-  const userData = loadUserData(me.username); // локальные данные (баннер, треки, посты) — пока не на сервере
   currentUser = {
     id: me.id,
     username: me.username,
-    name: me.name || userData.name,
-    bio: me.bio != null ? me.bio : userData.bio,
-    avatar: userData.avatar || me.avatar, // свой загруженный аватар > фото из Google
-    nameChangedAt: userData.nameChangedAt,
+    name: me.name || me.username,
+    bio: me.bio != null ? me.bio : '',
+    avatar: me.avatar || null, // загруженный аватар или фото из Google — оба приходят с сервера
+    nameChangedAt: loadUserData(me.username).nameChangedAt,
     verified: !!me.verified,
     role: me.role,
-    banner: userData.banner,
+    banner: me.banner || null,
     followers: 0,
     following: 0
   };
   saveUser();
-  posts = loadUserPosts(currentUser.username);
-  myStories = loadUserStories(currentUser.username);
-  pruneExpiredStories();
   updateProfileUI(); renderFeed();
+  refreshPosts(); refreshMyStories(); // посты, видео и истории — с сервера
   MchatAPI.connect();
   await refreshChats();
   MchatAPI.syncPush();
@@ -622,9 +620,7 @@ function bindTypingInput() {
 
 function pruneExpiredStories() {
   const now = Date.now();
-  const before = myStories.length;
   myStories = myStories.filter(s => (now - (s.publishedAt||0)) < 24*60*60*1000);
-  if (myStories.length !== before) saveStories();
 }
 
 // ============================================================
@@ -1031,9 +1027,19 @@ function applyAvatarCrop() {
     
     ctx.drawImage(tempImg, sx, sy, sSize, sSize, 0, 0, canvas.width, canvas.height);
     
-    const croppedUrl = canvas.toDataURL('image/jpeg', 0.95);
-    currentUser.avatar = croppedUrl;
-    saveUser();
+    const croppedUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const prevAvatar = currentUser.avatar;
+    currentUser.avatar = croppedUrl; // сразу показываем, параллельно грузим на сервер
+    canvas.toBlob(async blob => {
+      try {
+        const up = await MchatAPI.uploadMedia('image', blob, {});
+        await MchatAPI.updateMe({ avatarMediaId: up.id });
+        currentUser.avatar = up.url; saveUser(); updateProfileUI();
+      } catch (e) {
+        currentUser.avatar = prevAvatar; updateProfileUI();
+        showToast('Аватар не сохранён: ' + MchatAPI.errorText(e));
+      }
+    }, 'image/jpeg', 0.92);
     
     const modal = document.querySelector('.modal.active');
     if (modal) modal.remove();
@@ -1308,7 +1314,7 @@ function svToggleLike() {
   if (!story) return;
   story.liked = !story.liked;
   story.likes = (story.likes || 0) + (story.liked ? 1 : -1);
-  saveStories();
+  MchatAPI.likeStory(story.id, story.liked).then(r => { story.likes = r.likes; story.liked = r.liked; svRenderLike(); }).catch(() => {});
   svRenderLike();
   if (story.liked) {
     const h = document.getElementById('sv-heart-anim');
@@ -1322,26 +1328,29 @@ function svRenderComments() {
   const el = document.getElementById('sv-comments-list');
   if (!story || !story.comments || story.comments.length === 0) { el.innerHTML = ''; return; }
   const last = story.comments.slice(-3);
-  el.innerHTML = last.map(c => `<div style="display:flex;align-items:center;gap:8px"><span style="color:rgba(255,255,255,.7);font-size:12px;font-weight:600">@${c.username}</span><span style="color:#fff;font-size:13px">${c.text}</span></div>`).join('');
+  el.innerHTML = last.map(c => `<div style="display:flex;align-items:center;gap:8px"><span style="color:rgba(255,255,255,.7);font-size:12px;font-weight:600">@${esc(c.username)}</span><span style="color:#fff;font-size:13px">${esc(c.text)}</span></div>`).join('');
 }
 
-function svSendComment() {
+async function svSendComment() {
   const input = document.getElementById('sv-comment-input');
   const text = input.value.trim();
   const story = myStories[svCurrentIdx];
   if (!text || !story) return;
-  if (!story.comments) story.comments = [];
-  story.comments.push({ username: currentUser.username, text, time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) });
-  saveStories();
-  input.value = '';
-  svRenderComments();
-  showToast('Реакция отправлена');
+  try {
+    const r = await MchatAPI.commentStory(story.id, text);
+    if (!story.comments) story.comments = [];
+    story.comments.push(commentFromServer(r.comment));
+    input.value = '';
+    svRenderComments();
+    showToast('Реакция отправлена');
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
 }
 
 function deleteCurrentStory() {
-  showConfirm('Удалить историю?', () => {
+  showConfirm('Удалить историю?', async () => {
+    const story = myStories[svCurrentIdx];
+    if (story) { try { await MchatAPI.deleteStory(story.id); } catch (e) { showToast(MchatAPI.errorText(e)); return; } }
     myStories.splice(svCurrentIdx, 1);
-    saveStories();
     closeStoryViewer();
     updateProfileUI();
     showToast('История удалена');
@@ -1408,13 +1417,6 @@ async function deleteAccount() {
   } catch (e) {
     showToast('Не удалось удалить аккаунт: ' + MchatAPI.errorText(e));
     return;
-  }
-  if (currentUser) {
-    localStorage.removeItem(`mchat_all_posts_${currentUser.username}`);
-    localStorage.removeItem(`mchat_all_stories_${currentUser.username}`);
-    const usersData = JSON.parse(localStorage.getItem('mchat_users_data') || '{}');
-    delete usersData[currentUser.username];
-    localStorage.setItem('mchat_users_data', JSON.stringify(usersData));
   }
   resetSessionState();
   goTo('s-login');
@@ -1898,57 +1900,52 @@ function scMediaChosen(e) {
   e.target.value = '';
 }
 
-function publishStory() {
+async function publishStory() {
   const t = document.getElementById('sc-text').value.trim();
   if (!t && !scMediaUrl) { showToast('Добавь текст или медиа'); return; }
-  
+
   const today = new Date().toDateString();
   const todayStories = myStories.filter(s => new Date(s.publishedAt).toDateString() === today);
   if (todayStories.length >= 6) {
     showToast('Максимум 6 историй в день. Лимит исчерпан.');
     return;
   }
-  
+
   const btn = document.getElementById('sc-publish-btn');
   const originalText = btn.textContent;
   btn.disabled = true;
-  btn.style.opacity = '0.2';
-  
+  btn.style.opacity = '0.4';
+  btn.textContent = 'Публикую…';
+
   const dt = document.getElementById('sc-drag-text');
   const textLeft = dt.style.left || '50%';
   const textTop = dt.style.top || '45%';
-  
-  // Собираем все текстовые блоки (множественные) + старый единственный
+
   const allTextBlocks = scTexts.length > 0 ? scTexts.map(obj => ({
     text: obj.text, color: obj.color, font: obj.font,
     left: obj.left+'%', top: obj.top+'%', fontSize: obj.fontSize||26
   })) : (t ? [{text: t, color: scTextColor, font: scFont, left: textLeft, top: textTop, fontSize: 26}] : []);
-  
-  const newStory = {
-    text: allTextBlocks.length > 0 ? allTextBlocks[0].text : (t || ''),
-    textColor: allTextBlocks.length > 0 ? allTextBlocks[0].color : scTextColor,
-    textFont: allTextBlocks.length > 0 ? allTextBlocks[0].font : scFont,
-    textLeft: allTextBlocks.length > 0 ? allTextBlocks[0].left : textLeft,
-    textTop: allTextBlocks.length > 0 ? allTextBlocks[0].top : textTop,
-    textBlocks: allTextBlocks,
-    bg: scBgs[scBgIdx],
-    img: scMediaType === 'image' ? scMediaUrl : null,
-    video: scMediaType === 'video' ? scMediaUrl : null,
-    publishedAt: Date.now(),
-    time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
-    likes: 0, liked: false, comments: []
-  };
-  myStories.push(newStory);
-  saveStories();
-  closeStoryCreator();
-  updateProfileUI();
-  renderStories();
-  renderFeed();
-  
-  btn.disabled = false;
-  btn.style.opacity = '1';
-  btn.textContent = originalText;
-  showToast('История опубликована');
+
+  try {
+    let mediaId;
+    if (scMediaUrl) {
+      const blob = await (await fetch(scMediaUrl)).blob();
+      mediaId = (await MchatAPI.uploadMedia(scMediaType === 'video' ? 'video' : 'image', blob, {})).id;
+    }
+    const r = await MchatAPI.createStory({ mediaId: mediaId, bg: scBgs[scBgIdx], textBlocks: allTextBlocks });
+    myStories.push(storyFromServer(r.story));
+    closeStoryCreator();
+    updateProfileUI();
+    renderStories();
+    renderFeed();
+    showToast('История опубликована');
+  } catch (e) {
+    showToast(MchatAPI.errorText(e));
+  } finally {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.textContent = originalText;
+  }
 }
 
 // ============================================================
@@ -1976,27 +1973,18 @@ function pickPostVideo() {
 
 function postPhotoChosen(e) {
   const file = e.target.files[0];
+  e.target.value = '';
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    pendingPostMedia = {type:'image', url: ev.target.result};
-    openPostCreatorModal();
-  };
-  reader.readAsDataURL(file);
-  e.target.value='';
+  pendingPostMedia = {type:'image', url: URL.createObjectURL(file), file: file};
+  openPostCreatorModal();
 }
 
 function postVideoChosen(e) {
   const file = e.target.files[0];
-  if (!file) return;
-  
-  const reader = new FileReader();
-  reader.onload = ev => {
-    pendingPostMedia = {type:'video', url: ev.target.result};
-    openPostCreatorModal();
-  };
-  reader.readAsDataURL(file);
   e.target.value = '';
+  if (!file) return;
+  pendingPostMedia = {type:'video', url: URL.createObjectURL(file), file: file};
+  openPostCreatorModal();
 }
 
 function pcHighlightHashtags(textarea) {
@@ -2090,7 +2078,9 @@ function renderProfileTabContent() {
   }
   
   if (currentProfileTab === 'activity') {
-    const myReposts = JSON.parse(localStorage.getItem('mchat_reposts_' + currentUser.username) || '[]');
+    const myReposts = (repostsByUser[currentUser.username] || []).map(r => ({
+      postId: r.id, fromUser: r.username, time: r.time, postText: r.text, mediaUrl: r.mediaUrl, mediaType: r.mediaType, thumbnail: r.thumbnail }));
+    if (!repostsByUser[currentUser.username]) fetchUserReposts(currentUser.username).then(() => { if (currentProfileTab === 'activity') renderProfileTabContent(); }).catch(() => {});
     const myComments = [];
     posts.forEach(p => {
       if (Array.isArray(p.comments)) {
@@ -2121,8 +2111,8 @@ function renderProfileTabContent() {
           <svg width="16" height="16" fill="none" stroke="var(--accent)" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink:0"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
           ${mediaPrev}
           <div style="flex:1;min-width:0">
-            <div style="font-size:12px;color:var(--text2);margin-bottom:2px">@${r.fromUser} · ${r.time}</div>
-            ${postText ? `<div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${postText}</div>` : '<div style="font-size:12px;color:var(--text2)">Медиа-контент</div>'}
+            <div style="font-size:12px;color:var(--text2);margin-bottom:2px">@${esc(r.fromUser)} · ${esc(r.time)}</div>
+            ${postText ? `<div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(postText)}</div>` : '<div style="font-size:12px;color:var(--text2)">Медиа-контент</div>'}
           </div>
         </div>`;
       });
@@ -2133,8 +2123,8 @@ function renderProfileTabContent() {
         html += `<div onclick="openPostViewer(${c.postId})" style="display:flex;align-items:flex-start;gap:10px;padding:12px;background:var(--surf);border-radius:12px;cursor:pointer;margin:0 0 2px">
           <svg width="16" height="16" fill="none" stroke="var(--text2)" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink:0;margin-top:2px"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
           <div style="flex:1;min-width:0">
-            <div style="font-size:12px;color:var(--text2);margin-bottom:3px">${c.postName} · ${c.time}</div>
-            <div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.text}</div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:3px">${esc(c.postName)} · ${esc(c.time)}</div>
+            <div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.text)}</div>
           </div>
         </div>`;
       });
@@ -2206,79 +2196,62 @@ function closePostCreator() {
   pendingPostMedia = null;
 }
 
-function pcPublishPost() {
+async function pcPublishPost() {
   const caption = document.getElementById('pc-caption').value.trim();
   if (!caption && !pendingPostMedia) { showToast('Добавь описание или медиа'); return; }
-  
+
   const btn = document.getElementById('pc-submit-btn');
   const isPublic = document.getElementById('pc-privacy-tgl')?.classList.contains('on') ?? true;
   btn.disabled = true;
   btn.style.opacity = '.5';
-  
+
   const uploadBar = document.getElementById('pc-upload-bar');
   const uploadFill = document.getElementById('pc-upload-fill');
   const uploadPct = document.getElementById('pc-upload-pct');
   const uploadLabel = document.getElementById('pc-upload-label');
+  const setProgress = (pct) => { uploadFill.style.width = pct + '%'; uploadPct.textContent = Math.floor(pct) + '%'; };
   uploadBar.style.display = 'block';
-  uploadLabel.textContent = pendingPostMedia?.type === 'video' ? 'Загрузка видео...' : pendingPostMedia ? 'Загрузка фото...' : 'Публикация...';
-  
-  let progress = 0;
-  const iv = setInterval(() => {
-    const step = pendingPostMedia?.type === 'video' ? 4 + Math.random()*8 : 10 + Math.random()*18;
-    progress = Math.min(100, progress + step);
-    uploadFill.style.width = progress + '%';
-    uploadPct.textContent = Math.floor(progress) + '%';
-    if (progress >= 100) {
-      clearInterval(iv);
-      setTimeout(() => {
-        const post = {
-          id: Date.now(),
-          username: currentUser.username,
-          name: currentUser.name || currentUser.username,
-          avatar: currentUser.avatar || null,
-          text: caption,
-          time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
-          likes: 0, liked: false, comments: [],
-          mediaType: pendingPostMedia?.type || null,
-          mediaUrl: pendingPostMedia?.url || null,
-          thumbnail: pendingPostMedia?.thumbnail || null,
-          privacy: isPublic ? 'public' : 'private',
-          verified: currentUser.verified || false
-        };
-        posts.unshift(post);
-        pendingPostMedia = null;
-        savePosts();
-        closePostCreator();
-        document.getElementById('new-post-text').value = '';
-        renderFeed(); updateProfileUI();
-        btn.disabled = false; btn.style.opacity = '1';
-        showToast('Пост опубликован!');
-      }, 300);
+  setProgress(0);
+
+  const media = pendingPostMedia;
+  try {
+    let mediaId, thumbId;
+    if (media && media.file) {
+      uploadLabel.textContent = media.type === 'video' ? 'Загрузка видео...' : 'Загрузка фото...';
+      const up = await MchatAPI.uploadMedia(media.type === 'video' ? 'video' : 'image', media.file, { onProgress: pct => setProgress(pct * 0.95) });
+      mediaId = up.id;
+      if (media.type === 'video' && media.thumbnail) {
+        const thumbBlob = await (await fetch(media.thumbnail)).blob();
+        thumbId = (await MchatAPI.uploadMedia('image', thumbBlob, {})).id;
+      }
     }
-  }, 200);
+    uploadLabel.textContent = 'Публикация...';
+    const r = await MchatAPI.createPost({ text: caption, mediaId: mediaId, thumbId: thumbId, privacy: isPublic ? 'public' : 'private' });
+    setProgress(100);
+    posts.unshift(postFromServer(r.post));
+    postsByUser[currentUser.username] = posts.filter(p => p.username === currentUser.username);
+    if (media && media.url && media.url.startsWith('blob:')) URL.revokeObjectURL(media.url);
+    closePostCreator();
+    document.getElementById('new-post-text').value = '';
+    renderFeed(); updateProfileUI();
+    showToast('Пост опубликован!');
+  } catch (e) {
+    uploadBar.style.display = 'none';
+    showToast(MchatAPI.errorText(e));
+  } finally {
+    btn.disabled = false; btn.style.opacity = '1';
+  }
 }
 
-function addPost() {
+async function addPost() {
   const text = document.getElementById('new-post-text').value.trim();
-  if (!text && !pendingPostMedia) return;
-  
-  const post = {
-    id: Date.now(),
-    username: currentUser.username,
-    name: currentUser.name||currentUser.username,
-    avatar: currentUser.avatar||null,
-    text, 
-    time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
-    likes: 0, liked: false, comments: [], 
-    mediaType: pendingPostMedia?.type||null,
-    mediaUrl: pendingPostMedia?.url||null,
-    verified: currentUser.verified || false
-  };
-  posts.unshift(post);
-  pendingPostMedia = null;
-  savePosts();
-  document.getElementById('new-post-text').value = '';
-  renderFeed(); updateProfileUI();
+  if (!text) return;
+  try {
+    const r = await MchatAPI.createPost({ text: text, privacy: 'public' });
+    posts.unshift(postFromServer(r.post));
+    document.getElementById('new-post-text').value = '';
+    renderFeed(); updateProfileUI();
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
 }
 
 function renderFeed() {
@@ -2304,10 +2277,10 @@ function renderFeed() {
       ${repostBadge}
       <div class="post-head" onclick="goToUserOrOwnProfile('${post.username}')" style="cursor:pointer">
         <div class="post-av"><div class="post-avi">${av}</div></div>
-        <div><div style="font-weight:500;font-size:14px;display:flex;align-items:center;gap:5px">${post.name}${post.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : ''}</div><div style="font-size:11px;color:var(--text2)">${post.time}</div></div>
+        <div><div style="font-weight:500;font-size:14px;display:flex;align-items:center;gap:5px">${esc(post.name)}${post.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : ''}</div><div style="font-size:11px;color:var(--text2)">${post.time}</div></div>
       </div>
       ${media}
-      ${post.text?`<div class="post-caption"><span>${post.text}</span></div>`:''}
+      ${post.text?`<div class="post-caption"><span>${esc(post.text)}</span></div>`:''}
       <div class="post-actions">
         <button class="ab ${post.liked?'liked':''}" onclick="toggleLike(${post.id})">
           <svg fill="${post.liked?'currentColor':'none'}" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
@@ -2362,7 +2335,7 @@ function toggleLike(id) {
   if (!p) return;
   p.liked = !p.liked; p.likes += p.liked?1:-1;
   if (p.liked) pushNotif('Вам понравился пост от ' + (p.name||p.username));
-  savePosts(); renderFeed();
+  mxSendLike(p); renderFeed();
   if (document.getElementById('post-viewer').classList.contains('active') && pvCurrentId===id) {
     document.getElementById('pv-like-count').textContent = p.likes;
     document.getElementById('pv-like-ico').setAttribute('fill', p.liked?'#f43f5e':'none');
@@ -2411,43 +2384,19 @@ function sharePostFromFeed(postId) {
   document.getElementById('app').appendChild(sheet);
 }
 
-function repostFromFeed(postId) {
-  const p = posts.find(x=>x.id===postId);
+async function mxDoRepost(p) {
   if (!p) return;
-  // Нельзя репостить свой же пост
-  if (p.username === currentUser.username && !p.isRepost) { showToast('Нельзя репостить свой пост'); return; }
-  // Находим оригинальный ID
-  const originalId = p.isRepost ? (p.originalPostId || p.id) : p.id;
-  // Проверяем: уже репостил ли этот пост
-  if (p.repostedBy && p.repostedBy.includes(currentUser.username)) {
-    showToast('Ты уже репостил этот пост'); return;
-  }
-  // Найти оригинальный пост
-  const originalPost = posts.find(x => x.id === originalId) || p;
-  if (originalPost.repostedBy && originalPost.repostedBy.includes(currentUser.username)) {
-    showToast('Ты уже репостил этот пост'); return;
-  }
-  // Добавляем репостера к оригинальному посту (без дубликата)
-  if (!originalPost.repostedBy) originalPost.repostedBy = [];
-  originalPost.repostedBy.push(currentUser.username);
-  // Добавляем запись в активность (привязано к текущему пользователю)
-  const repostsKey = 'mchat_reposts_' + currentUser.username;
-  const reposts = JSON.parse(localStorage.getItem(repostsKey) || '[]');
-  reposts.unshift({
-    postId: originalPost.id,
-    fromUser: originalPost.username,
-    fromName: originalPost.name||originalPost.username,
-    repostedByUser: currentUser.username,
-    time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
-    postText: originalPost.text||'',
-    mediaUrl: originalPost.mediaUrl||null,
-    mediaType: originalPost.mediaType||null,
-    thumbnail: originalPost.thumbnail||null
-  });
-  localStorage.setItem(repostsKey, JSON.stringify(reposts.slice(0,50)));
-  savePosts(); renderFeed(); updateProfileUI();
+  if (p.username === currentUser.username) { showToast('Нельзя репостить свой пост'); return; }
+  if (p.repostedBy && p.repostedBy.includes(currentUser.username)) { showToast('Ты уже репостил этот пост'); return; }
+  try { await MchatAPI.repostPost(p.id); }
+  catch (e) { showToast(MchatAPI.errorText(e)); return; }
+  if (!p.repostedBy) p.repostedBy = [];
+  p.repostedBy.push(currentUser.username);
+  repostsByUser[currentUser.username] = [p].concat(repostsByUser[currentUser.username] || []);
+  renderFeed(); updateProfileUI();
   showToast('Репост опубликован!');
 }
+function repostFromFeed(postId) { mxDoRepost(posts.find(x => x.id === postId)); }
 
 let pvCurrentId = null;
 let reelsCurrentId = null;
@@ -2587,7 +2536,7 @@ function openVideoReels(id) {
       if (p && !p.liked) {
         p.liked = true;
         p.likes = (p.likes || 0) + 1;
-        savePosts();
+        mxSendLike(p);
         document.getElementById('reels-like-count').textContent = p.likes;
         const likeIco = document.getElementById('reels-like-ico');
         likeIco.setAttribute('fill', '#f43f5e');
@@ -2743,36 +2692,7 @@ function reelsDownload() {
   }
 }
 
-function reelsRepost() {
-  const p = posts.find(x=>x.id===reelsCurrentId);
-  if (!p) return;
-  if (p.username === currentUser.username && !p.isRepost) { showToast('Нельзя репостить свой пост'); return; }
-  const originalId = p.isRepost ? (p.originalPostId || p.id) : p.id;
-  const originalPost = posts.find(x => x.id === originalId) || p;
-  if (originalPost.repostedBy && originalPost.repostedBy.includes(currentUser.username)) {
-    showToast('Ты уже репостил этот пост'); return;
-  }
-  if (!originalPost.repostedBy) originalPost.repostedBy = [];
-  originalPost.repostedBy.push(currentUser.username);
-  const repostsKey2 = 'mchat_reposts_' + currentUser.username;
-  const reposts = JSON.parse(localStorage.getItem(repostsKey2) || '[]');
-  reposts.unshift({
-    postId: originalPost.id,
-    fromUser: originalPost.username,
-    fromName: originalPost.name||originalPost.username,
-    repostedByUser: currentUser.username,
-    time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
-    postText: originalPost.text||'',
-    mediaUrl: originalPost.mediaUrl||null,
-    mediaType: originalPost.mediaType||null,
-    thumbnail: originalPost.thumbnail||null
-  });
-  localStorage.setItem(repostsKey2, JSON.stringify(reposts.slice(0,50)));
-  savePosts();
-  renderFeed();
-  updateProfileUI();
-  showToast('Репост опубликован!');
-}
+function reelsRepost() { mxDoRepost(posts.find(x => x.id === reelsCurrentId)); }
 
 function closeVideoReels() {
   const vid = document.getElementById('reels-video');
@@ -2796,7 +2716,7 @@ function reelsToggleLike() {
   if (!p) return;
   p.liked = !p.liked;
   p.likes = (p.likes || 0) + (p.liked ? 1 : -1);
-  savePosts();
+  mxSendLike(p);
   document.getElementById('reels-like-count').textContent = p.likes;
   const likeIco = document.getElementById('reels-like-ico');
   likeIco.setAttribute('fill', p.liked ? '#f43f5e' : 'none');
@@ -2832,35 +2752,34 @@ function reelsRenderComments() {
     <div style="display:flex;gap:10px;align-items:flex-start">
       <div style="width:32px;height:32px;border-radius:50%;background:var(--surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px">${c.username.charAt(0).toUpperCase()}</div>
       <div style="flex:1;background:var(--surf);border-radius:14px;padding:8px 12px">
-        <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:2px">@${c.username}</div>
-        <div style="font-size:13px;line-height:1.4">${c.text}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:2px">@${esc(c.username)}</div>
+        <div style="font-size:13px;line-height:1.4">${esc(c.text)}</div>
         <div style="font-size:10px;color:var(--text2);margin-top:3px">${c.time}</div>
       </div>
     </div>`).join('');
 }
 
-function reelsSendComment() {
+async function reelsSendComment() {
   const input = document.getElementById('reels-comment-input');
   const text = input.value.trim();
   if (!text || !reelsCurrentId) return;
   const p = posts.find(x=>x.id===reelsCurrentId);
   if (!p) return;
-  if (!Array.isArray(p.comments)) p.comments = [];
-  const cmt = {
-    username: currentUser.username,
-    text, time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
-  };
-  p.comments.push(cmt);
-  savePosts();
-  reelsRenderComments();
-  input.value = '';
-  showToast('Комментарий отправлен');
+  try {
+    const r = await MchatAPI.commentPost(p.id, text);
+    if (!Array.isArray(p.comments)) p.comments = [];
+    p.comments.push(commentFromServer(r.comment));
+    reelsRenderComments();
+    input.value = '';
+    showToast('Комментарий отправлен');
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
 }
 
 function reelsDelete() {
-  showConfirm('Удалить пост?', () => {
-    posts = posts.filter(p => p.id !== reelsCurrentId);
-    savePosts();
+  showConfirm('Удалить пост?', async () => {
+    const id = reelsCurrentId;
+    try { await MchatAPI.deletePost(id); } catch (e) { showToast(MchatAPI.errorText(e)); return; }
+    posts = posts.filter(p => p.id !== id);
     closeVideoReels();
     renderFeed();
     updateProfileUI();
@@ -2890,7 +2809,7 @@ function openPhotoPostViewer(id) {
     vid.pause(); vid.src='';
   }
   let cap = '';
-  if (p.text) cap += `<div style="margin-bottom:6px"><b style="color:var(--text)">${p.name}</b> <span style="color:var(--text2)">${p.text}</span></div>`;
+  if (p.text) cap += `<div style="margin-bottom:6px"><b style="color:var(--text)">${esc(p.name)}</b> <span style="color:var(--text2)">${esc(p.text)}</span></div>`;
   document.getElementById('pv-caption').innerHTML = cap;
   document.getElementById('pv-like-count').textContent = p.likes;
   document.getElementById('pv-like-ico').setAttribute('fill', p.liked?'#f43f5e':'none');
@@ -2907,9 +2826,11 @@ function closePostViewer() {
 }
 
 function confirmDeletePost() {
-  showConfirm('Удалить пост?', () => {
-    posts = posts.filter(p => p.id !== pvCurrentId);
-    savePosts(); closePostViewer(); renderFeed(); updateProfileUI();
+  showConfirm('Удалить пост?', async () => {
+    const id = pvCurrentId;
+    try { await MchatAPI.deletePost(id); } catch (e) { showToast(MchatAPI.errorText(e)); return; }
+    posts = posts.filter(p => p.id !== id);
+    closePostViewer(); renderFeed(); updateProfileUI();
     showToast('Пост удалён');
   });
 }
@@ -2926,28 +2847,27 @@ function pvRenderComments() {
     <div style="display:flex;gap:10px;align-items:flex-start">
       <div style="width:32px;height:32px;border-radius:50%;background:var(--surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px">${c.username.charAt(0).toUpperCase()}</div>
       <div style="flex:1;background:var(--surf);border-radius:14px;padding:8px 12px">
-        <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:2px">@${c.username}</div>
-        <div style="font-size:13px;line-height:1.4">${c.text}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:2px">@${esc(c.username)}</div>
+        <div style="font-size:13px;line-height:1.4">${esc(c.text)}</div>
         <div style="font-size:10px;color:var(--text2);margin-top:3px">${c.time}</div>
       </div>
     </div>`).join('');
 }
 
-function pvSendComment() {
+async function pvSendComment() {
   const input = document.getElementById('pv-comment-input');
   const text = input.value.trim();
   if (!text||!pvCurrentId) return;
   const p = posts.find(x=>x.id===pvCurrentId);
   if (!p) return;
-  if (!Array.isArray(p.comments)) p.comments = [];
-  const cmt = {
-    username: currentUser.username,
-    text, time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
-  };
-  p.comments.push(cmt);
-  savePosts(); pvRenderComments(); renderFeed();
-  input.value='';
-  showToast('Комментарий отправлен');
+  try {
+    const r = await MchatAPI.commentPost(p.id, text);
+    if (!Array.isArray(p.comments)) p.comments = [];
+    p.comments.push(commentFromServer(r.comment));
+    pvRenderComments(); renderFeed();
+    input.value='';
+    showToast('Комментарий отправлен');
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
 }
 
 // ============================================================
@@ -2965,7 +2885,7 @@ const AVATAR_SVG_OPEN = '<svg width="22" height="22" fill="none" stroke="var(--t
 function chatFromServer(c) {
   return {
     id: c.id, type: c.type, name: c.name, description: c.description, avatar: c.avatar, peer: c.peer,
-    unread: c.unread || 0, role: c.role, canPost: c.canPost !== false, canModerate: !!c.canModerate,
+    unread: c.unread || 0, role: c.role, canPost: c.canPost !== false, canModerate: !!c.canModerate, muted: !!c.muted, isPublic: !!c.isPublic,
     memberCount: c.memberCount || 0, inviteCode: c.inviteCode || null, pinned: c.pinned || null, background: c.background || null,
     lastMessage: c.lastMessage ? c.lastMessage.text : '',
     time: c.lastMessage ? fmtChatTime(c.lastMessage.createdAt) : '',
@@ -2993,8 +2913,73 @@ async function refreshChats() {
   renderChats();
 }
 
+let mxGlobalSeq = 0, mxGlobalTimer = null, mxGlobalResults = [];
+function mxGlobalBox() {
+  const list = document.getElementById('chats-list');
+  let box = document.getElementById('mx-global-channels');
+  if (!box || box.parentNode !== list) {
+    box = document.createElement('div');
+    box.id = 'mx-global-channels';
+    list.appendChild(box);
+  }
+  return box;
+}
+function mxSearchGlobalChannels(q) {
+  clearTimeout(mxGlobalTimer);
+  if (!q || q.trim().length < 2) { mxGlobalResults = []; mxRefreshGlobalChannels(); return; }
+  mxGlobalTimer = setTimeout(async () => {
+    const seq = ++mxGlobalSeq;
+    try {
+      const r = await MchatAPI.searchChannels(q.trim());
+      if (seq !== mxGlobalSeq) return;
+      mxGlobalResults = r.channels;
+      mxRefreshGlobalChannels();
+    } catch (e) { /* поиск необязателен */ }
+  }, 300);
+}
+function mxRefreshGlobalChannels() {
+  if (!document.getElementById('chats-list')) return;
+  const box = mxGlobalBox();
+  if (!mxGlobalResults.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;padding:14px 16px 6px">Каналы</div>` + mxGlobalResults.map(c => {
+    const mine = chats.find(x => x.id === c.id);
+    const joined = c.joined || !!mine;
+    const muted = mine ? !!mine.muted : !!c.muted;
+    const av = c.avatar ? `<img src="${esc(c.avatar)}" style="width:100%;height:100%;object-fit:cover">` : esc((c.name || '?').charAt(0).toUpperCase());
+    return `<div style="margin:0 12px 10px;background:var(--surf);border-radius:16px;padding:12px">
+      <div style="display:flex;gap:12px;align-items:center;${joined ? 'cursor:pointer' : ''}" ${joined ? `onclick="openChat('${esc(c.id)}')"` : ''}>
+        <div style="width:46px;height:46px;border-radius:50%;background:var(--surf2);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px">${av}</div>
+        <div style="min-width:0;flex:1"><div style="font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</div>
+        <div style="font-size:12px;color:var(--text2)">${mxPlural(c.memberCount, ['подписчик','подписчика','подписчиков'])}${c.description ? ' · ' + esc(c.description.slice(0, 50)) : ''}</div></div>
+      </div>
+      ${joined
+        ? `<div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--surf2);opacity:.9"><div style="font-size:14px">Уведомления: <b>${muted ? 'Выкл' : 'Вкл'}</b></div>${mxSwitchHtml(!muted, `mxToggleChannelMute('${esc(c.id)}')`)}</div>`
+        : `<button onclick="mxJoinChannel('${esc(c.id)}')" style="width:100%;margin-top:10px;padding:11px;border:none;border-radius:12px;background:var(--accent);color:#fff;font-family:var(--font);font-size:14px;font-weight:700;cursor:pointer">Присоединиться</button>`}
+    </div>`;
+  }).join('');
+}
+async function mxJoinChannel(id) {
+  try {
+    const r = await MchatAPI.joinChannel(id);
+    const ch = chatFromServer(r.chat);
+    if (!chats.some(c => c.id === ch.id)) chats.unshift(ch);
+    const g = mxGlobalResults.find(x => x.id === id); if (g) { g.joined = true; g.memberCount = ch.memberCount; }
+    renderChats(document.getElementById('chat-search').value.toLowerCase());
+    mxRefreshGlobalChannels();
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
+}
+async function mxToggleChannelMute(id) {
+  const mine = chats.find(x => x.id === id);
+  const g = mxGlobalResults.find(x => x.id === id);
+  const muted = !(mine ? mine.muted : g && g.muted);
+  try { await MchatAPI.muteChat(id, muted); if (mine) mine.muted = muted; if (g) g.muted = muted; mxRefreshGlobalChannels(); }
+  catch (e) { showToast(MchatAPI.errorText(e)); }
+}
+
 function filterChats() {
-  renderChats(document.getElementById('chat-search').value.toLowerCase());
+  const q = document.getElementById('chat-search').value.toLowerCase();
+  renderChats(q);
+  mxSearchGlobalChannels(q);
 }
 
 function chatAvatarHtml(ch) {
@@ -3005,6 +2990,10 @@ function chatAvatarHtml(ch) {
   return AVATAR_SVG_LIST;
 }
 function renderChats(q='') {
+  _renderChatsInner(q);
+  mxRefreshGlobalChannels(); // результаты глобального поиска каналов — внутри прокручиваемого списка
+}
+function _renderChatsInner(q='') {
   const c = document.getElementById('chats-list');
   if (!c) return;
   const filtered = chats.filter(ch => (ch.name || '').toLowerCase().includes(q));
@@ -3041,6 +3030,8 @@ async function openChat(id) {
   currentChatId = id;
   currentChatPeer = ch.peer || null;
   currentChatMeta = { type: ch.type, canPost: ch.canPost !== false, canModerate: !!ch.canModerate };
+  // звонить можно в личных чатах и группах (в каналах — нет)
+  ['mx-call-btn','mx-vcall-btn'].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = ch.type === 'CHANNEL' ? 'none' : ''; });
   mxCancelCompose();
   document.getElementById('chat-name').textContent = ch.name;
   document.getElementById('chat-open-av').innerHTML = ch.avatar
@@ -3265,6 +3256,11 @@ function openSupport() {
   document.getElementById('app').appendChild(m);
 }
 
+setInterval(() => {
+  const feed = document.getElementById('s-feed');
+  if (currentUser && !document.hidden && feed && feed.classList.contains('active')) refreshPosts();
+}, 45000);
+
 function goTo(id) {
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   const target = document.getElementById(id);
@@ -3451,78 +3447,87 @@ function confirmVideoCover() {
   document.getElementById('pc-video-cover-selector').style.display = 'none';
 }
 
-function openAdminPanel() {
-  const requests = JSON.parse(localStorage.getItem('mchat_verify_requests') || '[]');
+const VERIFY_DAYS = [[5, '5 дней'], [10, '10 дней'], [15, '15 дней'], [30, '30 дней'], [null, 'Навсегда']];
+function fmtDate(iso) { return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+
+async function openAdminPanel() {
+  document.querySelectorAll('.modal.mx-admin').forEach(x => x.remove());
   const m = document.createElement('div');
-  m.className = 'modal active';
+  m.className = 'modal active mx-admin';
   m.style.zIndex = '900';
-  m.onclick = e => { if(e.target===m) m.remove(); };
-  
+  m.onclick = e => { if (e.target === m) m.remove(); };
+  m.innerHTML = '<div class="modal-box" style="max-width:380px"><div style="text-align:center;padding:30px;color:var(--text2)">Загрузка…</div></div>';
+  document.getElementById('app').appendChild(m);
+
+  let data;
+  try { data = await MchatAPI.verifyAdmin(); }
+  catch (e) { m.remove(); showToast(MchatAPI.errorText(e)); return; }
+
+  const btn = 'flex:1;min-width:64px;padding:8px 6px;border-radius:8px;border:none;color:#fff;cursor:pointer;font-size:12px;';
+  const cardHead = (u, sub) => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      ${u.avatar ? `<img src="${esc(u.avatar)}" style="width:32px;height:32px;border-radius:50%;object-fit:cover" referrerpolicy="no-referrer">` : ''}
+      <div><div style="font-weight:600;font-size:14px">${esc(u.name)} (@${esc(u.username)})</div>
+      <div style="font-size:11px;color:var(--text2)">${sub}</div></div></div>`;
+
+  const pending = data.requests.filter(r => r.status === 'PENDING');
+  const decided = data.requests.filter(r => r.status !== 'PENDING');
   let html = `<div class="modal-box" style="max-width:380px">
     <h3 style="margin-bottom:16px">👑 Админ панель верификации</h3>
-    <div style="max-height:400px;overflow-y:auto">`;
-  
-  if (requests.length === 0) {
-    html += '<div style="text-align:center;padding:20px;color:var(--text2)">Нет запросов верификации</div>';
-  } else {
-    requests.forEach((req, idx) => {
-      const status = req.status === 'approved' ? '✓' : req.status === 'rejected' ? '✗' : '⏳';
-      html += `<div style="background:var(--surf);border-radius:12px;padding:12px;margin-bottom:8px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-          ${req.avatar ? `<img src="${req.avatar}" style="width:32px;height:32px;border-radius:50%;object-fit:cover">` : ''}
-          <div>
-            <div style="font-weight:600;font-size:14px">${req.name} (${req.username})</div>
-            <div style="font-size:11px;color:var(--text2)">Статус: ${status}</div>
-          </div>
-        </div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:8px;padding:8px;background:var(--bg);border-radius:8px">${req.reason}</div>
-        ${req.status === 'pending' ? `<div style="display:flex;gap:6px">
-          <button onclick="approveVerification(${idx})" style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-size:12px">Одобрить</button>
-          <button onclick="rejectVerification(${idx})" style="flex:1;padding:8px;border-radius:8px;border:none;background:#dc2626;color:#fff;cursor:pointer;font-size:12px">Отклонить</button>
-        </div>` : ''}
-      </div>`;
+    <div style="max-height:440px;overflow-y:auto">`;
+
+  html += `<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Новые запросы (${pending.length})</div>`;
+  if (!pending.length) html += '<div style="text-align:center;padding:14px;color:var(--text2)">Нет новых запросов</div>';
+  pending.forEach(r => {
+    html += `<div style="background:var(--surf);border-radius:12px;padding:12px;margin-bottom:8px">
+      ${cardHead(r.user, '⏳ ' + fmtDate(r.createdAt))}
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px;padding:8px;background:var(--bg);border-radius:8px">${esc(r.reason)}</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px">Выдать галочку на:</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+        ${VERIFY_DAYS.map(([d, label]) => `<button onclick="verifyApprove(${r.id},${d === null ? 'null' : d})" style="${btn}background:var(--accent)">${label}</button>`).join('')}
+      </div>
+      <button onclick="verifyReject(${r.id})" style="${btn}width:100%;background:#dc2626">Отклонить</button>
+    </div>`;
+  });
+
+  html += `<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin:14px 0 6px">Действующие галочки (${data.verified.length})</div>`;
+  if (!data.verified.length) html += '<div style="text-align:center;padding:14px;color:var(--text2)">Пока никому не выдана</div>';
+  data.verified.forEach(u => {
+    const info = u.verifiedAt
+      ? `Выдана ${fmtDate(u.verifiedAt)} · ${u.verifiedUntil ? 'исчезнет ' + fmtDate(u.verifiedUntil) : 'навсегда'}`
+      : 'Выдана';
+    html += `<div style="background:var(--surf);border-radius:12px;padding:12px;margin-bottom:8px">
+      ${cardHead(u, info)}
+      <button onclick="verifyRevoke('${esc(u.id)}')" style="${btn}width:100%;background:#dc2626">Снять галочку досрочно</button>
+    </div>`;
+  });
+
+  if (decided.length) {
+    html += `<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin:14px 0 6px">История</div>`;
+    decided.slice(0, 30).forEach(r => {
+      const st = r.status === 'APPROVED' ? '✓ одобрено' + (r.days ? ' на ' + r.days + ' дн.' : ' навсегда') : '✗ отклонено';
+      html += `<div style="font-size:12px;color:var(--text2);padding:6px 2px">@${esc(r.user.username)} — ${st} · ${fmtDate(r.decidedAt || r.createdAt)}</div>`;
     });
   }
-  
+
   html += `</div>
     <button onclick="this.closest('.modal').remove()" style="width:100%;padding:12px;border-radius:14px;border:none;background:var(--surf);color:var(--text);margin-top:12px;cursor:pointer">Закрыть</button>
   </div>`;
-  
   m.innerHTML = html;
-  document.getElementById('app').appendChild(m);
 }
 
-function approveVerification(idx) {
-  const requests = JSON.parse(localStorage.getItem('mchat_verify_requests') || '[]');
-  if (requests[idx]) {
-    const username = requests[idx].username;
-    requests[idx].status = 'approved';
-    localStorage.setItem('mchat_verify_requests', JSON.stringify(requests));
-    const allAccounts = JSON.parse(localStorage.getItem('mchat_accounts') || '{}');
-    if (allAccounts[username]) {
-      allAccounts[username].verified = true;
-      localStorage.setItem('mchat_accounts', JSON.stringify(allAccounts));
-    }
-    if (currentUser && currentUser.username === username) {
-      currentUser.verified = true;
-      saveUser();
-      updateProfileUI();
-    }
-    showToast('Верификация одобрена!');
-    document.querySelector('.modal.active').remove();
-    openAdminPanel();
-  }
+async function verifyApprove(id, days) {
+  try { await MchatAPI.verifyApprove(id, days); showToast(days === null ? 'Галочка выдана навсегда' : 'Галочка выдана на ' + days + ' дн.'); openAdminPanel(); }
+  catch (e) { showToast(MchatAPI.errorText(e)); }
 }
-
-function rejectVerification(idx) {
-  const requests = JSON.parse(localStorage.getItem('mchat_verify_requests') || '[]');
-  if (requests[idx]) {
-    requests[idx].status = 'rejected';
-    localStorage.setItem('mchat_verify_requests', JSON.stringify(requests));
-    showToast('Запрос отклонен');
-    document.querySelector('.modal.active').remove();
-    openAdminPanel();
-  }
+async function verifyReject(id) {
+  try { await MchatAPI.verifyReject(id); showToast('Запрос отклонён'); openAdminPanel(); }
+  catch (e) { showToast(MchatAPI.errorText(e)); }
+}
+function verifyRevoke(userId) {
+  showConfirm('Снять галочку досрочно?', async () => {
+    try { await MchatAPI.verifyRevoke(userId); showToast('Галочка снята'); openAdminPanel(); }
+    catch (e) { showToast(MchatAPI.errorText(e)); }
+  });
 }
 
 function editProfileBanner() {
@@ -3531,21 +3536,25 @@ function editProfileBanner() {
   if (inp) inp.click();
 }
 
-function bannerChosen(e) {
+async function bannerChosen(e) {
   const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    currentUser.banner = ev.target.result;
-    saveUser();
-    const cover = document.getElementById('cover-image');
-    cover.style.backgroundImage = `url('${ev.target.result}')`;
-    cover.style.backgroundSize = 'cover';
-    cover.style.backgroundPosition = 'center';
-    showToast('Баннер обновлен!');
-  };
-  reader.readAsDataURL(file);
   e.target.value = '';
+  if (!file) return;
+  const cover = document.getElementById('cover-image');
+  const prev = currentUser.banner;
+  const localUrl = URL.createObjectURL(file);
+  cover.style.backgroundImage = `url('${localUrl}')`;
+  cover.style.backgroundSize = 'cover';
+  cover.style.backgroundPosition = 'center';
+  try {
+    const up = await MchatAPI.uploadMedia('image', file, {});
+    await MchatAPI.updateMe({ bannerMediaId: up.id });
+    currentUser.banner = up.url; saveUser();
+    showToast('Баннер обновлен!');
+  } catch (err) {
+    currentUser.banner = prev; updateProfileUI();
+    showToast('Баннер не сохранён: ' + MchatAPI.errorText(err));
+  }
 }
 
 function requestVerification() {
@@ -3565,22 +3574,14 @@ function requestVerification() {
   document.getElementById('app').appendChild(m);
 }
 
-function submitVerificationRequest() {
+async function submitVerificationRequest() {
   const reason = document.getElementById('verify-reason').value.trim();
-  if (!reason) { showToast('Заполни поле причины'); return; }
-  const adminChats = localStorage.getItem('mchat_verify_requests') || '[]';
-  let requests = JSON.parse(adminChats);
-  requests.push({
-    username: currentUser.username,
-    name: currentUser.name,
-    reason: reason,
-    avatar: currentUser.avatar,
-    time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
-    status: 'pending'
-  });
-  localStorage.setItem('mchat_verify_requests', JSON.stringify(requests));
-  document.querySelector('.modal.active').remove();
-  showToast('Запрос отправлен администраторам!');
+  if (reason.length < 3) { showToast('Заполни поле причины'); return; }
+  try {
+    await MchatAPI.requestVerification(reason);
+    document.querySelector('.modal.active').remove();
+    showToast('Запрос отправлен администраторам!');
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
 }
 
 let scTapStartTime = 0;
@@ -3746,7 +3747,7 @@ function renderReelsOverlay() {
   av.innerHTML = authorData.avatar
     ? `<img src="${authorData.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
     : `<span style="color:#fff;font-weight:700;font-size:14px">${(p.username).charAt(0).toUpperCase()}</span>`;
-  document.getElementById('reels-author-name').innerHTML = (p.name || p.username) + (authorData.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
+  document.getElementById('reels-author-name').innerHTML = esc(p.name || p.username) + (authorData.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
   document.getElementById('reels-author-handle').textContent = '@' + p.username;
   const followBtn = document.getElementById('reels-follow-btn');
   if (currentUser && p.username === currentUser.username) {
@@ -4052,9 +4053,132 @@ function mxOpenUserAvatar() {
   document.getElementById('avatar-fullscreen').classList.add('active');
 }
 function mxChatHeaderTap() {
-  if (currentChatMeta && currentChatMeta.type === 'DIRECT' && currentChatPeer) {
-    openUserProfile(currentChatPeer.username);
-  }
+  if (!currentChatMeta) return;
+  if (currentChatMeta.type === 'DIRECT' && currentChatPeer) openUserProfile(currentChatPeer.username);
+  else if (currentChatMeta.type === 'GROUP' || currentChatMeta.type === 'CHANNEL') mxOpenChatInfo();
+}
+
+// ---------- информация о группе/канале: участники, добавление позже, уведомления, выход ----------
+let mxInfoMembers = [];
+async function mxOpenChatInfo() {
+  const ch = chats.find(c => c.id === currentChatId);
+  if (!ch) return;
+  document.querySelectorAll('#mx-info-modal').forEach(x => x.remove());
+  const modal = document.createElement('div');
+  modal.className = 'modal active';
+  modal.id = 'mx-info-modal';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = '<div class="mx-modal-box"><div style="padding:30px;text-align:center;color:var(--text2)">Загрузка…</div></div>';
+  document.getElementById('app').appendChild(modal);
+  try { mxInfoMembers = (await MchatAPI.chatMembers(ch.id)).members; }
+  catch (e) { modal.remove(); showToast(MchatAPI.errorText(e)); return; }
+  mxRenderChatInfo();
+}
+function mxRenderChatInfo() {
+  const modal = document.getElementById('mx-info-modal');
+  const ch = chats.find(c => c.id === currentChatId);
+  if (!modal || !ch) return;
+  const isChannel = ch.type === 'CHANNEL';
+  const staff = ch.role === 'OWNER' || ch.role === 'ADMIN';
+  const roleLabel = r => r === 'OWNER' ? 'создатель' : r === 'ADMIN' ? 'админ' : '';
+  const members = mxInfoMembers.map(m => `<div style="display:flex;align-items:center;gap:10px;padding:7px 2px">
+      <div style="width:34px;height:34px;border-radius:50%;background:var(--surf2);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700">${m.avatar ? `<img src="${esc(m.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">` : esc((m.name || m.username).charAt(0).toUpperCase())}</div>
+      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.name || m.username)}</div><div style="font-size:12px;color:var(--text2)">@${esc(m.username)}${roleLabel(m.role) ? ' · ' + roleLabel(m.role) : ''}</div></div>
+      ${staff && m.role !== 'OWNER' && m.id !== currentUser.id && (ch.role === 'OWNER' || m.role === 'MEMBER') ? `<button onclick="mxKickMember('${esc(m.id)}')" style="background:none;border:none;color:#f43f5e;font-size:12px;cursor:pointer">Удалить</button>` : ''}
+    </div>`).join('');
+  modal.innerHTML = `<div class="mx-modal-box" style="max-height:88vh;overflow-y:auto">
+    <h3 style="margin-bottom:4px">${esc(ch.name)}</h3>
+    <div class="mx-hint" style="margin-bottom:10px">${isChannel ? 'Канал' : 'Группа'} · ${mxPlural(ch.memberCount, isChannel ? ['подписчик','подписчика','подписчиков'] : ['участник','участника','участников'])}</div>
+    ${ch.description ? `<div style="font-size:13px;color:var(--text2);margin-bottom:12px">${esc(ch.description)}</div>` : ''}
+    <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surf);border-radius:12px;padding:12px;margin-bottom:10px">
+      <div style="font-size:14px">Уведомления</div>${mxSwitchHtml(!ch.muted, `mxToggleMute('${esc(ch.id)}')`)}
+    </div>
+    ${staff ? `<div class="mx-row-btns" style="margin-bottom:10px">
+      <button class="mx-btn" onclick="mxOpenEditChat()">Изменить</button>
+      <button class="mx-btn primary" onclick="mxOpenAddMembers()">Добавить участников</button>
+    </div>` : ''}
+    ${staff && ch.inviteCode ? `<button class="mx-btn" style="width:100%;margin-bottom:10px" onclick="mxCopyInvite()">Скопировать ссылку-приглашение</button>` : ''}
+    <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin:8px 0 2px">${isChannel ? 'Подписчики' : 'Участники'}</div>
+    <div>${members}</div>
+    ${ch.role !== 'OWNER' ? `<button class="mx-btn" style="width:100%;margin-top:12px;color:#f43f5e" onclick="mxLeaveChat()">${isChannel ? 'Отписаться' : 'Покинуть группу'}</button>` : ''}
+    <button class="mx-btn" style="width:100%;margin-top:8px" onclick="document.getElementById('mx-info-modal').remove()">Закрыть</button>
+  </div>`;
+}
+function mxSwitchHtml(on, onclick) {
+  return `<div onclick="${onclick}" style="width:44px;height:26px;border-radius:13px;background:${on ? 'var(--accent)' : 'var(--surf2)'};position:relative;cursor:pointer;flex-shrink:0;transition:background .15s"><div style="position:absolute;top:3px;left:${on ? '21px' : '3px'};width:20px;height:20px;border-radius:50%;background:#fff;transition:left .15s"></div></div>`;
+}
+async function mxToggleMute(chatId) {
+  const ch = chats.find(c => c.id === chatId);
+  if (!ch) return;
+  const muted = !ch.muted;
+  try { await MchatAPI.muteChat(chatId, muted); ch.muted = muted; mxRenderChatInfo(); mxRefreshGlobalChannels(); }
+  catch (e) { showToast(MchatAPI.errorText(e)); }
+}
+function mxCopyInvite() {
+  const ch = chats.find(c => c.id === currentChatId);
+  if (!ch || !ch.inviteCode) return;
+  const link = location.origin + '/join/' + ch.inviteCode;
+  if (navigator.clipboard) navigator.clipboard.writeText(link).catch(() => {});
+  showToast('Ссылка скопирована');
+}
+function mxKickMember(userId) {
+  showConfirm('Удалить участника?', async () => {
+    try { await MchatAPI.removeMember(currentChatId, userId); mxInfoMembers = mxInfoMembers.filter(m => m.id !== userId); await refreshChats(); mxRenderChatInfo(); }
+    catch (e) { showToast(MchatAPI.errorText(e)); }
+  });
+}
+function mxLeaveChat() {
+  showConfirm('Выйти из чата?', async () => {
+    try { await MchatAPI.removeMember(currentChatId, currentUser.id); const m = document.getElementById('mx-info-modal'); if (m) m.remove(); await refreshChats(); goTo('s-chats'); }
+    catch (e) { showToast(MchatAPI.errorText(e)); }
+  });
+}
+function mxOpenEditChat() {
+  const ch = chats.find(c => c.id === currentChatId);
+  if (!ch) return;
+  const modal = document.getElementById('mx-info-modal');
+  modal.innerHTML = `<div class="mx-modal-box">
+    <h3 style="margin-bottom:14px">Изменить</h3>
+    <input class="mx-input" id="mx-edit-title" value="${esc(ch.name)}" maxlength="60" style="margin-bottom:10px">
+    <textarea class="mx-input" id="mx-edit-desc" maxlength="200" style="margin-bottom:14px;min-height:70px;resize:vertical">${esc(ch.description || '')}</textarea>
+    <div class="mx-row-btns"><button class="mx-btn" onclick="mxRenderChatInfo()">Назад</button><button class="mx-btn primary" onclick="mxSaveEditChat()">Сохранить</button></div>
+  </div>`;
+}
+async function mxSaveEditChat() {
+  const title = document.getElementById('mx-edit-title').value.trim();
+  const description = document.getElementById('mx-edit-desc').value.trim();
+  if (!title) { showToast('Нужно название'); return; }
+  try { await MchatAPI.updateChat(currentChatId, { title, description }); await refreshChats(); const ch = chats.find(c => c.id === currentChatId); if (ch) document.getElementById('chat-name').textContent = ch.name; mxRenderChatInfo(); }
+  catch (e) { showToast(MchatAPI.errorText(e)); }
+}
+async function mxOpenAddMembers() {
+  mxPick = new Set();
+  const modal = document.getElementById('mx-info-modal');
+  modal.innerHTML = '<div class="mx-modal-box"><div style="padding:30px;text-align:center;color:var(--text2)">Загрузка…</div></div>';
+  try { mxContactsCache = (await MchatAPI.chatContacts()).contacts; }
+  catch (e) { showToast(MchatAPI.errorText(e)); mxRenderChatInfo(); return; }
+  const inChat = new Set(mxInfoMembers.map(m => m.id));
+  const free = mxContactsCache.filter(c => !inChat.has(c.id));
+  modal.innerHTML = `<div class="mx-modal-box">
+    <h3 style="margin-bottom:10px">Добавить участников</h3>
+    <div class="mx-hint" id="mx-create-count" style="margin-bottom:6px"></div>
+    <div style="max-height:320px;overflow-y:auto;background:var(--surf);border-radius:12px;padding:4px 10px;margin-bottom:12px">${mxContactRowsHtml(free, 'mxToggleCreatePick')}</div>
+    <div class="mx-row-btns"><button class="mx-btn" onclick="mxRenderChatInfo()">Назад</button><button class="mx-btn primary" onclick="mxSubmitAddMembers()">Добавить</button></div>
+  </div>`;
+}
+async function mxSubmitAddMembers() {
+  if (!mxPick.size) { showToast('Выбери хотя бы одного человека'); return; }
+  try {
+    const r = await MchatAPI.addMembers(currentChatId, [...mxPick]);
+    mxInfoMembers = r.members;
+    await refreshChats();
+    showToast('Добавлено: ' + r.added);
+    mxRenderChatInfo();
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
+}
+
+function mxStartCall(withVideo) {
+  showToast('Звонки подключаем следующим этапом (пункт 7): полноэкранный экран звонка, микрофон, камера, добавить участника');
 }
 
 // ============================================================
@@ -4440,10 +4564,24 @@ function mxFabClose() {
 }
 let mxCreateType = 'GROUP';
 let mxCreateSelected = [];
-function mxOpenCreate(type) {
+let mxPick = new Set();       // выбранные контакты (id)
+let mxContactsCache = [];     // контакты с сервера
+
+function mxContactRowsHtml(list, onToggle) {
+  if (!list.length) return '<div style="text-align:center;padding:16px;color:var(--text2);font-size:13px">Контактов пока нет. Напиши кому-нибудь или добавь друга — они появятся здесь</div>';
+  return list.map(c => `<label style="display:flex;align-items:center;gap:10px;padding:8px 4px;cursor:pointer">
+    <input type="checkbox" ${mxPick.has(c.id) ? 'checked' : ''} onchange="${onToggle}('${esc(c.id)}',this.checked)" style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0">
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--surf2);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700">${c.avatar ? `<img src="${esc(c.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">` : esc((c.name || c.username).charAt(0).toUpperCase())}</div>
+    <div style="min-width:0"><div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name || c.username)}</div><div style="font-size:12px;color:var(--text2)">@${esc(c.username)}</div></div>
+  </label>`).join('');
+}
+function mxToggleCreatePick(id, on) { if (on) mxPick.add(id); else mxPick.delete(id); mxUpdateCreateCount(); }
+function mxUpdateCreateCount() { const el = document.getElementById('mx-create-count'); if (el) el.textContent = mxPick.size ? 'Выбрано: ' + mxPick.size : ''; }
+
+async function mxOpenCreate(type) {
   mxFabClose();
   mxCreateType = type === 'channel' ? 'CHANNEL' : 'GROUP';
-  mxCreateSelected = [];
+  mxPick = new Set();
   const isChannel = mxCreateType === 'CHANNEL';
   const modal = document.createElement('div');
   modal.className = 'modal active';
@@ -4453,8 +4591,10 @@ function mxOpenCreate(type) {
     <h3 style="margin-bottom:14px">${isChannel ? 'Новый канал' : 'Новая группа'}</h3>
     <input class="mx-input" id="mx-create-title" placeholder="${isChannel ? 'Название канала' : 'Название группы'}" maxlength="60" style="margin-bottom:10px">
     <textarea class="mx-input" id="mx-create-desc" placeholder="Описание (необязательно)" maxlength="200" style="margin-bottom:10px;min-height:60px;resize:vertical"></textarea>
-    <input class="mx-input" id="mx-create-members" placeholder="Ники участников через запятую" style="margin-bottom:6px">
-    <div class="mx-hint" style="margin-bottom:14px">Например: anna, ivan_petrov. ${isChannel ? 'В канале писать сможет только владелец.' : 'Позвать остальных можно будет позже по ссылке-приглашению.'}</div>
+    ${isChannel ? `<label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:pointer;font-size:14px"><input type="checkbox" id="mx-create-public" checked style="width:18px;height:18px;accent-color:var(--accent)"> Публичный канал (его можно найти в поиске)</label>` : ''}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:4px 0"><div class="mx-hint" style="margin:0">Участники из контактов</div><div class="mx-hint" style="margin:0" id="mx-create-count"></div></div>
+    <div id="mx-create-contacts" style="max-height:200px;overflow-y:auto;background:var(--surf);border-radius:12px;padding:4px 10px;margin-bottom:10px"><div style="padding:14px;text-align:center;color:var(--text2);font-size:13px">Загрузка…</div></div>
+    <div class="mx-hint" style="margin-bottom:14px">${isChannel ? 'Вы станете администратором: публиковать посты сможете только вы, остальные — читать.' : 'Других людей можно добавить позже, в настройках группы.'}</div>
     <div class="mx-row-btns">
       <button class="mx-btn" onclick="document.getElementById('mx-create-modal').remove()">Отмена</button>
       <button class="mx-btn primary" id="mx-create-submit" onclick="mxSubmitCreate()">Создать</button>
@@ -4462,16 +4602,22 @@ function mxOpenCreate(type) {
   </div>`;
   document.getElementById('app').appendChild(modal);
   setTimeout(() => document.getElementById('mx-create-title').focus(), 50);
+  try {
+    mxContactsCache = (await MchatAPI.chatContacts()).contacts;
+    const box = document.getElementById('mx-create-contacts');
+    if (box) box.innerHTML = mxContactRowsHtml(mxContactsCache, 'mxToggleCreatePick');
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
 }
 async function mxSubmitCreate() {
   const title = document.getElementById('mx-create-title').value.trim();
   const description = document.getElementById('mx-create-desc').value.trim();
-  const usernames = document.getElementById('mx-create-members').value.split(',').map(s => s.trim().replace(/^@/, '')).filter(Boolean);
-  if (!title) { showToast('Введи название'); return; }
+  const usernames = mxContactsCache.filter(c => mxPick.has(c.id)).map(c => c.username);
+  const pub = document.getElementById('mx-create-public');
+  if (!title) { showToast('Нужно название'); return; }
   const btn = document.getElementById('mx-create-submit');
   btn.disabled = true;
   try {
-    const r = await MchatAPI.createGroup({ type: mxCreateType, title, description: description || undefined, usernames });
+    const r = await MchatAPI.createGroup({ type: mxCreateType, title, description: description || undefined, usernames, isPublic: pub ? pub.checked : undefined });
     const modal = document.getElementById('mx-create-modal');
     if (modal) modal.remove();
     const ch = chatFromServer(r.chat);
@@ -4703,6 +4849,7 @@ function mxCameraClose() {
   if (mxCam) {
     clearInterval(mxCam.timer);
     if (mxCam.recorder && mxCam.recorder.state !== 'inactive') { try { mxCam.recorder.stop(); } catch (e) {} }
+    if (mxCam.mirror) { mxCam.mirror.stop(); mxCam.mirror = null; }
     if (mxCam.stream) mxCam.stream.getTracks().forEach(t => t.stop());
   }
   mxCam = null;
@@ -4749,12 +4896,37 @@ function mxCameraTakePhoto() {
     document.getElementById('mx-cam-review').style.display = 'flex';
   }, 'image/jpeg', 0.9);
 }
+// Фронтальная камера в превью показана зеркально. Чтобы отправленный кружок выглядел ровно так же, как
+// пользователь видел себя при съёмке (а не «наоборот»), зеркалим кадры при записи через canvas.
+function mxMirroredStream(stream, videoEl) {
+  const vt = stream.getVideoTracks()[0];
+  const st = (vt && vt.getSettings && vt.getSettings()) || {};
+  const w = st.width || videoEl.videoWidth || 640, h = st.height || videoEl.videoHeight || 480;
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  let raf = 0, stopped = false;
+  const draw = () => {
+    if (stopped) return;
+    if (videoEl.readyState >= 2) { ctx.save(); ctx.translate(w, 0); ctx.scale(-1, 1); ctx.drawImage(videoEl, 0, 0, w, h); ctx.restore(); }
+    raf = requestAnimationFrame(draw);
+  };
+  draw();
+  const out = canvas.captureStream(30);
+  stream.getAudioTracks().forEach(t => out.addTrack(t));
+  return { stream: out, stop: () => { stopped = true; cancelAnimationFrame(raf); } };
+}
 function mxCameraStartRecording() {
   if (!mxCam.stream) return;
   const mime = mxPickMime(['video/webm;codecs=vp8,opus', 'video/webm']);
   let recorder;
-  try { recorder = new MediaRecorder(mxCam.stream, mime ? { mimeType: mime } : undefined); }
-  catch (e) { showToast('Запись видео не поддерживается'); return; }
+  let source = mxCam.stream;
+  if (mxCam.facing === 'user' && typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype.captureStream) {
+    try { mxCam.mirror = mxMirroredStream(mxCam.stream, document.getElementById('mx-cam-video')); source = mxCam.mirror.stream; }
+    catch (e) { mxCam.mirror = null; source = mxCam.stream; }
+  }
+  try { recorder = new MediaRecorder(source, mime ? { mimeType: mime } : undefined); }
+  catch (e) { if (mxCam.mirror) { mxCam.mirror.stop(); mxCam.mirror = null; } showToast('Запись видео не поддерживается'); return; }
   mxCam.recorder = recorder; mxCam.chunks = []; mxCam.recording = true; mxCam.elapsed = 0;
   recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) mxCam.chunks.push(e.data); };
   recorder.start();
@@ -4770,11 +4942,12 @@ function mxCameraStopRecording() {
   clearInterval(mxCam.timer);
   document.getElementById('mx-camera').classList.remove('recording');
   mxCam.recorder.onstop = () => {
+    if (mxCam.mirror) { mxCam.mirror.stop(); mxCam.mirror = null; }
     mxCam.blob = new Blob(mxCam.chunks, { type: mxCam.recorder.mimeType || 'video/webm' });
     mxCam.recording = false;
     const video = document.getElementById('mx-cam-video');
     video.srcObject = null;
-    video.classList.remove('mirror'); // превью записи показываем как есть — так его увидит собеседник
+    video.classList.remove('mirror'); // зеркало уже «запечено» в запись — показываем как есть, собеседник увидит то же самое
     video.src = URL.createObjectURL(mxCam.blob);
     video.loop = true; video.muted = true; video.playbackRate = 1; video.onloadedmetadata = () => mxFixWebmDuration(video); video.play().catch(() => {});
     document.getElementById('mx-cam-live').style.display = 'none';

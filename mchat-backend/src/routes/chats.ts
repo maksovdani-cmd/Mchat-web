@@ -2,8 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
-  addMembers, createGroupOrChannel, getChatDTO, getOrCreateDirectChat, joinByInvite, listChats, listMembers, listMessages,
-  removeMember, setChatBackground, setMemberRole, updateChatInfo,
+  addMembers, createGroupOrChannel, getChatDTO, getOrCreateDirectChat, joinByInvite, joinPublicChannel, listChats, listContacts,
+  listMembers, listMessages, removeMember, searchPublicChannels, setChatBackground, setChatMuted, setMemberRole, updateChatInfo,
 } from '../services/chat';
 import { emitToChat, emitToUser, leaveUserFromChat } from '../realtime/hub';
 import { joinAllToChat, pinAndDispatch, readAndBroadcast, sendAndDispatch } from '../services/messaging';
@@ -16,6 +16,35 @@ const id = z.string().min(1).max(40);
 
 chatsRouter.get('/', wrap(async (req, res) => {
   res.json({ chats: await listChats(authOf(req).userId) });
+}));
+
+/** Контакты для выбора участников (друзья и собеседники личных чатов). */
+chatsRouter.get('/contacts', wrap(async (req, res) => {
+  res.json({ contacts: await listContacts(authOf(req).userId) });
+}));
+
+/** Глобальный поиск публичных каналов. */
+chatsRouter.get('/search', wrap(async (req, res) => {
+  const q = z.string().trim().min(2).max(60).parse(req.query.q);
+  res.json({ channels: await searchPublicChannels(authOf(req).userId, q) });
+}));
+
+/** Кнопка «Присоединиться» у найденного публичного канала. */
+chatsRouter.post('/:id/join', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const chatId = String(req.params.id);
+  await joinPublicChannel(userId, chatId);
+  joinAllToChat([userId], chatId);
+  changed(chatId);
+  res.json({ chat: await getChatDTO(userId, chatId) });
+}));
+
+/** Переключатель «Уведомления Вкл/Выкл» для этого чата/канала (только для меня). */
+chatsRouter.put('/:id/mute', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const { muted } = z.object({ muted: z.boolean() }).parse(req.body);
+  await setChatMuted(userId, String(req.params.id), muted);
+  res.json({ muted });
 }));
 
 /** «Написать» на профиле: найти или создать личный диалог. */
@@ -35,8 +64,9 @@ chatsRouter.post('/group', wrap(async (req, res) => {
     title: z.string().trim().min(1).max(60).regex(/^[^<>]+$/),
     description: z.string().trim().max(200).regex(/^[^<>]*$/).optional(),
     usernames: z.array(z.string().max(40)).max(200).default([]),
+    isPublic: z.boolean().optional(),
   }).parse(req.body);
-  const { chatId, memberIds } = await createGroupOrChannel(userId, b.type, b.title, b.description, b.usernames);
+  const { chatId, memberIds } = await createGroupOrChannel(userId, b.type, b.title, b.description, b.usernames, b.isPublic ?? b.type === 'CHANNEL');
   joinAllToChat(memberIds, chatId);
   res.json({ chat: await getChatDTO(userId, chatId) });
 }));

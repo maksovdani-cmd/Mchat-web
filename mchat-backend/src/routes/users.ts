@@ -5,7 +5,7 @@ import { authOf, requireAuth } from '../middleware/auth';
 import { searchLimiter } from '../middleware/security';
 import { disconnectUser } from '../realtime/hub';
 import { friendInfo } from '../services/friends';
-import { toMediaDTO } from '../services/media';
+import { gcMedia, mediaUrl, toMediaDTO } from '../services/media';
 import { announcePresence, visiblePresence } from '../services/presence';
 import { publicUserSelect } from '../services/chat';
 import { COOKIE, dropCookie, revokeDevice } from '../services/session';
@@ -32,6 +32,7 @@ usersRouter.get(
       ...toPublic(u),
       bio: u.bio,
       email: u.email,
+      banner: u.bannerUrl,
       role: u.role,
       settings: { notifyMessages: u.notifyMessages, hideOnline: u.hideOnline, hideRead: u.hideRead },
       deviceId: authOf(req).deviceId,
@@ -46,6 +47,8 @@ const patchSchema = z
     notifyMessages: z.boolean(),
     hideOnline: z.boolean(),
     hideRead: z.boolean(),
+    avatarMediaId: z.string().min(1).max(40).nullable(),
+    bannerMediaId: z.string().min(1).max(40).nullable(),
   })
   .partial()
   .strict();
@@ -53,14 +56,30 @@ const patchSchema = z
 usersRouter.patch(
   '/me',
   wrap(async (req, res) => {
-    const data = patchSchema.parse(req.body);
-    const before = data.hideOnline !== undefined
-      ? await prisma.user.findUnique({ where: { id: authOf(req).userId }, select: { hideOnline: true } }) : null;
-    const u = await prisma.user.update({ where: { id: authOf(req).userId }, data });
+    const userId = authOf(req).userId;
+    const { avatarMediaId, bannerMediaId, ...rest } = patchSchema.parse(req.body);
+    const data: Record<string, unknown> = { ...rest };
+    const before = await prisma.user.findUnique({ where: { id: userId }, select: { hideOnline: true, avatarUrl: true, bannerUrl: true } });
+    // аватар/обложка: только своя картинка; null — убрать
+    for (const [key, id] of [['avatarUrl', avatarMediaId], ['bannerUrl', bannerMediaId]] as const) {
+      if (id === undefined) continue;
+      if (id !== null) {
+        const m = await prisma.media.findUnique({ where: { id } });
+        if (!m || m.ownerId !== userId || m.kind !== 'IMAGE') throw new HttpError(400, 'bad_media');
+      }
+      data[key] = id === null ? null : mediaUrl(id);
+    }
+    const u = await prisma.user.update({ where: { id: userId }, data });
+    // старые файлы аватара/обложки больше не нужны
+    for (const old of [data.avatarUrl !== undefined ? before?.avatarUrl : null, data.bannerUrl !== undefined ? before?.bannerUrl : null]) {
+      const m = old && /^\/api\/media\/([\w-]+)$/.exec(old);
+      if (m) gcMedia(m[1]).catch(() => {});
+    }
     // переключили «скрыть статус» — все, кто видит нас, должны сразу получить новое состояние
     if (before && before.hideOnline !== u.hideOnline) announcePresence(u.id).catch(() => {});
     res.json({
       ...toPublic(u),
+      banner: u.bannerUrl,
       bio: u.bio,
       settings: { notifyMessages: u.notifyMessages, hideOnline: u.hideOnline, hideRead: u.hideRead },
     });
@@ -116,14 +135,14 @@ usersRouter.get(
     const me = authOf(req).userId;
     const u = await prisma.user.findUnique({
       where: { username: normalizeUsername(String(req.params.username)) },
-      select: { ...publicUserSelect, bio: true, hideOnline: true, lastSeenAt: true },
+      select: { ...publicUserSelect, bio: true, bannerUrl: true, hideOnline: true, lastSeenAt: true },
     });
     if (!u) throw new HttpError(404, 'user_not_found');
     const [friendship, tracks] = await Promise.all([
       u.id === me ? { status: 'self', id: null } : friendInfo(me, u.id),
       prisma.media.count({ where: { ownerId: u.id, kind: 'TRACK' } }),
     ]);
-    res.json({ ...toPublic(u), ...visiblePresence(u), friendship, tracksCount: tracks });
+    res.json({ ...toPublic(u), banner: u.bannerUrl, ...visiblePresence(u), friendship, tracksCount: tracks });
   }),
 );
 
