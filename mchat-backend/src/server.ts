@@ -13,6 +13,10 @@ import { chatsRouter } from './routes/chats';
 import { friendsRouter } from './routes/friends';
 import { mediaRouter } from './routes/media';
 import { messagesRouter } from './routes/messages';
+import { postsRouter, storiesRouter } from './routes/posts';
+import { purgeExpiredStories } from './services/posts';
+import { verificationRouter } from './routes/verification';
+import { expireVerifications } from './services/verification';
 import { pushRouter } from './routes/push';
 import { usersRouter } from './routes/users';
 import { ensureUploadDir } from './services/storage';
@@ -80,6 +84,9 @@ app.use('/api/chats', chatsRouter);
 app.use('/api/messages', messagesRouter);
 app.use('/api/friends', friendsRouter);
 app.use('/api/media', mediaRouter);
+app.use('/api/posts', postsRouter);
+app.use('/api/stories', storiesRouter);
+app.use('/api/verification', verificationRouter);
 app.use('/api', usersRouter); // /api/me, /api/users/*, /api/me/devices
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
 
@@ -115,6 +122,11 @@ app.use(onError);
 ensureUploadDir();
 const server = http.createServer(app);
 const io = initSocket(server);
+
+const expireNow = () => expireVerifications().catch((e) => console.error('expire verifications', e));
+expireNow();
+setInterval(expireNow, 5 * 60 * 1000).unref(); // срок галочки вышел — она исчезает (проверка раз в 5 минут)
+setInterval(() => purgeExpiredStories().catch((e) => console.error('purge stories', e)), 60 * 60 * 1000).unref();
 
 server.listen(config.PORT, () => {
   console.log(`✅ Mchat запущен: ${config.appOrigin}  (порт ${config.PORT}, ${config.NODE_ENV})`);

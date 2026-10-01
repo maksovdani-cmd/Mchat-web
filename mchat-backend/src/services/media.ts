@@ -56,8 +56,23 @@ export const cleanTitle = (raw: string) =>
 export async function canAccessMedia(userId: string, m: Pick<Media, 'id' | 'ownerId' | 'kind'>): Promise<boolean> {
   if (m.ownerId === userId || m.kind === 'TRACK') return true;
   if (m.kind === 'IMAGE') {
-    const av = await prisma.chat.findFirst({ where: { avatarMediaId: m.id, members: { some: { userId } } }, select: { id: true } });
+    const av = await prisma.chat.findFirst({
+      where: { avatarMediaId: m.id, OR: [{ isPublic: true }, { members: { some: { userId } } }] }, select: { id: true },
+    });
     if (av) return true; // аватарка группы/канала видна её участникам
+    // аватар / обложка профиля видны всем вошедшим пользователям
+    const url = mediaUrl(m.id);
+    const prof = await prisma.user.findFirst({ where: { OR: [{ avatarUrl: url }, { bannerUrl: url }] }, select: { id: true } });
+    if (prof) return true;
+  }
+  if (m.kind === 'IMAGE' || m.kind === 'VIDEO') {
+    // публичный пост (фото/видео/обложка) виден всем вошедшим; приватный — только автору (он владелец файла)
+    const post = await prisma.post.findFirst({
+      where: { privacy: 'public', OR: [{ mediaId: m.id }, { thumbId: m.id }] }, select: { id: true },
+    });
+    if (post) return true;
+    const story = await prisma.story.findFirst({ where: { mediaId: m.id, expiresAt: { gt: new Date() } }, select: { id: true } });
+    if (story) return true;
   }
   const ref = await prisma.message.findFirst({
     where: { mediaId: m.id, deletedAt: null, chat: { members: { some: { userId } } } },
@@ -66,12 +81,24 @@ export async function canAccessMedia(userId: string, m: Pick<Media, 'id' | 'owne
   return !!ref;
 }
 
-/** Удаляет файл, если на него больше не ссылается ни одно сообщение (треки профиля не трогаем). */
+/** Файл ещё нужен, если на него ссылается сообщение, пост, история или профиль. */
+async function isMediaReferenced(mediaId: string): Promise<boolean> {
+  const url = mediaUrl(mediaId);
+  const [msgs, posts, stories, profiles, chats] = await Promise.all([
+    prisma.message.count({ where: { mediaId, deletedAt: null } }),
+    prisma.post.count({ where: { OR: [{ mediaId }, { thumbId: mediaId }] } }),
+    prisma.story.count({ where: { mediaId } }),
+    prisma.user.count({ where: { OR: [{ avatarUrl: url }, { bannerUrl: url }] } }),
+    prisma.chat.count({ where: { avatarMediaId: mediaId } }),
+  ]);
+  return msgs + posts + stories + profiles + chats > 0;
+}
+
+/** Удаляет файл, если на него больше ничто не ссылается (треки профиля не трогаем). */
 export async function gcMedia(mediaId: string) {
   const m = await prisma.media.findUnique({ where: { id: mediaId } });
   if (!m || m.kind === 'TRACK') return;
-  const refs = await prisma.message.count({ where: { mediaId, deletedAt: null } });
-  if (refs > 0) return;
+  if (await isMediaReferenced(mediaId)) return;
   await prisma.media.delete({ where: { id: mediaId } }).catch(() => {});
   await removeFile(m.file);
 }
