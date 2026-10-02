@@ -71,6 +71,21 @@ function loadUserPosts(username) { return postsByUser[username] || []; }
 
 function commentFromServer(c) { return Object.assign({}, c, { time: fmtClock(c.createdAt) }); }
 
+/** data:/blob: адрес → Blob. data: разбираем вручную (не зависит от CSP), blob: читаем через fetch. */
+async function mxUrlToBlob(url) {
+  if (url.startsWith('data:')) {
+    const i = url.indexOf(',');
+    const meta = url.slice(5, i);
+    const mime = meta.split(';')[0] || 'application/octet-stream';
+    const data = url.slice(i + 1);
+    const bin = /;base64$/.test(meta) ? atob(data) : decodeURIComponent(data);
+    const u8 = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k);
+    return new Blob([u8], { type: mime });
+  }
+  return (await fetch(url)).blob();
+}
+
 function postFromServer(p) {
   cacheUser(p.username, { name: p.name, avatar: p.avatar, verified: p.verified });
   return Object.assign({}, p, {
@@ -1929,7 +1944,7 @@ async function publishStory() {
   try {
     let mediaId;
     if (scMediaUrl) {
-      const blob = await (await fetch(scMediaUrl)).blob();
+      const blob = await mxUrlToBlob(scMediaUrl);
       mediaId = (await MchatAPI.uploadMedia(scMediaType === 'video' ? 'video' : 'image', blob, {})).id;
     }
     const r = await MchatAPI.createStory({ mediaId: mediaId, bg: scBgs[scBgIdx], textBlocks: allTextBlocks });
@@ -2221,7 +2236,7 @@ async function pcPublishPost() {
       const up = await MchatAPI.uploadMedia(media.type === 'video' ? 'video' : 'image', media.file, { onProgress: pct => setProgress(pct * 0.95) });
       mediaId = up.id;
       if (media.type === 'video' && media.thumbnail) {
-        const thumbBlob = await (await fetch(media.thumbnail)).blob();
+        const thumbBlob = await mxUrlToBlob(media.thumbnail);
         thumbId = (await MchatAPI.uploadMedia('image', thumbBlob, {})).id;
       }
     }

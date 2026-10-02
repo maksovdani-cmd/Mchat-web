@@ -96,7 +96,11 @@
   };
   const errorText = (e) => {
     const code = typeof e === 'string' ? e : e && e.code;
-    return ERR[code] || (e && e.status === 0 ? 'Нет связи с сервером' : 'Что-то пошло не так. Попробуй ещё раз');
+    if (ERR[code]) return ERR[code];
+    if (e && e.status === 0) return 'Нет связи с сервером';
+    // неизвестная ошибка: показываем технический код, чтобы можно было понять причину
+    const detail = e && (e.code || e.message) ? ' (' + String(e.code || e.message).slice(0, 60) + ')' : '';
+    return 'Что-то пошло не так. Попробуй ещё раз' + detail;
   };
 
   // ---------- realtime ----------

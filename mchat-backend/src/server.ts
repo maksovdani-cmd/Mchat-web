@@ -16,6 +16,7 @@ import { messagesRouter } from './routes/messages';
 import { postsRouter, storiesRouter } from './routes/posts';
 import { purgeExpiredStories } from './services/posts';
 import { verificationRouter } from './routes/verification';
+import { callsRouter } from './routes/calls';
 import { expireVerifications } from './services/verification';
 import { pushRouter } from './routes/push';
 import { usersRouter } from './routes/users';
@@ -51,7 +52,8 @@ app.use(
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
         mediaSrc: ["'self'", 'data:', 'blob:'],
-        connectSrc: ["'self'", wsOrigin],
+        // data:/blob: нужны, чтобы превью видео и медиа историй из памяти браузера можно было загрузить на сервер
+        connectSrc: ["'self'", wsOrigin, 'data:', 'blob:'],
         workerSrc: ["'self'"],
         manifestSrc: ["'self'"],
         objectSrc: ["'none'"],
@@ -87,6 +89,7 @@ app.use('/api/media', mediaRouter);
 app.use('/api/posts', postsRouter);
 app.use('/api/stories', storiesRouter);
 app.use('/api/verification', verificationRouter);
+app.use('/api/calls', callsRouter);
 app.use('/api', usersRouter); // /api/me, /api/users/*, /api/me/devices
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
 

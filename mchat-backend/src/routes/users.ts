@@ -1,184 +1,105 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { prisma } from '../db';
 import { authOf, requireAuth } from '../middleware/auth';
-import { searchLimiter } from '../middleware/security';
-import { disconnectUser } from '../realtime/hub';
-import { friendInfo } from '../services/friends';
-import { gcMedia, mediaUrl, toMediaDTO } from '../services/media';
-import { announcePresence, visiblePresence } from '../services/presence';
-import { publicUserSelect } from '../services/chat';
-import { COOKIE, dropCookie, revokeDevice } from '../services/session';
-import { HttpError, wrap } from '../utils/errors';
-import { cleanQuery, normalizeUsername } from '../utils/validate';
+import {
+  addComment, addRepost, addStoryComment, createPost, createStory, deletePost, deleteStory, getPost, listFeed, listReposts,
+  listUserPosts, listUserStories, searchPosts, setLike, setStoryLike,
+} from '../services/posts';
+import { wrap } from '../utils/errors';
 
-export const usersRouter = Router();
-usersRouter.use(requireAuth);
+const mediaId = z.string().min(1).max(40);
+const intId = z.coerce.number().int().positive();
+const clean = z.string().trim().regex(/^[^\u0000-\u0008\u000b\u000c\u000e-\u001f]*$/);
 
-const toPublic = (u: { id: string; username: string; name: string; avatarUrl: string | null; verified: boolean; bio?: string }) => ({
-  id: u.id,
-  username: u.username,
-  name: u.name,
-  avatar: u.avatarUrl,
-  verified: u.verified,
-  ...(u.bio !== undefined ? { bio: u.bio } : {}),
-});
+export const postsRouter = Router();
+postsRouter.use(requireAuth);
 
-usersRouter.get(
-  '/me',
-  wrap(async (req, res) => {
-    const u = await prisma.user.findUniqueOrThrow({ where: { id: authOf(req).userId } });
-    res.json({
-      ...toPublic(u),
-      bio: u.bio,
-      email: u.email,
-      banner: u.bannerUrl,
-      role: u.role,
-      settings: { notifyMessages: u.notifyMessages, hideOnline: u.hideOnline, hideRead: u.hideRead },
-      deviceId: authOf(req).deviceId,
-    });
-  }),
-);
+/** Лента: мои посты + публичные посты остальных. ?username=… — посты одного человека. */
+postsRouter.get('/', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const username = typeof req.query.username === 'string' ? req.query.username : '';
+  res.json({ posts: username ? await listUserPosts(userId, username) : await listFeed(userId) });
+}));
 
-const patchSchema = z
-  .object({
-    name: z.string().trim().min(1).max(40).regex(/^[^<>]+$/),
-    bio: z.string().trim().max(160),
-    notifyMessages: z.boolean(),
-    hideOnline: z.boolean(),
-    hideRead: z.boolean(),
-    avatarMediaId: z.string().min(1).max(40).nullable(),
-    bannerMediaId: z.string().min(1).max(40).nullable(),
-  })
-  .partial()
-  .strict();
+postsRouter.get('/search', wrap(async (req, res) => {
+  const q = z.string().trim().min(1).max(60).parse(req.query.q);
+  res.json({ posts: await searchPosts(authOf(req).userId, q) });
+}));
 
-usersRouter.patch(
-  '/me',
-  wrap(async (req, res) => {
-    const userId = authOf(req).userId;
-    const { avatarMediaId, bannerMediaId, ...rest } = patchSchema.parse(req.body);
-    const data: Record<string, unknown> = { ...rest };
-    const before = await prisma.user.findUnique({ where: { id: userId }, select: { hideOnline: true, avatarUrl: true, bannerUrl: true } });
-    // аватар/обложка: только своя картинка; null — убрать
-    for (const [key, id] of [['avatarUrl', avatarMediaId], ['bannerUrl', bannerMediaId]] as const) {
-      if (id === undefined) continue;
-      if (id !== null) {
-        const m = await prisma.media.findUnique({ where: { id } });
-        if (!m || m.ownerId !== userId || m.kind !== 'IMAGE') throw new HttpError(400, 'bad_media');
-      }
-      data[key] = id === null ? null : mediaUrl(id);
-    }
-    const u = await prisma.user.update({ where: { id: userId }, data });
-    // старые файлы аватара/обложки больше не нужны
-    for (const old of [data.avatarUrl !== undefined ? before?.avatarUrl : null, data.bannerUrl !== undefined ? before?.bannerUrl : null]) {
-      const m = old && /^\/api\/media\/([\w-]+)$/.exec(old);
-      if (m) gcMedia(m[1]).catch(() => {});
-    }
-    // переключили «скрыть статус» — все, кто видит нас, должны сразу получить новое состояние
-    if (before && before.hideOnline !== u.hideOnline) announcePresence(u.id).catch(() => {});
-    res.json({
-      ...toPublic(u),
-      banner: u.bannerUrl,
-      bio: u.bio,
-      settings: { notifyMessages: u.notifyMessages, hideOnline: u.hideOnline, hideRead: u.hideRead },
-    });
-  }),
-);
+postsRouter.get('/reposts', wrap(async (req, res) => {
+  const username = z.string().min(1).max(40).parse(req.query.username);
+  res.json({ posts: await listReposts(authOf(req).userId, username) });
+}));
 
-/** Удаление аккаунта: личные диалоги и все данные стираются безвозвратно. */
-usersRouter.delete(
-  '/me',
-  wrap(async (req, res) => {
-    const { userId } = authOf(req);
-    await prisma.chat.deleteMany({ where: { type: 'DIRECT', members: { some: { userId } } } });
-    await prisma.user.delete({ where: { id: userId } });
-    disconnectUser(userId);
-    dropCookie(res, COOKIE.session);
-    dropCookie(res, COOKIE.device);
-    res.json({ ok: true });
-  }),
-);
+postsRouter.post('/', wrap(async (req, res) => {
+  const b = z.object({
+    text: clean.pipe(z.string().max(2000)).default(''),
+    mediaId: mediaId.optional(),
+    thumbId: mediaId.optional(),
+    privacy: z.enum(['public', 'private']).default('public'),
+  }).parse(req.body);
+  res.json({ post: await createPost(authOf(req).userId, b) });
+}));
 
-usersRouter.get(
-  '/users/search',
-  searchLimiter,
-  wrap(async (req, res) => {
-    const q = cleanQuery(typeof req.query.q === 'string' ? req.query.q : '');
-    if (q.length < 2) return void res.json({ users: [] });
-    const users = await prisma.user.findMany({
-      where: {
-        id: { not: authOf(req).userId },
-        OR: [{ username: { contains: q.toLowerCase() } }, { name: { contains: q, mode: 'insensitive' } }],
-      },
-      select: publicUserSelect,
-      orderBy: [{ verified: 'desc' }, { username: 'asc' }],
-      take: 8,
-    });
-    res.json({ users: users.map(toPublic) });
-  }),
-);
+postsRouter.get('/:id', wrap(async (req, res) => {
+  res.json({ post: await getPost(authOf(req).userId, intId.parse(req.params.id)) });
+}));
 
-usersRouter.get(
-  '/users/:username/tracks',
-  wrap(async (req, res) => {
-    const u = await prisma.user.findUnique({ where: { username: normalizeUsername(String(req.params.username)) }, select: { id: true, username: true } });
-    if (!u) throw new HttpError(404, 'user_not_found');
-    const tracks = await prisma.media.findMany({ where: { ownerId: u.id, kind: 'TRACK' }, orderBy: { createdAt: 'desc' }, take: 50 });
-    res.json({ tracks: tracks.map((t) => ({ ...toMediaDTO(t), artist: '@' + u.username })) });
-  }),
-);
+postsRouter.delete('/:id', wrap(async (req, res) => {
+  await deletePost(authOf(req).userId, intId.parse(req.params.id));
+  res.json({ ok: true });
+}));
 
-usersRouter.get(
-  '/users/:username',
-  wrap(async (req, res) => {
-    const me = authOf(req).userId;
-    const u = await prisma.user.findUnique({
-      where: { username: normalizeUsername(String(req.params.username)) },
-      select: { ...publicUserSelect, bio: true, bannerUrl: true, hideOnline: true, lastSeenAt: true },
-    });
-    if (!u) throw new HttpError(404, 'user_not_found');
-    const [friendship, tracks] = await Promise.all([
-      u.id === me ? { status: 'self', id: null } : friendInfo(me, u.id),
-      prisma.media.count({ where: { ownerId: u.id, kind: 'TRACK' } }),
-    ]);
-    res.json({ ...toPublic(u), banner: u.bannerUrl, ...visiblePresence(u), friendship, tracksCount: tracks });
-  }),
-);
+postsRouter.put('/:id/like', wrap(async (req, res) => {
+  const { liked } = z.object({ liked: z.boolean() }).parse(req.body);
+  res.json(await setLike(authOf(req).userId, intId.parse(req.params.id), liked));
+}));
 
-usersRouter.get(
-  '/me/tracks',
-  wrap(async (req, res) => {
-    const u = await prisma.user.findUniqueOrThrow({ where: { id: authOf(req).userId }, select: { username: true } });
-    const tracks = await prisma.media.findMany({ where: { ownerId: authOf(req).userId, kind: 'TRACK' }, orderBy: { createdAt: 'desc' } });
-    res.json({ tracks: tracks.map((t) => ({ ...toMediaDTO(t), artist: '@' + u.username })) });
-  }),
-);
+postsRouter.post('/:id/comments', wrap(async (req, res) => {
+  const { text } = z.object({ text: clean.pipe(z.string().min(1).max(500)) }).parse(req.body);
+  res.json({ comment: await addComment(authOf(req).userId, intId.parse(req.params.id), text) });
+}));
 
-// ── Устройства («Активные сеансы») ──
-usersRouter.get(
-  '/me/devices',
-  wrap(async (req, res) => {
-    const { userId, deviceId } = authOf(req);
-    const devices = await prisma.device.findMany({
-      where: { userId, revokedAt: null },
-      orderBy: { lastUsedAt: 'desc' },
-    });
-    res.json({
-      devices: devices.map((d) => ({
-        id: d.id, label: d.label, ip: d.ip,
-        createdAt: d.createdAt.toISOString(), lastUsedAt: d.lastUsedAt.toISOString(),
-        current: d.id === deviceId,
-      })),
-    });
-  }),
-);
+postsRouter.post('/:id/repost', wrap(async (req, res) => {
+  res.json(await addRepost(authOf(req).userId, intId.parse(req.params.id)));
+}));
 
-usersRouter.delete(
-  '/me/devices/:id',
-  wrap(async (req, res) => {
-    const ok = await revokeDevice(authOf(req).userId, String(req.params.id));
-    if (!ok) throw new HttpError(404, 'device_not_found');
-    res.json({ ok: true });
-  }),
-);
+// ───────── истории ─────────
+export const storiesRouter = Router();
+storiesRouter.use(requireAuth);
+
+storiesRouter.get('/', wrap(async (req, res) => {
+  const username = z.string().min(1).max(40).parse(req.query.username);
+  res.json({ stories: await listUserStories(authOf(req).userId, username) });
+}));
+
+storiesRouter.post('/', wrap(async (req, res) => {
+  const b = z.object({
+    mediaId: mediaId.optional(),
+    bg: z.string().regex(/^[\w#(),.%\s-]{1,200}$/).optional(),
+    textBlocks: z.array(z.object({
+      text: clean.pipe(z.string().max(300)),
+      color: z.string().regex(/^(#[0-9a-fA-F]{3,8}|[a-z]{3,20})$/).default('#ffffff'),
+      font: z.string().regex(/^[\w ,'"-]{1,80}$/).default('Syne'),
+      left: z.string().regex(/^\d{1,3}(\.\d{1,4})?%$/).default('50%'),
+      top: z.string().regex(/^\d{1,3}(\.\d{1,4})?%$/).default('45%'),
+      fontSize: z.number().min(8).max(120).default(26),
+    })).max(20).default([]),
+  }).parse(req.body);
+  res.json({ story: await createStory(authOf(req).userId, b) });
+}));
+
+storiesRouter.delete('/:id', wrap(async (req, res) => {
+  await deleteStory(authOf(req).userId, intId.parse(req.params.id));
+  res.json({ ok: true });
+}));
+
+storiesRouter.put('/:id/like', wrap(async (req, res) => {
+  const { liked } = z.object({ liked: z.boolean() }).parse(req.body);
+  res.json(await setStoryLike(authOf(req).userId, intId.parse(req.params.id), liked));
+}));
+
+storiesRouter.post('/:id/comments', wrap(async (req, res) => {
+  const { text } = z.object({ text: clean.pipe(z.string().min(1).max(300)) }).parse(req.body);
+  res.json({ comment: await addStoryComment(authOf(req).userId, intId.parse(req.params.id), text) });
+}));
