@@ -4369,15 +4369,21 @@ async function mxCallConnect(call, token, url) {
   room.on(RE.LocalTrackUnpublished, (pub) => {
     if (pub.source === lk.Track.Source.Camera) document.getElementById('call-self').style.display = 'none';
   });
-  room.on(RE.Disconnected, () => { if (mxCall === call) mxCallCleanup('Звонок завершён'); });
+  room.on(RE.Disconnected, (reason) => {
+    console.warn('[call] LiveKit disconnected, reason:', reason);
+    if (mxCall === call) mxCallCleanup(call.connected && call.startedAt ? 'Звонок завершён' : 'Связь прервалась' + (reason !== undefined ? ' (причина: ' + reason + ')' : ''));
+  });
 
-  await room.connect(url, token);
+  console.info('[call] connecting to', url);
+  try { await room.connect(url, token); }
+  catch (e) { console.error('[call] connect failed:', e); throw e; }
   call.connected = true;
   try { await room.startAudio(); } catch (e) { /* нужен жест пользователя — он только что нажал кнопку */ }
   try {
     await room.localParticipant.setMicrophoneEnabled(true);
   } catch (e) {
-    mxCallCleanup('Нет доступа к микрофону. Разреши его в настройках браузера (нужен https или localhost)');
+    console.error('[call] microphone error:', e);
+    mxCallCleanup('Нет доступа к микрофону: ' + (e && e.name ? e.name : 'ошибка') + '. Разреши его в настройках браузера');
     return;
   }
   if (call.video) {

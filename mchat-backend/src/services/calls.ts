@@ -82,8 +82,13 @@ export async function startCall(userId: string, chatId: string, video: boolean) 
   if (m.chat.type === 'CHANNEL') throw new HttpError(400, 'no_calls_in_channel');
   const members = await prisma.chatMember.findMany({ where: { chatId, userId: { not: userId } }, select: { userId: true } });
   if (!members.length) throw new HttpError(400, 'nobody_to_call');
-  // одновременно у человека один звонок
-  for (const c of calls.values()) if (c.joined.has(userId)) throw new HttpError(409, 'already_in_call');
+  // одновременно у человека один звонок. «Зависший» звонок, где он один (никто не ответил / оборвалась связь),
+  // закрываем сам — иначе после неудачной попытки нельзя было бы позвонить снова.
+  for (const c of [...calls.values()]) {
+    if (!c.joined.has(userId)) continue;
+    if (c.joined.size <= 1) finish(c, 'ended');
+    else throw new HttpError(409, 'already_in_call');
+  }
   const call: Call = {
     id: crypto.randomUUID(), chatId, isGroup: m.chat.type === 'GROUP', title: m.chat.title ?? '', video,
     initiatorId: userId, joined: new Set([userId]), invited: new Set(), allowed: new Set([userId]), timer: null,
