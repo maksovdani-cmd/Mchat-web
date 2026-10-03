@@ -7,7 +7,8 @@ import { wrap } from '../utils/errors';
 export const callsRouter = Router();
 callsRouter.use(requireAuth);
 
-const callId = z.string().uuid();
+// Используем гибкую валидацию строки вместо строгого uuid(), чтобы принимать любые ID звонков
+const callId = z.string().min(1).max(100);
 
 /** Включены ли звонки на сервере (есть ключи LiveKit). */
 callsRouter.get('/status', wrap(async (_req, res) => res.json(callStatus())));
