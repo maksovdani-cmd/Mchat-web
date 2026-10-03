@@ -16,10 +16,10 @@ import { messagesRouter } from './routes/messages';
 import { postsRouter, storiesRouter } from './routes/posts';
 import { purgeExpiredStories } from './services/posts';
 import { verificationRouter } from './routes/verification';
-// import { callsRouter } from './routes/calls'; // Закомментировано: файла пока нет
+import { callsRouter } from './routes/calls';
 import { expireVerifications } from './services/verification';
 import { pushRouter } from './routes/push';
-import { usersRouter } from './routes/users'; // Фигурные скобки на месте!
+import { usersRouter } from './routes/users';
 import { ensureUploadDir } from './services/storage';
 import { HttpError } from './utils/errors';
 
@@ -30,12 +30,20 @@ app.disable('x-powered-by');
 // В проде: только HTTPS (а значит, и только WSS)
 app.use((req, res, next) => {
   if (config.isProd && req.path !== '/healthz' && req.protocol !== 'https') {
-    return res.redirect(301, `\({config.appOrigin}\){req.originalUrl}`);
+    return res.redirect(301, `${config.appOrigin}${req.originalUrl}`);
   }
   next();
 });
 
 const wsOrigin = config.appOrigin.replace(/^http/, 'ws');
+// LiveKit: браузер подключается к его серверу по wss:// (и https:// для служебных запросов)
+const liveKitSrc: string[] = [];
+if (config.LIVEKIT_URL) {
+  try {
+    const u = new URL(config.LIVEKIT_URL);
+    liveKitSrc.push(`wss://${u.host}`, `https://${u.host}`);
+  } catch { /* неверный LIVEKIT_URL — звонки просто не заработают */ }
+}
 app.use(
   helmet({
     hsts: config.isProd ? { maxAge: 63072000, includeSubDomains: true } : false,
@@ -44,13 +52,16 @@ app.use(
       useDefaults: false,
       directives: {
         defaultSrc: ["'self'"],
+        // 'unsafe-inline' нужен, пока в вёрстке есть onclick="..." и <script> внутри HTML.
+        // Когда перейдёшь на addEventListener — можно убрать и получить сильную защиту от XSS.
         scriptSrc: ["'self'", "'unsafe-inline'"],
         scriptSrcAttr: ["'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
         mediaSrc: ["'self'", 'data:', 'blob:'],
-        connectSrc: ["'self'", wsOrigin, 'data:', 'blob:'],
+        // data:/blob: нужны, чтобы превью видео и медиа историй из памяти браузера можно было загрузить на сервер
+        connectSrc: ["'self'", wsOrigin, 'data:', 'blob:', ...liveKitSrc],
         workerSrc: ["'self'"],
         manifestSrc: ["'self'"],
         objectSrc: ["'none'"],
@@ -86,7 +97,7 @@ app.use('/api/media', mediaRouter);
 app.use('/api/posts', postsRouter);
 app.use('/api/stories', storiesRouter);
 app.use('/api/verification', verificationRouter);
-// app.use('/api/calls', callsRouter); // Закомментировано: файла пока нет
+app.use('/api/calls', callsRouter);
 app.use('/api', usersRouter); // /api/me, /api/users/*, /api/me/devices
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
 
@@ -129,7 +140,7 @@ setInterval(expireNow, 5 * 60 * 1000).unref(); // срок галочки выш
 setInterval(() => purgeExpiredStories().catch((e) => console.error('purge stories', e)), 60 * 60 * 1000).unref();
 
 server.listen(config.PORT, () => {
-  console.log(`✅ Mchat запущен: \({config.appOrigin}  (порт\){config.PORT}, ${config.NODE_ENV})`);
+  console.log(`✅ Mchat запущен: ${config.appOrigin}  (порт ${config.PORT}, ${config.NODE_ENV})`);
 });
 
 const shutdown = async () => {
