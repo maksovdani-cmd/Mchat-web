@@ -624,6 +624,7 @@ function bindRealtimeHandlers() {
   h.onNewDevice = (d) => showToast('Новый вход в аккаунт: ' + (d && d.label ? d.label : 'устройство'));
   h.onUnauthorized = () => { resetSessionState(); goTo('s-login'); showToast('Сессия завершена. Войди снова'); };
   h.onChatChanged = () => { refreshChats().then(mxApplyChatBackground); };
+  h.onCallIncoming = mxOnCallIncoming; h.onCallEnded = mxOnCallEnded; h.onCallHandled = mxOnCallHandled;
   h.onReconnect = () => { refreshChats(); if (currentChatId) loadChatHistory(currentChatId); };
   h.onOpenChat = openChatById;
 }
@@ -4214,8 +4215,298 @@ async function mxSubmitAddMembers() {
   } catch (e) { showToast(MchatAPI.errorText(e)); }
 }
 
-function mxStartCall(withVideo) {
-  showToast('Звонки подключаем следующим этапом (пункт 7): полноэкранный экран звонка, микрофон, камера, добавить участника');
+// ============================================================
+// ЗВОНКИ (LiveKit): полноэкранный экран, микрофон, камера, добавить участника, завершить
+// ============================================================
+let mxCall = null;      // активный звонок {id, chatId, video, isGroup, room, micOn, camOn, ...}
+let mxIncoming = null;  // входящий, на который ещё не ответили
+let mxRingCtl = null;
+
+function mxLoadLiveKit() {
+  if (window.LivekitClient) return Promise.resolve(window.LivekitClient);
+  return new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = '/vendor/livekit-client.umd.js';
+    sc.onload = () => window.LivekitClient ? resolve(window.LivekitClient) : reject(new Error('livekit_missing'));
+    sc.onerror = () => reject(new Error('livekit_load_failed'));
+    document.head.appendChild(sc);
+  });
+}
+
+function mxRingStart() {
+  mxRingStop();
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    const beep = () => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = 440; g.gain.value = 0.07;
+      o.connect(g); g.connect(ctx.destination);
+      o.start(); o.stop(ctx.currentTime + 0.35);
+    };
+    beep();
+    const iv = setInterval(() => { beep(); setTimeout(beep, 450); }, 2400);
+    mxRingCtl = { ctx, iv };
+  } catch (e) { mxRingCtl = null; }
+  if (navigator.vibrate) navigator.vibrate([400, 250, 400]);
+}
+function mxRingStop() {
+  if (!mxRingCtl) return;
+  clearInterval(mxRingCtl.iv);
+  try { mxRingCtl.ctx.close(); } catch (e) {}
+  mxRingCtl = null;
+  if (navigator.vibrate) navigator.vibrate(0);
+}
+
+function mxCallAvatarHtml(person) {
+  if (person && person.avatar) return `<img src="${esc(person.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">`;
+  return esc(((person && (person.name || person.username)) || '?').charAt(0).toUpperCase());
+}
+
+function mxCallLayout() {
+  const grid = document.getElementById('call-grid');
+  const n = grid.children.length;
+  const cols = n <= 2 ? 1 : n <= 4 ? 2 : 3;
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  grid.style.gridTemplateRows = `repeat(${Math.max(1, Math.ceil(n / cols))}, 1fr)`;
+  document.getElementById('call-wait').style.display = n === 0 ? 'flex' : 'none';
+  if (mxCall) mxCallUpdateStatus();
+}
+
+function mxCallTile(participant) {
+  const grid = document.getElementById('call-grid');
+  let tile = grid.querySelector(`[data-ident="${CSS.escape(participant.identity)}"]`);
+  if (!tile) {
+    tile = document.createElement('div');
+    tile.className = 'call-tile';
+    tile.dataset.ident = participant.identity;
+    const nm = participant.name || participant.identity;
+    tile.innerHTML = `<div class="ct-av">${esc(nm.charAt(0).toUpperCase())}</div><div class="ct-name">${esc(nm)}</div>`;
+    grid.appendChild(tile);
+    mxCallLayout();
+  }
+  return tile;
+}
+
+function mxCallRemoveTile(participant) {
+  const tile = document.getElementById('call-grid').querySelector(`[data-ident="${CSS.escape(participant.identity)}"]`);
+  if (tile) { tile.remove(); mxCallLayout(); }
+}
+
+function mxCallAttachTrack(track, participant) {
+  const tile = mxCallTile(participant);
+  if (track.kind === 'video') {
+    let v = tile.querySelector('video');
+    if (!v) { v = document.createElement('video'); v.autoplay = true; v.playsInline = true; tile.insertBefore(v, tile.firstChild); }
+    track.attach(v);
+  } else if (track.kind === 'audio') {
+    let a = tile.querySelector('audio');
+    if (!a) { a = document.createElement('audio'); a.autoplay = true; tile.appendChild(a); }
+    track.attach(a);
+  }
+}
+
+function mxCallUpdateStatus() {
+  const el = document.getElementById('call-status');
+  if (!mxCall || !el) return;
+  const n = document.getElementById('call-grid').children.length;
+  if (!n) { el.textContent = mxCall.outgoing ? 'Вызов…' : 'Ожидание…'; return; }
+  const secs = Math.floor((Date.now() - (mxCall.startedAt || Date.now())) / 1000);
+  const mm = String(Math.floor(secs / 60)).padStart(2, '0'), ss = String(secs % 60).padStart(2, '0');
+  el.textContent = (n > 1 ? mxPlural(n + 1, ['участник', 'участника', 'участников']) + ' · ' : '') + mm + ':' + ss;
+}
+
+function mxCallShowScreen(title, person, video) {
+  document.getElementById('call-title').textContent = title;
+  document.getElementById('call-wait-av').innerHTML = mxCallAvatarHtml(person);
+  document.getElementById('call-grid').innerHTML = '';
+  document.getElementById('call-self').style.display = 'none';
+  mxCallSetButtons(true, !!video);
+  mxCallLayout();
+  document.getElementById('call-screen').classList.add('active');
+}
+
+function mxCallSetButtons(micOn, camOn) {
+  const set = (id, on) => {
+    const b = document.getElementById(id);
+    b.classList.toggle('off', !on);
+    b.querySelector('.on-ico').style.display = on ? '' : 'none';
+    b.querySelector('.off-ico').style.display = on ? 'none' : '';
+  };
+  set('call-mic', micOn); set('call-cam', camOn);
+}
+
+/** Подключаемся к комнате LiveKit с токеном, который выдал наш сервер. */
+async function mxCallConnect(call, token, url) {
+  const lk = await mxLoadLiveKit();
+  const room = new lk.Room({ adaptiveStream: true, dynacast: true });
+  call.room = room; call.lk = lk;
+  const RE = lk.RoomEvent;
+  room.on(RE.TrackSubscribed, (track, pub, participant) => {
+    mxCallAttachTrack(track, participant);
+    if (!call.startedAt) call.startedAt = Date.now();
+  });
+  room.on(RE.TrackUnsubscribed, (track) => { try { track.detach(); } catch (e) {} });
+  room.on(RE.TrackMuted, (pub, participant) => {
+    if (pub.kind === 'video' && participant !== room.localParticipant) {
+      const v = mxCallTile(participant).querySelector('video'); if (v) v.style.display = 'none';
+    }
+  });
+  room.on(RE.TrackUnmuted, (pub, participant) => {
+    if (pub.kind === 'video' && participant !== room.localParticipant) {
+      const v = mxCallTile(participant).querySelector('video'); if (v) v.style.display = '';
+    }
+  });
+  room.on(RE.ParticipantConnected, (p) => { if (!call.startedAt) call.startedAt = Date.now(); mxRingStop(); mxCallTile(p); });
+  room.on(RE.ParticipantDisconnected, (p) => {
+    mxCallRemoveTile(p);
+    // в личном звонке собеседник вышел — звонок окончен
+    if (!call.isGroup && room.remoteParticipants.size === 0) mxCallCleanup('Звонок завершён');
+  });
+  room.on(RE.LocalTrackPublished, (pub) => {
+    if (pub.source === lk.Track.Source.Camera && pub.track) { const el = document.getElementById('call-self'); pub.track.attach(el); el.style.display = 'block'; }
+  });
+  room.on(RE.LocalTrackUnpublished, (pub) => {
+    if (pub.source === lk.Track.Source.Camera) document.getElementById('call-self').style.display = 'none';
+  });
+  room.on(RE.Disconnected, () => { if (mxCall === call) mxCallCleanup('Звонок завершён'); });
+
+  await room.connect(url, token);
+  call.connected = true;
+  try { await room.startAudio(); } catch (e) { /* нужен жест пользователя — он только что нажал кнопку */ }
+  try {
+    await room.localParticipant.setMicrophoneEnabled(true);
+  } catch (e) {
+    mxCallCleanup('Нет доступа к микрофону. Разреши его в настройках браузера (нужен https или localhost)');
+    return;
+  }
+  if (call.video) {
+    try { await room.localParticipant.setCameraEnabled(true); mxCallSetButtons(true, true); }
+    catch (e) { mxCallSetButtons(true, false); showToast('Нет доступа к камере'); }
+  }
+  room.remoteParticipants.forEach(p => { mxCallTile(p); if (!call.startedAt) call.startedAt = Date.now(); });
+  call.timer = setInterval(mxCallUpdateStatus, 1000);
+  mxCallUpdateStatus();
+}
+
+function mxCallCleanup(message) {
+  mxRingStop();
+  const call = mxCall;
+  mxCall = null;
+  if (call) {
+    if (call.timer) clearInterval(call.timer);
+    try { if (call.room) call.room.disconnect(); } catch (e) {}
+    if (call.id && !call.leftSent) { call.leftSent = true; MchatAPI.leaveCall(call.id).catch(() => {}); }
+  }
+  document.getElementById('call-screen').classList.remove('active');
+  document.getElementById('call-grid').innerHTML = '';
+  const self = document.getElementById('call-self'); self.style.display = 'none'; self.srcObject = null;
+  if (message) showToast(message);
+}
+
+/** Кнопка трубки в шапке чата: позвонить собеседнику / всей группе. */
+async function mxStartCall(withVideo) {
+  if (!currentChatId || !currentUser) return;
+  if (mxCall || mxIncoming) { showToast('Ты уже в звонке'); return; }
+  if (!window.isSecureContext) { showToast('Звонки работают только по https или на localhost'); return; }
+  const ch = chats.find(c => c.id === currentChatId);
+  if (!ch || ch.type === 'CHANNEL') return;
+  const person = ch.type === 'DIRECT' ? Object.assign({ name: ch.name }, ch.peer || {}, { avatar: ch.avatar || (ch.peer && ch.peer.avatar) }) : { name: ch.name, avatar: ch.avatar };
+  let r;
+  try { r = await MchatAPI.startCall(currentChatId, !!withVideo); }
+  catch (e) { showToast(MchatAPI.errorText(e)); return; }
+  const call = mxCall = { id: r.callId, chatId: currentChatId, outgoing: true, video: !!withVideo, isGroup: ch.type === 'GROUP', room: null, connected: false, startedAt: 0, timer: null };
+  mxCallShowScreen(ch.name, person, withVideo);
+  try { await mxCallConnect(call, r.token, r.url); }
+  catch (e) { if (mxCall === call) mxCallCleanup('Не удалось подключиться к звонку' + (e && e.message ? ' (' + e.message + ')' : '')); }
+}
+
+// ---------- входящий ----------
+function mxOnCallIncoming(p) {
+  if (mxCall || mxIncoming) { MchatAPI.declineCall(p.callId).catch(() => {}); return; } // уже заняты
+  mxIncoming = p;
+  document.getElementById('ci-avatar').innerHTML = mxCallAvatarHtml(p.from);
+  document.getElementById('ci-name').textContent = p.isGroup && p.title ? p.title : (p.from.name || p.from.username);
+  document.getElementById('ci-kind').textContent = (p.isGroup ? (p.from.name || p.from.username) + ' · ' : '') + (p.video ? 'Входящий видеозвонок' : 'Входящий звонок');
+  document.getElementById('call-incoming').classList.add('active');
+  mxRingStart();
+}
+function mxHideIncoming() {
+  mxIncoming = null;
+  mxRingStop();
+  document.getElementById('call-incoming').classList.remove('active');
+}
+function mxCallDecline() {
+  const p = mxIncoming;
+  mxHideIncoming();
+  if (p) MchatAPI.declineCall(p.callId).catch(() => {});
+}
+async function mxCallAccept() {
+  const p = mxIncoming;
+  if (!p) return;
+  mxHideIncoming();
+  let r;
+  try { r = await MchatAPI.acceptCall(p.callId); }
+  catch (e) { showToast(MchatAPI.errorText(e)); return; }
+  const call = mxCall = { id: p.callId, chatId: r.chatId, video: !!r.video, isGroup: !!r.isGroup, room: null, connected: false, startedAt: 0, timer: null };
+  mxCallShowScreen(p.isGroup && p.title ? p.title : (p.from.name || p.from.username), p.from, r.video);
+  try { await mxCallConnect(call, r.token, r.url); }
+  catch (e) { if (mxCall === call) mxCallCleanup('Не удалось подключиться к звонку' + (e && e.message ? ' (' + e.message + ')' : '')); }
+}
+function mxOnCallEnded(p) {
+  if (mxIncoming && mxIncoming.callId === p.callId) { mxHideIncoming(); showToast(p.reason === 'missed' ? 'Пропущенный звонок' : 'Звонок отменён'); return; }
+  if (mxCall && mxCall.id === p.callId) {
+    mxCall.leftSent = true; // сервер уже знает, что звонок окончен
+    const msg = p.reason === 'declined' ? 'Звонок отклонён' : p.reason === 'missed' ? 'Никто не ответил' : 'Звонок завершён';
+    mxCallCleanup(msg);
+  }
+}
+function mxOnCallHandled(p) { // на другом моём устройстве ответили/отклонили
+  if (mxIncoming && mxIncoming.callId === p.callId && !(mxCall && mxCall.id === p.callId)) mxHideIncoming();
+}
+
+// ---------- кнопки на экране звонка ----------
+async function mxCallToggleMic() {
+  if (!mxCall || !mxCall.room) return;
+  const nowOn = !document.getElementById('call-mic').classList.contains('off');
+  try {
+    await mxCall.room.localParticipant.setMicrophoneEnabled(!nowOn);
+    mxCallSetButtons(!nowOn, !document.getElementById('call-cam').classList.contains('off'));
+  } catch (e) { showToast('Не удалось переключить микрофон'); }
+}
+async function mxCallToggleCam() {
+  if (!mxCall || !mxCall.room) return;
+  const nowOn = !document.getElementById('call-cam').classList.contains('off');
+  try {
+    await mxCall.room.localParticipant.setCameraEnabled(!nowOn);
+    mxCallSetButtons(!document.getElementById('call-mic').classList.contains('off'), !nowOn);
+  } catch (e) { showToast('Нет доступа к камере'); }
+}
+function mxCallEnd() { mxCallCleanup('Звонок завершён'); }
+
+async function mxCallAddPeople() {
+  if (!mxCall) return;
+  mxPick = new Set();
+  const modal = document.createElement('div');
+  modal.className = 'modal active';
+  modal.id = 'call-add-modal';
+  modal.style.zIndex = '980';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = '<div class="mx-modal-box"><h3>Добавить в звонок</h3><div id="call-add-list" style="max-height:320px;overflow-y:auto;background:var(--surf);border-radius:12px;padding:4px 10px"><div style="padding:14px;text-align:center;color:var(--text2)">Загрузка…</div></div><div class="mx-row-btns"><button class="mx-btn" onclick="document.getElementById(\'call-add-modal\').remove()">Отмена</button><button class="mx-btn primary" onclick="mxCallInviteSelected()">Позвонить</button></div></div>';
+  document.getElementById('app').appendChild(modal);
+  try {
+    mxContactsCache = (await MchatAPI.chatContacts()).contacts;
+    document.getElementById('call-add-list').innerHTML = mxContactRowsHtml(mxContactsCache, 'mxToggleCreatePick');
+  } catch (e) { showToast(MchatAPI.errorText(e)); modal.remove(); }
+}
+async function mxCallInviteSelected() {
+  if (!mxCall || !mxPick.size) { showToast('Выбери хотя бы одного человека'); return; }
+  try {
+    const r = await MchatAPI.inviteToCall(mxCall.id, [...mxPick]);
+    mxCall.isGroup = true;
+    const m = document.getElementById('call-add-modal'); if (m) m.remove();
+    showToast('Звоним: ' + r.invited);
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
 }
 
 // ============================================================

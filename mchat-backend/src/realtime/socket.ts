@@ -6,6 +6,7 @@ import { config } from '../config';
 import { prisma } from '../db';
 import { resolveSessionToken, type AuthContext } from '../middleware/auth';
 import { Bucket } from '../middleware/security';
+import { dropUserFromCalls } from '../services/calls';
 import { MAX_TEXT } from '../services/chat';
 import { readAndBroadcast, sendAndDispatch } from '../services/messaging';
 import { broadcastPresence } from '../services/presence';
@@ -121,6 +122,7 @@ export function initSocket(server: http.Server) {
 
     socket.on('disconnect', () => {
       if (!unregisterSocket(userId, socket.id)) return; // остались другие вкладки/устройства
+      dropUserFromCalls(userId); // последнее соединение оборвалось — выходим из звонков
       clearTimeout(offlineTimers.get(userId));
       offlineTimers.set(userId, setTimeout(() => {
         offlineTimers.delete(userId);

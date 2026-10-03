@@ -30,6 +30,11 @@
   // ---------- тексты ошибок ----------
   const ERR = {
     unauthorized: 'Сессия истекла. Войди снова',
+    calls_disabled: 'Звонки не настроены на сервере: добавь ключи LiveKit в .env',
+    no_calls_in_channel: 'В канале нельзя звонить',
+    nobody_to_call: 'Некому звонить',
+    already_in_call: 'Ты уже в другом звонке',
+    call_not_found: 'Звонок уже завершён',
     not_a_contact: 'Добавлять можно только людей из твоих контактов',
     already_verified: 'У тебя уже есть галочка',
     request_pending: 'Твой запрос уже на рассмотрении',
@@ -110,6 +115,7 @@
     onLoginCode: null, onNewDevice: null, onUnauthorized: null,
     onReconnect: null, onOpenChat: null,
     onEdited: null, onDeleted: null, onReactions: null, onPinned: null, onFriendUpdate: null, onChatChanged: null, onChatRemoved: null,
+    onCallIncoming: null, onCallEnded: null, onCallHandled: null,
   };
   let socket = null;
   let everConnected = false;
@@ -145,6 +151,9 @@
     socket.on('message:reactions', (p) => handlers.onReactions && handlers.onReactions(p));
     socket.on('chat:pinned', (p) => handlers.onPinned && handlers.onPinned(p));
     socket.on('chat:changed', (p) => handlers.onChatChanged && handlers.onChatChanged(p));
+    socket.on('call:incoming', (p) => handlers.onCallIncoming && handlers.onCallIncoming(p));
+    socket.on('call:ended', (p) => handlers.onCallEnded && handlers.onCallEnded(p));
+    socket.on('call:handled', (p) => handlers.onCallHandled && handlers.onCallHandled(p));
     socket.on('chat:removed', (p) => handlers.onChatRemoved && handlers.onChatRemoved(p));
     socket.on('friend:update', (p) => handlers.onFriendUpdate && handlers.onFriendUpdate(p));
     socket.on('auth:login-code', (d) => handlers.onLoginCode && handlers.onLoginCode(d));
@@ -307,6 +316,13 @@
     react: (id, emoji) => api('/messages/' + encodeURIComponent(id) + '/reaction', { method: 'PUT', body: { emoji: emoji } }),
     forward: (id, chatId) => api('/messages/' + encodeURIComponent(id) + '/forward', { method: 'POST', body: { chatId: chatId, clientId: newClientId() } }).then((r) => r.message),
     pin: (chatId, messageId) => api('/chats/' + encodeURIComponent(chatId) + '/pin', { method: 'PUT', body: { messageId: messageId } }),
+    // ── звонки (LiveKit) ──
+    callStatus: () => api('/calls/status'),
+    startCall: (chatId, video) => api('/calls', { method: 'POST', body: { chatId: chatId, video: !!video } }),
+    acceptCall: (id) => api('/calls/' + encodeURIComponent(id) + '/accept', { method: 'POST', body: {} }),
+    declineCall: (id) => api('/calls/' + encodeURIComponent(id) + '/decline', { method: 'POST', body: {} }),
+    leaveCall: (id) => api('/calls/' + encodeURIComponent(id) + '/leave', { method: 'POST', body: {} }),
+    inviteToCall: (id, userIds) => api('/calls/' + encodeURIComponent(id) + '/invite', { method: 'POST', body: { userIds: userIds } }),
     chatContacts: () => api('/chats/contacts'),
     searchChannels: (q) => api('/chats/search?q=' + encodeURIComponent(q)),
     joinChannel: (id) => api('/chats/' + encodeURIComponent(id) + '/join', { method: 'POST', body: {} }),

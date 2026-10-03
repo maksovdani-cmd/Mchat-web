@@ -37,6 +37,14 @@ const schema = z.object({
   S3_REGION: z.string().default('auto'),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
+  /** LiveKit (звонки): адрес проекта wss://xxx.livekit.cloud и ключи из панели LiveKit Cloud. Без них звонки отключены. */
+  LIVEKIT_URL: z.string().optional(),
+  LIVEKIT_API_KEY: z.string().optional(),
+  LIVEKIT_API_SECRET: z.string().optional(),
+  /** TURN-сервер для звонков за строгим NAT (необязательно): turn:host:3478?transport=udp,turns:host:5349 */
+  TURN_URL: z.string().optional(),
+  TURN_USER: z.string().optional(),
+  TURN_PASS: z.string().optional(),
   /** Сколько прокси стоит перед приложением (Caddy/nginx = 1) */
   TRUST_PROXY: z.coerce.number().int().default(1),
 });
