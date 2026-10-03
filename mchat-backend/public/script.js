@@ -3298,10 +3298,10 @@ function goTo(id) {
 
 function showToast(msg) {
   const t = document.createElement('div');
-  t.style.cssText='position:absolute;bottom:100px;left:50%;transform:translateX(-50%);background:#4a4af0;color:#fff;padding:11px 20px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;white-space:nowrap;animation:fu .3s ease';
+  t.style.cssText='position:absolute;bottom:100px;left:50%;transform:translateX(-50%);background:#4a4af0;color:#fff;padding:11px 20px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;white-space:normal;max-width:88%;text-align:center;line-height:1.35;animation:fu .3s ease';
   t.textContent = msg;
   document.getElementById('app').appendChild(t);
-  setTimeout(()=>t.remove(),2500);
+  setTimeout(()=>t.remove(), Math.max(2500, String(msg).length * 70));
 }
 
 function switchLanguage() {
@@ -4379,20 +4379,32 @@ async function mxCallConnect(call, token, url) {
   catch (e) { console.error('[call] connect failed:', e); throw e; }
   call.connected = true;
   try { await room.startAudio(); } catch (e) { /* нужен жест пользователя — он только что нажал кнопку */ }
-  try {
-    await room.localParticipant.setMicrophoneEnabled(true);
-  } catch (e) {
+  let micOk = true, camOk = false;
+  try { await room.localParticipant.setMicrophoneEnabled(true); }
+  catch (e) {
+    micOk = false;
     console.error('[call] microphone error:', e);
-    mxCallCleanup('Нет доступа к микрофону: ' + (e && e.name ? e.name : 'ошибка') + '. Разреши его в настройках браузера');
-    return;
+    showToast(mxMediaErrorText('mic', e)); // слушать собеседника можно и без микрофона
   }
   if (call.video) {
-    try { await room.localParticipant.setCameraEnabled(true); mxCallSetButtons(true, true); }
-    catch (e) { mxCallSetButtons(true, false); showToast('Нет доступа к камере'); }
+    try { await room.localParticipant.setCameraEnabled(true); camOk = true; }
+    catch (e) { console.error('[call] camera error:', e); showToast(mxMediaErrorText('cam', e)); }
   }
+  mxCallSetButtons(micOk, camOk);
   room.remoteParticipants.forEach(p => { mxCallTile(p); if (!call.startedAt) call.startedAt = Date.now(); });
   call.timer = setInterval(mxCallUpdateStatus, 1000);
   mxCallUpdateStatus();
+}
+
+/** Понятный текст, если не включился микрофон/камера. Звонок при этом НЕ обрывается. */
+function mxMediaErrorText(kind, e) {
+  const n = e && e.name;
+  const mic = kind === 'mic';
+  if (n === 'NotAllowedError' || n === 'SecurityError')
+    return (mic ? 'Нет доступа к микрофону' : 'Нет доступа к камере') + '. Разрешите его: значок замка слева от адреса сайта → Разрешения. Звонок продолжается без него';
+  if (n === 'NotFoundError' || n === 'OverconstrainedError')
+    return (mic ? 'Микрофон не найден — подключите его' : 'Камера не найдена — подключите её') + '. Звонок продолжается без него';
+  return (mic ? 'Не удалось включить микрофон' : 'Не удалось включить камеру') + (n ? ' (' + n + ')' : '') + '. Звонок продолжается без него';
 }
 
 function mxCallCleanup(message) {
@@ -4478,7 +4490,7 @@ async function mxCallToggleMic() {
   try {
     await mxCall.room.localParticipant.setMicrophoneEnabled(!nowOn);
     mxCallSetButtons(!nowOn, !document.getElementById('call-cam').classList.contains('off'));
-  } catch (e) { showToast('Не удалось переключить микрофон'); }
+  } catch (e) { showToast(mxMediaErrorText('mic', e)); }
 }
 async function mxCallToggleCam() {
   if (!mxCall || !mxCall.room) return;
@@ -4486,7 +4498,7 @@ async function mxCallToggleCam() {
   try {
     await mxCall.room.localParticipant.setCameraEnabled(!nowOn);
     mxCallSetButtons(!document.getElementById('call-mic').classList.contains('off'), !nowOn);
-  } catch (e) { showToast('Нет доступа к камере'); }
+  } catch (e) { showToast(mxMediaErrorText('cam', e)); }
 }
 function mxCallEnd() { mxCallCleanup('Звонок завершён'); }
 

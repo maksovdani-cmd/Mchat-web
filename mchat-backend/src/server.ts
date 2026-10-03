@@ -41,7 +41,10 @@ const liveKitSrc: string[] = [];
 if (config.LIVEKIT_URL) {
   try {
     const u = new URL(config.LIVEKIT_URL);
-    liveKitSrc.push(`wss://${u.host}`, `https://${u.host}`);
+    const plain = u.protocol === 'ws:' || u.protocol === 'http:'; // локальная разработка без TLS
+    liveKitSrc.push(`${plain ? 'ws' : 'wss'}://${u.host}`, `${plain ? 'http' : 'https'}://${u.host}`);
+    // LiveKit Cloud может перенаправить на региональный адрес *.livekit.cloud
+    if (u.hostname.endsWith('.livekit.cloud')) liveKitSrc.push('wss://*.livekit.cloud', 'https://*.livekit.cloud');
   } catch { /* неверный LIVEKIT_URL — звонки просто не заработают */ }
 }
 app.use(
