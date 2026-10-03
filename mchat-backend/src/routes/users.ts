@@ -58,7 +58,7 @@ usersRouter.patch(
   wrap(async (req, res) => {
     const userId = authOf(req).userId;
     const { avatarMediaId, bannerMediaId, ...rest } = patchSchema.parse(req.body);
-    const data: Record = { ...rest };
+    const data: Record<string, unknown> = rest;
     const before = await prisma.user.findUnique({ where: { id: userId }, select: { hideOnline: true, avatarUrl: true, bannerUrl: true } });
     // аватар/обложка: только своя картинка; null — убрать
     for (const [key, id] of [['avatarUrl', avatarMediaId], ['bannerUrl', bannerMediaId]] as const) {
