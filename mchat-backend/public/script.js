@@ -675,7 +675,7 @@ async function showCodeScreen() {
     const p = await MchatAPI.pending();
     document.getElementById('code-hint').textContent = p.emailSent
       ? 'Мы отправили код на ' + p.emailMasked
-      : 'Это новое устройство. Мы отправили код на твои устройства, где ты уже вошёл в Mchat';
+      : 'Это новое устройство. Мы отправили код на твою почту и на устройства, где ты уже вошёл в Mchat';
     document.getElementById('code-email-row').style.display = p.canSendEmail ? 'block' : 'none';
     setTimeout(() => input.focus(), 250);
   } catch (e) {

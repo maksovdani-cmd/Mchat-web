@@ -165,9 +165,9 @@ async function beginDeviceVerification(req: Request, res: Response, user: { id: 
     tag: 'login-code',
     data: { kind: 'login-code' },
   });
-  // Канал 3: если доставить некуда — сразу почта (иначе человек навсегда за дверью)
-  let emailSent = false;
-  if (!viaSocket && pushed === 0) emailSent = await sendLoginCodeEmail(user.email, code, label);
+  // Канал 3: почта, с которой человек входит, — всегда (не зависит от того, открыт ли Mchat на другом устройстве)
+  void viaSocket; void pushed;
+  const emailSent = await sendLoginCodeEmail(user.email, code, label);
   if (emailSent) await prisma.loginCode.update({ where: { id: rec.id }, data: { emailSent: true } });
 
   setCookie(res, COOKIE.pending, signJwt({ cid: rec.id, uid: user.id }, 600), 600_000);

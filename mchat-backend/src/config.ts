@@ -25,6 +25,9 @@ const schema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   MAIL_FROM: z.string().default('Mchat <no-reply@example.com>'),
+  /** Отправка писем через HTTPS-API Brevo (работает на бесплатном Render, где SMTP-порты закрыты). Ключ: Brevo → SMTP & API → API Keys. */
+  BREVO_API_KEY: z.string().optional(),
+  BREVO_API_URL: z.string().default('https://api.brevo.com/v3/smtp/email'),
   /** Email-адреса (через запятую), которым автоматически даётся роль ADMIN */
   ADMIN_EMAILS: z.string().default(''),
   /** Разрешить кнопку «Отправить код на почту» на экране ввода кода */
