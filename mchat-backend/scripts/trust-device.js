@@ -1,11 +1,11 @@
 // Аварийный вход: помечает ваш браузер «доверенным устройством», чтобы Mchat не требовал код.
 // Запуск (из папки mchat-backend):
-//   DATABASE_URL="внешний адрес базы из Render" node scripts/trust-device.js islamsabr01@gmail.com
+//   DATABASE_URL="внешний адрес базы из Render" node scripts/trust-device.js donmaksov1@gmail.com
 const crypto = require('node:crypto');
 const { PrismaClient } = require('@prisma/client');
 
 const email = (process.argv[2] || '').trim().toLowerCase();
-if (!email) { console.error('Укажите почту: node scripts/trust-device.js islamsabr01@gmail.com'); process.exit(1); }
+if (!email) { console.error('Укажите почту: node scripts/trust-device.js donmaksov1@gmail.com'); process.exit(1); }
 if (!process.env.DATABASE_URL) { console.error('postgresql://mchat_user:yZpjTiw5WMitM5z7FuFn90lPXYPlbZiI@dpg-darbnns9v7es73e0q0rg-a/mchat'); process.exit(1); }
 
 const prisma = new PrismaClient();
