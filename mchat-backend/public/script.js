@@ -5497,3 +5497,48 @@ document.addEventListener('DOMContentLoaded', () => {
   setupPinchZoom(document.getElementById('pv-img'));
   setupTextPinchScale();
 });
+// ── Daily.co Video Call Integration ──
+let currentCallFrame = null;
+
+async function startDailyCall(roomName) {
+  try {
+    const res = await fetch('/api/calls/room', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomName }),
+    });
+    const data = await res.json();
+
+    if (!res.ok || !data.url) {
+      alert('Ошибка при создании комнаты звонка');
+      return;
+    }
+
+    if (currentCallFrame) {
+      currentCallFrame.destroy();
+    }
+
+    currentCallFrame = window.DailyIframe.createFrame({
+      showLeaveButton: true,
+      iframeStyle: {
+        position: 'fixed',
+        top: '0',
+        left: '0',
+        width: '100%',
+        height: '100%',
+        zIndex: '9999',
+        border: 'none',
+      },
+    });
+
+    await currentCallFrame.join({ url: data.url });
+
+    currentCallFrame.on('left-meeting', () => {
+      currentCallFrame.destroy();
+      currentCallFrame = null;
+    });
+  } catch (err) {
+    console.error('Daily call error:', err);
+    alert('Не удалось подключиться к звонку');
+  }
+}

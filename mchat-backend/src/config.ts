@@ -24,7 +24,7 @@ const schema = z.object({
   SMTP_PORT: z.coerce.number().int().default(587),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
-  MAIL_FROM: z.string().default('Mchat <no-reply@example.com>'),
+  MAIL_FROM: z.string().default('Mchat '),
   /** Отправка писем через HTTPS-API Brevo (работает на бесплатном Render, где SMTP-порты закрыты). Ключ: Brevo → SMTP & API → API Keys. */
   BREVO_API_KEY: z.string().optional(),
   BREVO_API_URL: z.string().default('https://api.brevo.com/v3/smtp/email'),
@@ -44,10 +44,8 @@ const schema = z.object({
   S3_REGION: z.string().default('auto'),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
-  /** LiveKit (звонки): адрес проекта wss://xxx.livekit.cloud и ключи из панели LiveKit Cloud. Без них звонки отключены. */
-  LIVEKIT_URL: z.string().optional(),
-  LIVEKIT_API_KEY: z.string().optional(),
-  LIVEKIT_API_SECRET: z.string().optional(),
+  /** Daily.co (звонки): API Key из панели Daily.co */
+  DAILY_API_KEY: z.string().optional(),
   /** TURN-сервер для звонков за строгим NAT (необязательно): turn:host:3478?transport=udp,turns:host:5349 */
   TURN_URL: z.string().optional(),
   TURN_USER: z.string().optional(),
@@ -59,7 +57,7 @@ const schema = z.object({
 const parsed = schema.safeParse(process.env);
 if (!parsed.success) {
   console.error('❌ Ошибка в .env:');
-  for (const i of parsed.error.issues) console.error(`  - ${i.path.join('.')}: ${i.message}`);
+  for (const i of parsed.error.issues) console.error(`  - \({i.path.join('.')}:\){i.message}`);
   process.exit(1);
 }
 
