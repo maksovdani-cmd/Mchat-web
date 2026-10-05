@@ -57,7 +57,8 @@ app.use(
         defaultSrc: ["'self'"],
         // 'unsafe-inline' нужен, пока в вёрстке есть onclick="..." и <script> внутри HTML.
         // Когда перейдёшь на addEventListener — можно убрать и получить сильную защиту от XSS.
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+        // cdn.jsdelivr.net — запасной источник клиента LiveKit (с проверкой SRI-хэша), если локальный файл в /vendor повреждён
+        scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
         scriptSrcAttr: ["'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
