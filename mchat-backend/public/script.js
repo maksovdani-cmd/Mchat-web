@@ -4250,15 +4250,33 @@ let mxCall = null;      // активный звонок {id, chatId, video, isG
 let mxIncoming = null;  // входящий, на который ещё не ответили
 let mxRingCtl = null;
 
-function mxLoadLiveKit() {
-  if (window.LivekitClient) return Promise.resolve(window.LivekitClient);
+// Клиент LiveKit: сначала свой файл /vendor, если он повреждён или не загрузился — тот же файл с CDN (с проверкой хэша).
+const MX_LK_VERSION = '2.22.3';
+const MX_LK_CDN = 'https://cdn.jsdelivr.net/npm/livekit-client@' + MX_LK_VERSION + '/dist/livekit-client.umd.js';
+const MX_LK_SRI = 'sha384-G/xxtkVytOx/ia9Q8MXxM+V0ohsaY1fZAgVP3iSGTPz4wJ0s3+ulJNKXh/gnzEDZ';
+
+function mxLoadScript(src, integrity) {
   return new Promise((resolve, reject) => {
+    let jsError = '';
+    const onErr = (ev) => { if (!jsError && ev && ev.message) jsError = ev.message; };
+    window.addEventListener('error', onErr);
     const sc = document.createElement('script');
-    sc.src = '/vendor/livekit-client.umd.js';
-    sc.onload = () => window.LivekitClient ? resolve(window.LivekitClient) : reject(new Error('livekit_missing'));
-    sc.onerror = () => reject(new Error('livekit_load_failed'));
+    sc.src = src;
+    if (integrity) { sc.integrity = integrity; sc.crossOrigin = 'anonymous'; }
+    const done = () => window.removeEventListener('error', onErr);
+    sc.onload = () => { done(); window.LivekitClient ? resolve(window.LivekitClient) : reject(new Error('livekit_missing' + (jsError ? ': ' + jsError : ''))); };
+    sc.onerror = () => { done(); reject(new Error('livekit_load_failed')); };
     document.head.appendChild(sc);
   });
+}
+
+async function mxLoadLiveKit() {
+  if (window.LivekitClient) return window.LivekitClient;
+  let firstErr;
+  try { return await mxLoadScript('/vendor/livekit-client.umd.js?v=' + MX_LK_VERSION); }
+  catch (e) { firstErr = e; console.warn('[call] локальный LiveKit не загрузился:', e.message); }
+  try { return await mxLoadScript(MX_LK_CDN, MX_LK_SRI); }
+  catch (e2) { throw new Error(firstErr.message + ' / CDN: ' + e2.message); }
 }
 
 function mxRingStart() {
