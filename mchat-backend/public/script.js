@@ -533,6 +533,33 @@ async function bootSession() {
   }
 }
 
+/** Разовое предложение включить уведомления. Нужно нажатие пользователя — браузер иначе не даст запросить разрешение. */
+function mxOfferPush() {
+  try {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    if (Notification.permission !== 'default') return;
+    if (localStorage.getItem('mchat_push_asked')) return;
+    localStorage.setItem('mchat_push_asked', '1');
+  } catch (e) { return; }
+  const modal = document.createElement('div');
+  modal.className = 'modal active';
+  modal.id = 'mx-push-offer';
+  modal.style.zIndex = '980';
+  modal.innerHTML = `<div class="mx-modal-box">
+    <h3>Включить уведомления?</h3>
+    <div style="font-size:14px;color:var(--text2);line-height:1.5">Так вам придут новые сообщения, звонки и код для входа с нового устройства, даже когда Mchat закрыт.</div>
+    <div class="mx-row-btns">
+      <button class="mx-btn" onclick="document.getElementById('mx-push-offer').remove()">Не сейчас</button>
+      <button class="mx-btn primary" onclick="mxPushOfferYes()">Включить</button>
+    </div>
+  </div>`;
+  document.getElementById('app').appendChild(modal);
+}
+function mxPushOfferYes() {
+  const m = document.getElementById('mx-push-offer'); if (m) m.remove();
+  MchatAPI.enablePush().then(() => showToast('Уведомления включены')).catch(e => showToast(MchatAPI.errorText(e)));
+}
+
 async function onLoggedIn(me) {
   currentUser = {
     id: me.id,
@@ -553,6 +580,7 @@ async function onLoggedIn(me) {
   MchatAPI.connect();
   await refreshChats();
   MchatAPI.syncPush();
+  setTimeout(mxOfferPush, 2000); // один раз предлагаем включить уведомления (на них приходят коды входа и сообщения)
   const active = document.querySelector('.screen.active');
   if (!active || active.id === 's-login' || active.id === 's-code') goTo('s-feed');
 }

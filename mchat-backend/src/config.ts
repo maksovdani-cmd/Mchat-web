@@ -30,6 +30,10 @@ const schema = z.object({
   BREVO_API_URL: z.string().default('https://api.brevo.com/v3/smtp/email'),
   /** Email-адреса (через запятую), которым автоматически даётся роль ADMIN */
   ADMIN_EMAILS: z.string().default(''),
+  /** Требовать код при входе с нового устройства. «false» — Google-вход сразу пускает (код не нужен). */
+  REQUIRE_DEVICE_CODE: z.enum(['true', 'false']).default('true'),
+  /** Если код входа доставить некуда (почта не работает, других устройств нет) — пустить человека, а не запирать аккаунт навсегда. */
+  ALLOW_LOGIN_WHEN_CODE_UNDELIVERABLE: z.enum(['true', 'false']).default('true'),
   /** Разрешить кнопку «Отправить код на почту» на экране ввода кода */
   ALLOW_EMAIL_FALLBACK: bool,
   /** Куда сохранять голосовые, кружки, фото и треки (в Docker — примонтированный том) */
@@ -72,6 +76,8 @@ export const config = {
   googleRedirectUri: `${appUrl.origin}/api/auth/google/callback`,
   sessionTtlMs: 30 * 24 * 60 * 60 * 1000, // 30 дней
   deviceTtlMs: 365 * 24 * 60 * 60 * 1000, // 1 год
+  requireDeviceCode: env.REQUIRE_DEVICE_CODE === 'true',
+  allowLoginWhenUndeliverable: env.ALLOW_LOGIN_WHEN_CODE_UNDELIVERABLE === 'true',
   codeTtlMs: 10 * 60 * 1000, // код живёт 10 минут
   codeMaxAttempts: 5,
 };

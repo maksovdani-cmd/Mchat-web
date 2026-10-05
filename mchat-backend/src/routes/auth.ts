@@ -136,6 +136,15 @@ authRouter.get(
       await startSession(res, existing.id, trusted.id);
       return res.redirect('/');
     }
+    // Код отключён (REQUIRE_DEVICE_CODE=false): за безопасность входа отвечает Google — пускаем сразу,
+    // а уже вошедшие устройства просто получают уведомление «вход с нового устройства».
+    if (!config.requireDeviceCode) {
+      const { device, raw } = await createDevice(existing.id, req);
+      setDeviceCookie(res, raw);
+      await startSession(res, existing.id, device.id);
+      emitToUser(existing.id, 'auth:new-device', { label: device.label });
+      return res.redirect('/');
+    }
     return beginDeviceVerification(req, res, existing);
   }),
 );
@@ -166,9 +175,19 @@ async function beginDeviceVerification(req: Request, res: Response, user: { id: 
     data: { kind: 'login-code' },
   });
   // Канал 3: почта, с которой человек входит, — всегда (не зависит от того, открыт ли Mchat на другом устройстве)
-  void viaSocket; void pushed;
   const emailSent = await sendLoginCodeEmail(user.email, code, label);
   if (emailSent) await prisma.loginCode.update({ where: { id: rec.id }, data: { emailSent: true } });
+
+  // Код доставить некуда: почта не сработала, другие устройства не в сети и не подписаны на пуши.
+  // Человека уже проверил Google — не запираем аккаунт навсегда, пускаем и предупреждаем в логах.
+  if (!viaSocket && pushed === 0 && !emailSent && config.allowLoginWhenUndeliverable) {
+    console.warn(`⚠️ Код входа для ${user.email} некуда доставить (почта не настроена/не сработала) — вход разрешён без кода`);
+    await prisma.loginCode.delete({ where: { id: rec.id } }).catch(() => {});
+    const { device, raw } = await createDevice(user.id, req);
+    setDeviceCookie(res, raw);
+    await startSession(res, user.id, device.id);
+    return res.redirect('/');
+  }
 
   setCookie(res, COOKIE.pending, signJwt({ cid: rec.id, uid: user.id }, 600), 600_000);
   return res.redirect('/?auth=code');
