@@ -24,7 +24,6 @@ callsRouter.post('/room', wrap(async (req, res) => {
 
   const name = roomName || `mchat-room-${Date.now()}`;
 
-  // Запрос к REST API Daily.co
   const response = await fetch('https://api.daily.co/v1/rooms', {
     method: 'POST',
     headers: {
@@ -34,7 +33,7 @@ callsRouter.post('/room', wrap(async (req, res) => {
     body: JSON.stringify({
       name,
       properties: {
-        exp: Math.floor(Date.now() / 1000) + 3600, // Комната активна 1 час
+        exp: Math.floor(Date.now() / 1000) + 3600,
         enable_chat: false,
         enable_knocking: false,
       },
@@ -43,7 +42,6 @@ callsRouter.post('/room', wrap(async (req, res) => {
 
   const data = await response.json();
 
-  // Если комната уже существует, запрашиваем её данные
   if (!response.ok && data.error === 'invalid-request-error' && data.info?.includes('already exists')) {
     const getRes = await fetch(`https://api.daily.co/v1/rooms/${name}`, {
       headers: { Authorization: `Bearer ${config.DAILY_API_KEY}` },
