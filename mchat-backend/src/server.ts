@@ -36,17 +36,11 @@ app.use((req, res, next) => {
 });
 
 const wsOrigin = config.appOrigin.replace(/^http/, 'ws');
-// LiveKit: браузер подключается к его серверу по wss:// (и https:// для служебных запросов)
-const liveKitSrc: string[] = [];
-if (config.LIVEKIT_URL) {
-  try {
-    const u = new URL(config.LIVEKIT_URL);
-    const plain = u.protocol === 'ws:' || u.protocol === 'http:'; // локальная разработка без TLS
-    liveKitSrc.push(`${plain ? 'ws' : 'wss'}://${u.host}`, `${plain ? 'http' : 'https'}://${u.host}`);
-    // LiveKit Cloud может перенаправить на региональный адрес *.livekit.cloud
-    if (u.hostname.endsWith('.livekit.cloud')) liveKitSrc.push('wss://*.livekit.cloud', 'https://*.livekit.cloud');
-  } catch { /* неверный LIVEKIT_URL — звонки просто не заработают */ }
-}
+// Daily.co (звонки): документация https://docs.daily.co/guides/privacy-and-security/content-security-policy
+// Режим call object + avoidEval: пакет звонка грузится script-тегом с доменов Daily, сигналинг идёт по https/wss.
+const dailyDomains = ['daily.co', 'dailywebrtc.com', 'dailywebrtc.net'];
+const dailyScript = dailyDomains.map((d) => `https://*.${d}`);
+const dailyConnect = dailyDomains.flatMap((d) => [`https://*.${d}`, `wss://*.${d}`]);
 app.use(
   helmet({
     hsts: config.isProd ? { maxAge: 63072000, includeSubDomains: true } : false,
@@ -57,15 +51,17 @@ app.use(
         defaultSrc: ["'self'"],
         // 'unsafe-inline' нужен, пока в вёрстке есть onclick="..." и <script> внутри HTML.
         // Когда перейдёшь на addEventListener — можно убрать и получить сильную защиту от XSS.
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+        // cdn.jsdelivr.net — запасной источник клиента Daily (с проверкой SRI-хэша), если локальный файл в /vendor повреждён
+        scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net', ...dailyScript],
         scriptSrcAttr: ["'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
         mediaSrc: ["'self'", 'data:', 'blob:'],
         // data:/blob: нужны, чтобы превью видео и медиа историй из памяти браузера можно было загрузить на сервер
-        connectSrc: ["'self'", wsOrigin, 'data:', 'blob:', ...liveKitSrc],
-        workerSrc: ["'self'"],
+        connectSrc: ["'self'", wsOrigin, 'data:', 'blob:', ...dailyConnect],
+        workerSrc: ["'self'", 'blob:'],
+        frameSrc: ["'self'", ...dailyScript],
         manifestSrc: ["'self'"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
