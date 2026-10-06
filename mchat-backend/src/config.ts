@@ -1,153 +1,87 @@
-import http from 'node:http';
+import 'dotenv/config';
 import path from 'node:path';
-import cookieParser from 'cookie-parser';
-import express, { type ErrorRequestHandler } from 'express';
-import helmet from 'helmet';
-import { ZodError } from 'zod';
-import { config } from './config';
-import { prisma } from './db';
-import { apiLimiter, originGuard } from './middleware/security';
-import { initSocket } from './realtime/socket';
-import { authRouter } from './routes/auth';
-import { chatsRouter } from './routes/chats';
-import { friendsRouter } from './routes/friends';
-import { mediaRouter } from './routes/media';
-import { messagesRouter } from './routes/messages';
-import { postsRouter, storiesRouter } from './routes/posts';
-import { purgeExpiredStories } from './services/posts';
-import { verificationRouter } from './routes/verification';
-import { callsRouter } from './routes/calls';
-import { expireVerifications } from './services/verification';
-import { pushRouter } from './routes/push';
-import { usersRouter } from './routes/users';
-import { ensureUploadDir } from './services/storage';
-import { HttpError } from './utils/errors';
+import { z } from 'zod';
 
-const app = express();
-app.set('trust proxy', config.TRUST_PROXY); // корректный req.ip и req.protocol за Caddy/nginx
-app.disable('x-powered-by');
+const bool = z
+  .enum(['true', 'false'])
+  .default('true')
+  .transform((v) => v === 'true');
 
-// В проде: только HTTPS (а значит, и только WSS)
-app.use((req, res, next) => {
-  if (config.isProd && req.path !== '/healthz' && req.protocol !== 'https') {
-    return res.redirect(301, `${config.appOrigin}${req.originalUrl}`);
-  }
-  next();
+const schema = z.object({
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  PORT: z.coerce.number().int().default(3000),
+  /** Публичный адрес приложения, БЕЗ слэша в конце. В проде — только https:// */
+  APP_URL: z.string().url(),
+  DATABASE_URL: z.string().min(1),
+  /** Секрет для подписи JWT и хэширования кодов. Минимум 32 символа. */
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET должен быть не короче 32 символов (npm run secret)'),
+  GOOGLE_CLIENT_ID: z.string().min(1),
+  GOOGLE_CLIENT_SECRET: z.string().min(1),
+  VAPID_PUBLIC_KEY: z.string().min(1),
+  VAPID_PRIVATE_KEY: z.string().min(1),
+  VAPID_SUBJECT: z.string().default('mailto:admin@example.com'),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  MAIL_FROM: z.string().default('Mchat <no-reply@example.com>'),
+  /** Отправка писем через HTTPS-API Brevo (работает на бесплатном Render, где SMTP-порты закрыты). Ключ: Brevo → SMTP & API → API Keys. */
+  BREVO_API_KEY: z.string().optional(),
+  BREVO_API_URL: z.string().default('https://api.brevo.com/v3/smtp/email'),
+  /** Email-адреса (через запятую), которым автоматически даётся роль ADMIN */
+  ADMIN_EMAILS: z.string().default(''),
+  /** Требовать код при входе с нового устройства. «false» — Google-вход сразу пускает (код не нужен). */
+  REQUIRE_DEVICE_CODE: z.enum(['true', 'false']).default('true'),
+  /** Если код входа доставить некуда (почта не работает, других устройств нет) — пустить человека, а не запирать аккаунт навсегда. */
+  ALLOW_LOGIN_WHEN_CODE_UNDELIVERABLE: z.enum(['true', 'false']).default('true'),
+  /** Разрешить кнопку «Отправить код на почту» на экране ввода кода */
+  ALLOW_EMAIL_FALLBACK: bool,
+  /** Куда сохранять голосовые, кружки, фото и треки (в Docker — примонтированный том) */
+  UPLOAD_DIR: z.string().default('./uploads'),
+  /** Постоянное хранилище файлов (S3-совместимое: Supabase, Cloudflare R2, Backblaze B2). Без него — диск сервера. */
+  S3_BUCKET: z.string().optional(),
+  S3_ENDPOINT: z.string().optional(),
+  S3_REGION: z.string().default('auto'),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  /** Daily.co (звонки): API-ключ из dashboard.daily.co → Developers. Без него звонки отключены. */
+  DAILY_API_KEY: z.string().optional(),
+  DAILY_API_URL: z.string().default('https://api.daily.co/v1'),
+  /** TURN-сервер для звонков за строгим NAT (необязательно): turn:host:3478?transport=udp,turns:host:5349 */
+  TURN_URL: z.string().optional(),
+  TURN_USER: z.string().optional(),
+  TURN_PASS: z.string().optional(),
+  /** Сколько прокси стоит перед приложением (Caddy/nginx = 1) */
+  TRUST_PROXY: z.coerce.number().int().default(1),
 });
 
-const wsOrigin = config.appOrigin.replace(/^http/, 'ws');
-// Daily.co (звонки): документация https://docs.daily.co/guides/privacy-and-security/content-security-policy
-// Режим call object + avoidEval: пакет звонка грузится script-тегом с доменов Daily, сигналинг идёт по https/wss.
-const dailyDomains = ['daily.co', 'dailywebrtc.com', 'dailywebrtc.net'];
-const dailyScript = dailyDomains.map((d) => `https://*.${d}`);
-const dailyConnect = dailyDomains.flatMap((d) => [`https://*.${d}`, `wss://*.${d}`]);
-app.use(
-  helmet({
-    hsts: config.isProd ? { maxAge: 63072000, includeSubDomains: true } : false,
-    crossOriginEmbedderPolicy: false,
-    contentSecurityPolicy: {
-      useDefaults: false,
-      directives: {
-        defaultSrc: ["'self'"],
-        // 'unsafe-inline' нужен, пока в вёрстке есть onclick="..." и <script> внутри HTML.
-        // Когда перейдёшь на addEventListener — можно убрать и получить сильную защиту от XSS.
-        // cdn.jsdelivr.net — запасной источник клиента Daily (с проверкой SRI-хэша), если локальный файл в /vendor повреждён
-        scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net', ...dailyScript],
-        scriptSrcAttr: ["'unsafe-inline'"],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-        fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
-        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-        mediaSrc: ["'self'", 'data:', 'blob:'],
-        // data:/blob: нужны, чтобы превью видео и медиа историй из памяти браузера можно было загрузить на сервер
-        connectSrc: ["'self'", wsOrigin, 'data:', 'blob:', ...dailyConnect],
-        workerSrc: ["'self'", 'blob:'],
-        frameSrc: ["'self'", ...dailyScript],
-        manifestSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        baseUri: ["'self'"],
-        formAction: ["'self'"],
-        frameAncestors: ["'none'"],
-        ...(config.isProd ? { upgradeInsecureRequests: [] } : {}),
-      },
-    },
-  }),
-);
+const parsed = schema.safeParse(process.env);
+if (!parsed.success) {
+  console.error('❌ Ошибка в .env:');
+  for (const i of parsed.error.issues) console.error(`  - ${i.path.join('.')}: ${i.message}`);
+  process.exit(1);
+}
 
-app.use(cookieParser());
-app.use(express.json({ limit: '64kb' }));
+const env = parsed.data;
+const appUrl = new URL(env.APP_URL);
 
-app.get('/healthz', async (_req, res) => {
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    res.json({ ok: true });
-  } catch {
-    res.status(503).json({ ok: false });
-  }
-});
-
-// ── API ──
-app.use('/api', apiLimiter, originGuard);
-app.use('/api/auth', authRouter);
-app.use('/api/push', pushRouter);
-app.use('/api/chats', chatsRouter);
-app.use('/api/messages', messagesRouter);
-app.use('/api/friends', friendsRouter);
-app.use('/api/media', mediaRouter);
-app.use('/api/posts', postsRouter);
-app.use('/api/stories', storiesRouter);
-app.use('/api/verification', verificationRouter);
-app.use('/api/calls', callsRouter);
-app.use('/api', usersRouter); // /api/me, /api/users/*, /api/me/devices
-app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
-
-// ── Фронтенд (твои HTML/CSS/JS лежат в public/) ──
-app.use(
-  express.static(path.join(__dirname, '..', 'public'), {
-    setHeaders(res, filePath) {
-      if (/(sw\.js|index\.html|manifest\.webmanifest|mchat-api\.js)$/.test(filePath)) {
-        res.setHeader('Cache-Control', 'no-cache');
-      }
-      if (filePath.endsWith('sw.js')) res.setHeader('Service-Worker-Allowed', '/');
-    },
-  }),
-);
-
-// Адреса вида /profile/anna и /join/abc123 открывают то же одностраничное приложение;
-// дальше по адресу решает script.js (открыть профиль / вступить в группу).
-app.get(['/profile/:username', '/join/:code'], (_req, res) => {
-  res.setHeader('Cache-Control', 'no-cache');
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
-});
-
-const onError: ErrorRequestHandler = (err, _req, res, _next) => {
-  if (err instanceof HttpError) return void res.status(err.status).json({ error: err.code });
-  if (err instanceof ZodError) return void res.status(400).json({ error: 'bad_request' });
-  if ((err as { type?: string }).type === 'entity.parse.failed') return void res.status(400).json({ error: 'bad_json' });
-  if ((err as { type?: string }).type === 'entity.too.large') return void res.status(413).json({ error: 'too_large' });
-  console.error(err);
-  res.status(500).json({ error: 'server_error' });
+export const config = {
+  ...env,
+  isProd: env.NODE_ENV === 'production',
+  appOrigin: appUrl.origin,
+  cookieSecure: appUrl.protocol === 'https:',
+  adminEmails: env.ADMIN_EMAILS.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+  uploadDir: path.resolve(env.UPLOAD_DIR),
+  googleRedirectUri: `${appUrl.origin}/api/auth/google/callback`,
+  sessionTtlMs: 30 * 24 * 60 * 60 * 1000, // 30 дней
+  deviceTtlMs: 365 * 24 * 60 * 60 * 1000, // 1 год
+  requireDeviceCode: env.REQUIRE_DEVICE_CODE === 'true',
+  allowLoginWhenUndeliverable: env.ALLOW_LOGIN_WHEN_CODE_UNDELIVERABLE === 'true',
+  codeTtlMs: 10 * 60 * 1000, // код живёт 10 минут
+  codeMaxAttempts: 5,
 };
-app.use(onError);
 
-ensureUploadDir();
-const server = http.createServer(app);
-const io = initSocket(server);
-
-const expireNow = () => expireVerifications().catch((e) => console.error('expire verifications', e));
-expireNow();
-setInterval(expireNow, 5 * 60 * 1000).unref(); // срок галочки вышел — она исчезает (проверка раз в 5 минут)
-setInterval(() => purgeExpiredStories().catch((e) => console.error('purge stories', e)), 60 * 60 * 1000).unref();
-
-server.listen(config.PORT, () => {
-  console.log(`✅ Mchat запущен: ${config.appOrigin}  (порт ${config.PORT}, ${config.NODE_ENV})`);
-});
-
-const shutdown = async () => {
-  console.log('Останавливаю сервер…');
-  io.close();
-  server.close();
-  await prisma.$disconnect();
-  process.exit(0);
-};
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+if (config.isProd && !config.cookieSecure) {
+  console.error('❌ В production APP_URL должен начинаться с https:// (иначе нет WSS и Secure-cookie).');
+  process.exit(1);
+}
