@@ -30,35 +30,23 @@ app.disable('x-powered-by');
 // В проде: только HTTPS (а значит, и только WSS)
 app.use((req, res, next) => {
   if (config.isProd && req.path !== '/healthz' && req.protocol !== 'https') {
-    return res.redirect(301, `\({config.appOrigin}\){req.originalUrl}`);
+    return res.redirect(301, `${config.appOrigin}${req.originalUrl}`);
   }
   next();
 });
 
 const wsOrigin = config.appOrigin.replace(/^http/, 'ws');
-
 // LiveKit: браузер подключается к его серверу по wss:// (и https:// для служебных запросов)
-// ДОБАВЛЕНЫ МАСКИ ДЛЯ WEBRTC ПОРТОВ:
-const liveKitSrc: string[] = [
-  'wss://*.livekit.cloud',
-  'https://*.livekit.cloud',
-  'wss://*.livekit.cloud:*',
-  'https://*.livekit.cloud:*'
-];
-
+const liveKitSrc: string[] = [];
 if (config.LIVEKIT_URL) {
   try {
     const u = new URL(config.LIVEKIT_URL);
     const plain = u.protocol === 'ws:' || u.protocol === 'http:'; // локальная разработка без TLS
-    liveKitSrc.push(
-      `\({plain ? 'ws' : 'wss'}://\){u.host}`,
-      `\({plain ? 'http' : 'https'}://\){u.host}`,
-      `\({plain ? 'ws' : 'wss'}://\){u.host}:*`,
-      `\({plain ? 'http' : 'https'}://\){u.host}:*`
-    );
+    liveKitSrc.push(`${plain ? 'ws' : 'wss'}://${u.host}`, `${plain ? 'http' : 'https'}://${u.host}`);
+    // LiveKit Cloud может перенаправить на региональный адрес *.livekit.cloud
+    if (u.hostname.endsWith('.livekit.cloud')) liveKitSrc.push('wss://*.livekit.cloud', 'https://*.livekit.cloud');
   } catch { /* неверный LIVEKIT_URL — звонки просто не заработают */ }
 }
-
 app.use(
   helmet({
     hsts: config.isProd ? { maxAge: 63072000, includeSubDomains: true } : false,
@@ -67,12 +55,15 @@ app.use(
       useDefaults: false,
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+        // 'unsafe-inline' нужен, пока в вёрстке есть onclick="..." и <script> внутри HTML.
+        // Когда перейдёшь на addEventListener — можно убрать и получить сильную защиту от XSS.
+        scriptSrc: ["'self'", "'unsafe-inline'"],
         scriptSrcAttr: ["'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
         mediaSrc: ["'self'", 'data:', 'blob:'],
+        // data:/blob: нужны, чтобы превью видео и медиа историй из памяти браузера можно было загрузить на сервер
         connectSrc: ["'self'", wsOrigin, 'data:', 'blob:', ...liveKitSrc],
         workerSrc: ["'self'"],
         manifestSrc: ["'self'"],
@@ -152,7 +143,7 @@ setInterval(expireNow, 5 * 60 * 1000).unref(); // срок галочки выш
 setInterval(() => purgeExpiredStories().catch((e) => console.error('purge stories', e)), 60 * 60 * 1000).unref();
 
 server.listen(config.PORT, () => {
-  console.log(`✅ Mchat запущен: \({config.appOrigin}  (порт\){config.PORT}, ${config.NODE_ENV})`);
+  console.log(`✅ Mchat запущен: ${config.appOrigin}  (порт ${config.PORT}, ${config.NODE_ENV})`);
 });
 
 const shutdown = async () => {

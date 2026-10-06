@@ -30,7 +30,9 @@
   // ---------- тексты ошибок ----------
   const ERR = {
     unauthorized: 'Сессия истекла. Войди снова',
-    calls_disabled: 'Звонки не настроены на сервере: добавь ключи LiveKit в .env',
+    calls_disabled: 'Звонки не настроены на сервере: добавь DAILY_API_KEY в Render',
+    calls_bad_key: 'Ключ Daily (DAILY_API_KEY) не подходит — проверь его в Render',
+    calls_provider_error: 'Сервис звонков Daily сейчас недоступен, попробуй позже',
     no_calls_in_channel: 'В канале нельзя звонить',
     nobody_to_call: 'Некому звонить',
     already_in_call: 'Ты уже в другом звонке',

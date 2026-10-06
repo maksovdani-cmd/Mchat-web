@@ -4244,16 +4244,16 @@ async function mxSubmitAddMembers() {
 }
 
 // ============================================================
-// ЗВОНКИ (LiveKit): полноэкранный экран, микрофон, камера, добавить участника, завершить
+// ЗВОНКИ (Daily.co): полноэкранный экран, микрофон, камера, добавить участника, завершить
 // ============================================================
 let mxCall = null;      // активный звонок {id, chatId, video, isGroup, room, micOn, camOn, ...}
 let mxIncoming = null;  // входящий, на который ещё не ответили
 let mxRingCtl = null;
 
-// Клиент LiveKit: сначала свой файл /vendor, если он повреждён или не загрузился — тот же файл с CDN (с проверкой хэша).
-const MX_LK_VERSION = '2.22.3';
-const MX_LK_CDN = 'https://cdn.jsdelivr.net/npm/livekit-client@' + MX_LK_VERSION + '/dist/livekit-client.umd.js';
-const MX_LK_SRI = 'sha384-G/xxtkVytOx/ia9Q8MXxM+V0ohsaY1fZAgVP3iSGTPz4wJ0s3+ulJNKXh/gnzEDZ';
+// Клиент Daily (daily-js): сначала свой файл /vendor, если он повреждён — тот же файл с CDN (с проверкой хэша).
+const MX_DAILY_VERSION = '0.93.0';
+const MX_DAILY_CDN = 'https://cdn.jsdelivr.net/npm/@daily-co/daily-js@' + MX_DAILY_VERSION + '/dist/daily.js';
+const MX_DAILY_SRI = 'sha384-DUI8LbxjuFzuplRn2yxGnk1uHo/rsLGFGzzyQbEvvzCgHmyvLq/dkkWEmtvAW8Kj';
 
 function mxLoadScript(src, integrity) {
   return new Promise((resolve, reject) => {
@@ -4264,18 +4264,18 @@ function mxLoadScript(src, integrity) {
     sc.src = src;
     if (integrity) { sc.integrity = integrity; sc.crossOrigin = 'anonymous'; }
     const done = () => window.removeEventListener('error', onErr);
-    sc.onload = () => { done(); window.LivekitClient ? resolve(window.LivekitClient) : reject(new Error('livekit_missing' + (jsError ? ': ' + jsError : ''))); };
-    sc.onerror = () => { done(); reject(new Error('livekit_load_failed')); };
+    sc.onload = () => { done(); window.Daily ? resolve(window.Daily) : reject(new Error('daily_missing' + (jsError ? ': ' + jsError : ''))); };
+    sc.onerror = () => { done(); reject(new Error('daily_load_failed')); };
     document.head.appendChild(sc);
   });
 }
 
-async function mxLoadLiveKit() {
-  if (window.LivekitClient) return window.LivekitClient;
+async function mxLoadDaily() {
+  if (window.Daily) return window.Daily;
   let firstErr;
-  try { return await mxLoadScript('/vendor/livekit-client.umd.js?v=' + MX_LK_VERSION); }
-  catch (e) { firstErr = e; console.warn('[call] локальный LiveKit не загрузился:', e.message); }
-  try { return await mxLoadScript(MX_LK_CDN, MX_LK_SRI); }
+  try { return await mxLoadScript('/vendor/daily.js?v=' + MX_DAILY_VERSION); }
+  catch (e) { firstErr = e; console.warn('[call] локальный daily-js не загрузился:', e.message); }
+  try { return await mxLoadScript(MX_DAILY_CDN, MX_DAILY_SRI); }
   catch (e2) { throw new Error(firstErr.message + ' / CDN: ' + e2.message); }
 }
 
@@ -4319,14 +4319,14 @@ function mxCallLayout() {
   if (mxCall) mxCallUpdateStatus();
 }
 
-function mxCallTile(participant) {
+function mxCallTile(p) {
   const grid = document.getElementById('call-grid');
-  let tile = grid.querySelector(`[data-ident="${CSS.escape(participant.identity)}"]`);
+  let tile = grid.querySelector(`[data-ident="${CSS.escape(p.session_id)}"]`);
   if (!tile) {
     tile = document.createElement('div');
     tile.className = 'call-tile';
-    tile.dataset.ident = participant.identity;
-    const nm = participant.name || participant.identity;
+    tile.dataset.ident = p.session_id;
+    const nm = p.user_name || 'Участник';
     tile.innerHTML = `<div class="ct-av">${esc(nm.charAt(0).toUpperCase())}</div><div class="ct-name">${esc(nm)}</div>`;
     grid.appendChild(tile);
     mxCallLayout();
@@ -4334,22 +4334,52 @@ function mxCallTile(participant) {
   return tile;
 }
 
-function mxCallRemoveTile(participant) {
-  const tile = document.getElementById('call-grid').querySelector(`[data-ident="${CSS.escape(participant.identity)}"]`);
-  if (tile) { tile.remove(); mxCallLayout(); }
+/** Привязывает дорожку (камера/микрофон) участника к элементу в его плитке. */
+function mxCallSetTrack(tile, kind, trackState) {
+  const track = trackState && trackState.persistentTrack;
+  const ok = !!track && (trackState.state === 'playable' || trackState.state === 'loading');
+  let el = tile.querySelector(kind);
+  if (!ok) { if (el) { el.srcObject = null; if (kind === 'video') el.style.display = 'none'; } return; }
+  if (!el) {
+    el = document.createElement(kind);
+    el.autoplay = true;
+    if (kind === 'video') { el.playsInline = true; el.muted = true; tile.insertBefore(el, tile.firstChild); }
+    else tile.appendChild(el);
+  }
+  if (kind === 'video') el.style.display = '';
+  if (!el.srcObject || el.srcObject.getTracks()[0] !== track) el.srcObject = new MediaStream([track]);
+  if (kind === 'audio') el.play().catch(() => {});
 }
 
-function mxCallAttachTrack(track, participant) {
-  const tile = mxCallTile(participant);
-  if (track.kind === 'video') {
-    let v = tile.querySelector('video');
-    if (!v) { v = document.createElement('video'); v.autoplay = true; v.playsInline = true; tile.insertBefore(v, tile.firstChild); }
-    track.attach(v);
-  } else if (track.kind === 'audio') {
-    let a = tile.querySelector('audio');
-    if (!a) { a = document.createElement('audio'); a.autoplay = true; tile.appendChild(a); }
-    track.attach(a);
-  }
+/** Приводит экран звонка в соответствие с тем, что сейчас видит Daily: плитки, видео, звук, свой кадр, кнопки. */
+function mxCallSync(call) {
+  const co = call && call.co;
+  if (!co || mxCall !== call) return;
+  const parts = co.participants();
+  const grid = document.getElementById('call-grid');
+  const remote = Object.values(parts).filter(p => !p.local);
+
+  // уехавшие участники
+  [...grid.children].forEach(t => { if (!remote.some(p => p.session_id === t.dataset.ident)) t.remove(); });
+  remote.forEach(p => {
+    const tile = mxCallTile(p);
+    mxCallSetTrack(tile, 'video', p.tracks && p.tracks.video);
+    mxCallSetTrack(tile, 'audio', p.tracks && p.tracks.audio);
+  });
+  if (remote.length && !call.startedAt) { call.startedAt = Date.now(); mxRingStop(); }
+  mxCallLayout();
+
+  // свой кадр
+  const me = parts.local;
+  const self = document.getElementById('call-self');
+  const vt = me && me.tracks && me.tracks.video;
+  if (vt && vt.persistentTrack && (vt.state === 'playable' || vt.state === 'loading')) {
+    if (!self.srcObject || self.srcObject.getTracks()[0] !== vt.persistentTrack) self.srcObject = new MediaStream([vt.persistentTrack]);
+    self.style.display = 'block';
+  } else { self.srcObject = null; self.style.display = 'none'; }
+
+  // кнопки отражают реальное состояние
+  mxCallSetButtons(co.localAudio(), co.localVideo());
 }
 
 function mxCallUpdateStatus() {
@@ -4382,63 +4412,46 @@ function mxCallSetButtons(micOn, camOn) {
   set('call-mic', micOn); set('call-cam', camOn);
 }
 
-/** Подключаемся к комнате LiveKit с токеном, который выдал наш сервер. */
+/** Подключаемся к комнате Daily: адрес и токен выдал наш сервер. */
 async function mxCallConnect(call, token, url) {
-  const lk = await mxLoadLiveKit();
-  const room = new lk.Room({ adaptiveStream: true, dynacast: true });
-  call.room = room; call.lk = lk;
-  const RE = lk.RoomEvent;
-  room.on(RE.TrackSubscribed, (track, pub, participant) => {
-    mxCallAttachTrack(track, participant);
-    if (!call.startedAt) call.startedAt = Date.now();
+  const D = await mxLoadDaily();
+  const co = D.createCallObject({
+    subscribeToTracksAutomatically: true,
+    startAudioOff: false,
+    startVideoOff: !call.video,
+    dailyConfig: { avoidEval: true }, // без 'unsafe-eval' в защите сайта (CSP)
   });
-  room.on(RE.TrackUnsubscribed, (track) => { try { track.detach(); } catch (e) {} });
-  room.on(RE.TrackMuted, (pub, participant) => {
-    if (pub.kind === 'video' && participant !== room.localParticipant) {
-      const v = mxCallTile(participant).querySelector('video'); if (v) v.style.display = 'none';
-    }
-  });
-  room.on(RE.TrackUnmuted, (pub, participant) => {
-    if (pub.kind === 'video' && participant !== room.localParticipant) {
-      const v = mxCallTile(participant).querySelector('video'); if (v) v.style.display = '';
-    }
-  });
-  room.on(RE.ParticipantConnected, (p) => { if (!call.startedAt) call.startedAt = Date.now(); mxRingStop(); mxCallTile(p); });
-  room.on(RE.ParticipantDisconnected, (p) => {
-    mxCallRemoveTile(p);
+  call.co = co;
+  const sync = () => mxCallSync(call);
+  co.on('participant-joined', sync);
+  co.on('participant-updated', sync);
+  co.on('participant-left', () => {
+    sync();
     // в личном звонке собеседник вышел — звонок окончен
-    if (!call.isGroup && room.remoteParticipants.size === 0) mxCallCleanup('Звонок завершён');
+    if (!call.isGroup && call.startedAt && Object.values(co.participants()).filter(p => !p.local).length === 0) mxCallCleanup('Звонок завершён');
   });
-  room.on(RE.LocalTrackPublished, (pub) => {
-    if (pub.source === lk.Track.Source.Camera && pub.track) { const el = document.getElementById('call-self'); pub.track.attach(el); el.style.display = 'block'; }
+  co.on('camera-error', (ev) => {
+    console.error('[call] camera-error:', ev);
+    const t = ev && ev.error && ev.error.type;
+    const msg = t === 'permissions' ? 'Нет доступа к микрофону или камере. Разрешите его: значок замка слева от адреса сайта → Разрешения. Звонок продолжается без него'
+      : t === 'not-found' ? 'Микрофон или камера не найдены — подключите. Звонок продолжается без них'
+      : t === 'cam-in-use' || t === 'mic-in-use' || t === 'cam-mic-in-use' ? 'Микрофон или камеру уже использует другая программа. Звонок продолжается без них'
+      : 'Не удалось включить микрофон или камеру' + (ev && ev.errorMsg && ev.errorMsg.errorMsg ? ' (' + ev.errorMsg.errorMsg + ')' : '') + '. Звонок продолжается без них';
+    showToast(msg);
+    sync();
   });
-  room.on(RE.LocalTrackUnpublished, (pub) => {
-    if (pub.source === lk.Track.Source.Camera) document.getElementById('call-self').style.display = 'none';
+  co.on('error', (ev) => {
+    console.error('[call] error:', ev);
+    if (mxCall === call) mxCallCleanup('Связь прервалась' + (ev && ev.errorMsg ? ' (' + ev.errorMsg + ')' : ''));
   });
-  room.on(RE.Disconnected, (reason) => {
-    console.warn('[call] LiveKit disconnected, reason:', reason);
-    if (mxCall === call) mxCallCleanup(call.connected && call.startedAt ? 'Звонок завершён' : 'Связь прервалась' + (reason !== undefined ? ' (причина: ' + reason + ')' : ''));
-  });
+  co.on('left-meeting', () => { if (mxCall === call) mxCallCleanup(call.startedAt ? 'Звонок завершён' : 'Не удалось подключиться к звонку'); });
 
   console.info('[call] connecting to', url);
-  try { await room.connect(url, token); }
-  catch (e) { console.error('[call] connect failed:', e); throw e; }
+  try { await co.join({ url, token }); }
+  catch (e) { console.error('[call] join failed:', e); throw e; }
   call.connected = true;
-  try { await room.startAudio(); } catch (e) { /* нужен жест пользователя — он только что нажал кнопку */ }
-  let micOk = true, camOk = false;
-  try { await room.localParticipant.setMicrophoneEnabled(true); }
-  catch (e) {
-    micOk = false;
-    console.error('[call] microphone error:', e);
-    showToast(mxMediaErrorText('mic', e)); // слушать собеседника можно и без микрофона
-  }
-  if (call.video) {
-    try { await room.localParticipant.setCameraEnabled(true); camOk = true; }
-    catch (e) { console.error('[call] camera error:', e); showToast(mxMediaErrorText('cam', e)); }
-  }
-  mxCallSetButtons(micOk, camOk);
-  room.remoteParticipants.forEach(p => { mxCallTile(p); if (!call.startedAt) call.startedAt = Date.now(); });
   call.timer = setInterval(mxCallUpdateStatus, 1000);
+  sync();
   mxCallUpdateStatus();
 }
 
@@ -4459,7 +4472,7 @@ function mxCallCleanup(message) {
   mxCall = null;
   if (call) {
     if (call.timer) clearInterval(call.timer);
-    try { if (call.room) call.room.disconnect(); } catch (e) {}
+    try { if (call.co) { const c = call.co; c.leave().catch(() => {}).then(() => { try { c.destroy(); } catch (e) {} }); } } catch (e) {}
     if (call.id && !call.leftSent) { call.leftSent = true; MchatAPI.leaveCall(call.id).catch(() => {}); }
   }
   document.getElementById('call-screen').classList.remove('active');
@@ -4479,7 +4492,7 @@ async function mxStartCall(withVideo) {
   let r;
   try { r = await MchatAPI.startCall(currentChatId, !!withVideo); }
   catch (e) { showToast(MchatAPI.errorText(e)); return; }
-  const call = mxCall = { id: r.callId, chatId: currentChatId, outgoing: true, video: !!withVideo, isGroup: ch.type === 'GROUP', room: null, connected: false, startedAt: 0, timer: null };
+  const call = mxCall = { id: r.callId, chatId: currentChatId, outgoing: true, video: !!withVideo, isGroup: ch.type === 'GROUP', co: null, connected: false, startedAt: 0, timer: null };
   mxCallShowScreen(ch.name, person, withVideo);
   try { await mxCallConnect(call, r.token, r.url); }
   catch (e) { if (mxCall === call) mxCallCleanup('Не удалось подключиться к звонку' + (e && e.message ? ' (' + e.message + ')' : '')); }
@@ -4512,7 +4525,7 @@ async function mxCallAccept() {
   let r;
   try { r = await MchatAPI.acceptCall(p.callId); }
   catch (e) { showToast(MchatAPI.errorText(e)); return; }
-  const call = mxCall = { id: p.callId, chatId: r.chatId, video: !!r.video, isGroup: !!r.isGroup, room: null, connected: false, startedAt: 0, timer: null };
+  const call = mxCall = { id: p.callId, chatId: r.chatId, video: !!r.video, isGroup: !!r.isGroup, co: null, connected: false, startedAt: 0, timer: null };
   mxCallShowScreen(p.isGroup && p.title ? p.title : (p.from.name || p.from.username), p.from, r.video);
   try { await mxCallConnect(call, r.token, r.url); }
   catch (e) { if (mxCall === call) mxCallCleanup('Не удалось подключиться к звонку' + (e && e.message ? ' (' + e.message + ')' : '')); }
@@ -4530,21 +4543,15 @@ function mxOnCallHandled(p) { // на другом моём устройстве
 }
 
 // ---------- кнопки на экране звонка ----------
-async function mxCallToggleMic() {
-  if (!mxCall || !mxCall.room) return;
-  const nowOn = !document.getElementById('call-mic').classList.contains('off');
-  try {
-    await mxCall.room.localParticipant.setMicrophoneEnabled(!nowOn);
-    mxCallSetButtons(!nowOn, !document.getElementById('call-cam').classList.contains('off'));
-  } catch (e) { showToast(mxMediaErrorText('mic', e)); }
+function mxCallToggleMic() {
+  if (!mxCall || !mxCall.co) return;
+  mxCall.co.setLocalAudio(!mxCall.co.localAudio());
+  mxCallSetButtons(mxCall.co.localAudio(), mxCall.co.localVideo());
 }
-async function mxCallToggleCam() {
-  if (!mxCall || !mxCall.room) return;
-  const nowOn = !document.getElementById('call-cam').classList.contains('off');
-  try {
-    await mxCall.room.localParticipant.setCameraEnabled(!nowOn);
-    mxCallSetButtons(!document.getElementById('call-mic').classList.contains('off'), !nowOn);
-  } catch (e) { showToast(mxMediaErrorText('cam', e)); }
+function mxCallToggleCam() {
+  if (!mxCall || !mxCall.co) return;
+  mxCall.co.setLocalVideo(!mxCall.co.localVideo());
+  mxCallSetButtons(mxCall.co.localAudio(), mxCall.co.localVideo());
 }
 function mxCallEnd() { mxCallCleanup('Звонок завершён'); }
 
@@ -5497,48 +5504,3 @@ document.addEventListener('DOMContentLoaded', () => {
   setupPinchZoom(document.getElementById('pv-img'));
   setupTextPinchScale();
 });
-// ── Daily.co Video Call Integration ──
-let currentCallFrame = null;
-
-async function startDailyCall(roomName) {
-  try {
-    const res = await fetch('/api/calls/room', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roomName }),
-    });
-    const data = await res.json();
-
-    if (!res.ok || !data.url) {
-      alert('Ошибка при создании комнаты звонка');
-      return;
-    }
-
-    if (currentCallFrame) {
-      currentCallFrame.destroy();
-    }
-
-    currentCallFrame = window.DailyIframe.createFrame({
-      showLeaveButton: true,
-      iframeStyle: {
-        position: 'fixed',
-        top: '0',
-        left: '0',
-        width: '100%',
-        height: '100%',
-        zIndex: '9999',
-        border: 'none',
-      },
-    });
-
-    await currentCallFrame.join({ url: data.url });
-
-    currentCallFrame.on('left-meeting', () => {
-      currentCallFrame.destroy();
-      currentCallFrame = null;
-    });
-  } catch (err) {
-    console.error('Daily call error:', err);
-    alert('Не удалось подключиться к звонку');
-  }
-}
