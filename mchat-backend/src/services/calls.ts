@@ -32,7 +32,7 @@ const ROOM_TTL_SEC = 2 * 60 * 60;
 async function daily<T>(method: 'POST' | 'DELETE', path: string, body?: unknown): Promise<T> {
   let r: Response;
   try {
-    r = await fetch(config.DAILY_API_URL + path, {
+    r = await fetch(`https://api.daily.co/v1${path}`, {
       method,
       headers: { Authorization: `Bearer ${config.DAILY_API_KEY}`, 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
