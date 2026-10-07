@@ -38,7 +38,7 @@ app.use((req, res, next) => {
 const wsOrigin = config.appOrigin.replace(/^http/, 'ws');
 // ZEGOCLOUD (звонки): веб-клиент ходит на их серверы по https (проверка/логирование) и wss (сигналинг).
 // Сам клиент грузится из /vendor или с cdn.jsdelivr.net; медиа идёт по WebRTC и CSP не затрагивается.
-const zegoDomains = ['zegocloud.com', 'zego.im', 'coolzcloud.com'];
+const zegoDomains = ['zegocloud.com', 'zego.im', 'coolzcloud.com', 'coolqcloud.com'];
 const zegoConnect = zegoDomains.flatMap((d) => [`https://*.${d}`, `wss://*.${d}`]);
 app.use(
   helmet({
