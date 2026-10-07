@@ -30,9 +30,9 @@
   // ---------- тексты ошибок ----------
   const ERR = {
     unauthorized: 'Сессия истекла. Войди снова',
-    calls_disabled: 'Звонки не настроены на сервере: добавь DAILY_API_KEY в Render',
-    calls_bad_key: 'Ключ Daily (DAILY_API_KEY) не подходит — проверь его в Render',
-    calls_provider_error: 'Сервис звонков Daily сейчас недоступен, попробуй позже',
+    calls_disabled: 'Звонки не настроены на сервере: добавь ZEGO_APP_ID и ZEGO_SERVER_SECRET в Render',
+    calls_bad_key: 'Ключи ZEGOCLOUD (ZEGO_APP_ID / ZEGO_SERVER_SECRET) не подходят — проверь их в Render',
+    calls_provider_error: 'Сервис звонков ZEGOCLOUD сейчас недоступен, попробуй позже',
     no_calls_in_channel: 'В канале нельзя звонить',
     nobody_to_call: 'Некому звонить',
     already_in_call: 'Ты уже в другом звонке',

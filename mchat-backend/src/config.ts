@@ -44,9 +44,11 @@ const schema = z.object({
   S3_REGION: z.string().default('auto'),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
-  /** Daily.co (звонки): API-ключ из dashboard.daily.co → Developers. Без него звонки отключены. */
-  DAILY_API_KEY: z.string().optional(),
-  DAILY_API_URL: z.string().default('https://api.daily.co/v1'),
+  /** ZEGOCLOUD (звонки): AppID и ServerSecret (32 символа) из console.zegocloud.com → ваш проект. Без них звонки отключены. */
+  ZEGO_APP_ID: z.coerce.number().int().positive().optional(),
+  ZEGO_SERVER_SECRET: z.string().length(32, 'ZEGO_SERVER_SECRET должен быть ровно 32 символа').optional(),
+  /** Адрес сигнального сервера ZEGO для веб-клиента (необязательно). По умолчанию: wss://webliveroom<AppID>-api.zegocloud.com/ws */
+  ZEGO_SERVER: z.string().optional(),
   /** TURN-сервер для звонков за строгим NAT (необязательно): turn:host:3478?transport=udp,turns:host:5349 */
   TURN_URL: z.string().optional(),
   TURN_USER: z.string().optional(),

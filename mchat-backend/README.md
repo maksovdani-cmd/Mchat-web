@@ -49,6 +49,12 @@ npm run dev                     # http://localhost:3000
 ### Почта (нужна только для запасного кода «на почту»)
 Любой SMTP: Resend, Brevo, Mailgun, Gmail (пароль приложения). Без SMTP в dev код печатается в консоль сервера.
 
+### Звонки (ZEGOCLOUD)
+1. [console.zegocloud.com](https://console.zegocloud.com) → создай проект (режим Voice & Video Call / «Call») → скопируй **AppID** и **ServerSecret**.
+2. В `.env` (на Render — в Environment) добавь `ZEGO_APP_ID` (число) и `ZEGO_SERVER_SECRET` (32 символа). Без них звонки отключены.
+3. Токены (`token04`) сервер генерирует сам, без запросов к ZEGO: токен привязан к комнате и пользователю и живёт 2 часа.
+4. Клиент ZEGO лежит в `public/vendor/zego.js` (собран из npm-пакета `zego-express-engine-webrtc@3.12.0`).
+
 ## Деплой на VPS (HTTPS + WSS автоматически)
 
 Нужен сервер с Docker и домен, направленный на его IP.

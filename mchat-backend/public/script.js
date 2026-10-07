@@ -4244,39 +4244,24 @@ async function mxSubmitAddMembers() {
 }
 
 // ============================================================
-// ЗВОНКИ (Daily.co): полноэкранный экран, микрофон, камера, добавить участника, завершить
+// ЗВОНКИ (ZEGOCLOUD): полноэкранный экран, микрофон, камера, добавить участника, завершить
 // ============================================================
 let mxCall = null;      // активный звонок {id, chatId, video, isGroup, room, micOn, camOn, ...}
 let mxIncoming = null;  // входящий, на который ещё не ответили
 let mxRingCtl = null;
 
-// Клиент Daily (daily-js): сначала свой файл /vendor, если он повреждён — тот же файл с CDN (с проверкой хэша).
-const MX_DAILY_VERSION = '0.93.0';
-const MX_DAILY_CDN = 'https://cdn.jsdelivr.net/npm/@daily-co/daily-js@' + MX_DAILY_VERSION + '/dist/daily.js';
-const MX_DAILY_SRI = 'sha384-DUI8LbxjuFzuplRn2yxGnk1uHo/rsLGFGzzyQbEvvzCgHmyvLq/dkkWEmtvAW8Kj';
+// Клиент ZEGOCLOUD Express (web): собран в один файл /vendor/zego.js (см. README → «Звонки»).
+const MX_ZEGO_VERSION = '3.12.0';
 
-function mxLoadScript(src, integrity) {
+function mxLoadZego() {
+  if (window.ZegoExpressEngine) return Promise.resolve(window.ZegoExpressEngine);
   return new Promise((resolve, reject) => {
-    let jsError = '';
-    const onErr = (ev) => { if (!jsError && ev && ev.message) jsError = ev.message; };
-    window.addEventListener('error', onErr);
     const sc = document.createElement('script');
-    sc.src = src;
-    if (integrity) { sc.integrity = integrity; sc.crossOrigin = 'anonymous'; }
-    const done = () => window.removeEventListener('error', onErr);
-    sc.onload = () => { done(); window.Daily ? resolve(window.Daily) : reject(new Error('daily_missing' + (jsError ? ': ' + jsError : ''))); };
-    sc.onerror = () => { done(); reject(new Error('daily_load_failed')); };
+    sc.src = '/vendor/zego.js?v=' + MX_ZEGO_VERSION;
+    sc.onload = () => window.ZegoExpressEngine ? resolve(window.ZegoExpressEngine) : reject(new Error('zego_missing'));
+    sc.onerror = () => reject(new Error('zego_load_failed'));
     document.head.appendChild(sc);
   });
-}
-
-async function mxLoadDaily() {
-  if (window.Daily) return window.Daily;
-  let firstErr;
-  try { return await mxLoadScript('/vendor/daily.js?v=' + MX_DAILY_VERSION); }
-  catch (e) { firstErr = e; console.warn('[call] локальный daily-js не загрузился:', e.message); }
-  try { return await mxLoadScript(MX_DAILY_CDN, MX_DAILY_SRI); }
-  catch (e2) { throw new Error(firstErr.message + ' / CDN: ' + e2.message); }
 }
 
 function mxRingStart() {
@@ -4321,12 +4306,12 @@ function mxCallLayout() {
 
 function mxCallTile(p) {
   const grid = document.getElementById('call-grid');
-  let tile = grid.querySelector(`[data-ident="${CSS.escape(p.session_id)}"]`);
+  let tile = grid.querySelector(`[data-ident="${CSS.escape(p.userId)}"]`);
   if (!tile) {
     tile = document.createElement('div');
     tile.className = 'call-tile';
-    tile.dataset.ident = p.session_id;
-    const nm = p.user_name || 'Участник';
+    tile.dataset.ident = p.userId;
+    const nm = p.name || 'Участник';
     tile.innerHTML = `<div class="ct-av">${esc(nm.charAt(0).toUpperCase())}</div><div class="ct-name">${esc(nm)}</div>`;
     grid.appendChild(tile);
     mxCallLayout();
@@ -4334,52 +4319,36 @@ function mxCallTile(p) {
   return tile;
 }
 
-/** Привязывает дорожку (камера/микрофон) участника к элементу в его плитке. */
-function mxCallSetTrack(tile, kind, trackState) {
-  const track = trackState && trackState.persistentTrack;
-  const ok = !!track && (trackState.state === 'playable' || trackState.state === 'loading');
-  let el = tile.querySelector(kind);
-  if (!ok) { if (el) { el.srcObject = null; if (kind === 'video') el.style.display = 'none'; } return; }
-  if (!el) {
-    el = document.createElement(kind);
-    el.autoplay = true;
-    if (kind === 'video') { el.playsInline = true; el.muted = true; tile.insertBefore(el, tile.firstChild); }
-    else tile.appendChild(el);
-  }
-  if (kind === 'video') el.style.display = '';
-  if (!el.srcObject || el.srcObject.getTracks()[0] !== track) el.srcObject = new MediaStream([track]);
-  if (kind === 'audio') el.play().catch(() => {});
-}
-
-/** Приводит экран звонка в соответствие с тем, что сейчас видит Daily: плитки, видео, звук, свой кадр, кнопки. */
+/** Приводит экран звонка в соответствие с тем, что сейчас приходит из ZEGOCLOUD: плитки, видео, звук, свой кадр, кнопки. */
 function mxCallSync(call) {
-  const co = call && call.co;
-  if (!co || mxCall !== call) return;
-  const parts = co.participants();
+  if (!call || mxCall !== call || !call.remote) return;
   const grid = document.getElementById('call-grid');
-  const remote = Object.values(parts).filter(p => !p.local);
 
   // уехавшие участники
-  [...grid.children].forEach(t => { if (!remote.some(p => p.session_id === t.dataset.ident)) t.remove(); });
-  remote.forEach(p => {
+  [...grid.children].forEach(t => { if (!call.remote.has(t.dataset.ident)) t.remove(); });
+  call.remote.forEach(p => {
     const tile = mxCallTile(p);
-    mxCallSetTrack(tile, 'video', p.tracks && p.tracks.video);
-    mxCallSetTrack(tile, 'audio', p.tracks && p.tracks.audio);
+    let v = tile.querySelector('video');
+    if (!v) {
+      v = document.createElement('video');
+      v.autoplay = true; v.playsInline = true; // со звуком: аудио собеседника играет через этот же элемент
+      tile.insertBefore(v, tile.firstChild);
+    }
+    if (v.srcObject !== p.stream) { v.srcObject = p.stream; v.play().catch(() => {}); }
+    v.style.display = p.camOn ? '' : 'none';
   });
-  if (remote.length && !call.startedAt) { call.startedAt = Date.now(); mxRingStop(); }
+  if (call.remote.size && !call.startedAt) { call.startedAt = Date.now(); mxRingStop(); }
   mxCallLayout();
 
-  // свой кадр
-  const me = parts.local;
+  // свой кадр (только видеодорожка — иначе будет эхо своего голоса)
   const self = document.getElementById('call-self');
-  const vt = me && me.tracks && me.tracks.video;
-  if (vt && vt.persistentTrack && (vt.state === 'playable' || vt.state === 'loading')) {
-    if (!self.srcObject || self.srcObject.getTracks()[0] !== vt.persistentTrack) self.srcObject = new MediaStream([vt.persistentTrack]);
+  const vt = call.localStream && call.camOn ? call.localStream.getVideoTracks()[0] : null;
+  if (vt) {
+    if (!self.srcObject || self.srcObject.getTracks()[0] !== vt) self.srcObject = new MediaStream([vt]);
     self.style.display = 'block';
   } else { self.srcObject = null; self.style.display = 'none'; }
 
-  // кнопки отражают реальное состояние
-  mxCallSetButtons(co.localAudio(), co.localVideo());
+  mxCallSetButtons(call.micOn, call.camOn);
 }
 
 function mxCallUpdateStatus() {
@@ -4412,45 +4381,68 @@ function mxCallSetButtons(micOn, camOn) {
   set('call-mic', micOn); set('call-cam', camOn);
 }
 
-/** Подключаемся к комнате Daily: адрес и токен выдал наш сервер. */
-async function mxCallConnect(call, token, url) {
-  const D = await mxLoadDaily();
-  const co = D.createCallObject({
-    subscribeToTracksAutomatically: true,
-    startAudioOff: false,
-    startVideoOff: !call.video,
-    dailyConfig: { avoidEval: true }, // без 'unsafe-eval' в защите сайта (CSP)
-  });
-  call.co = co;
+/** Подключаемся к комнате ZEGOCLOUD: appId, roomId, токен и имя выдал наш сервер. */
+async function mxCallConnect(call, r) {
+  const Zego = await mxLoadZego();
+  const zg = new Zego(r.appId, r.server);
+  call.zg = zg;
+  call.roomId = r.roomId;
+  call.myUserId = r.userId;
+  call.remote = new Map();   // userId → {userId, name, streamId, stream, camOn}
+  call.micOn = true;
+  call.camOn = !!call.video;
   const sync = () => mxCallSync(call);
-  co.on('participant-joined', sync);
-  co.on('participant-updated', sync);
-  co.on('participant-left', () => {
-    sync();
-    // в личном звонке собеседник вышел — звонок окончен
-    if (!call.isGroup && call.startedAt && Object.values(co.participants()).filter(p => !p.local).length === 0) mxCallCleanup('Звонок завершён');
-  });
-  co.on('camera-error', (ev) => {
-    console.error('[call] camera-error:', ev);
-    const t = ev && ev.error && ev.error.type;
-    const msg = t === 'permissions' ? 'Нет доступа к микрофону или камере. Разрешите его: значок замка слева от адреса сайта → Разрешения. Звонок продолжается без него'
-      : t === 'not-found' ? 'Микрофон или камера не найдены — подключите. Звонок продолжается без них'
-      : t === 'cam-in-use' || t === 'mic-in-use' || t === 'cam-mic-in-use' ? 'Микрофон или камеру уже использует другая программа. Звонок продолжается без них'
-      : 'Не удалось включить микрофон или камеру' + (ev && ev.errorMsg && ev.errorMsg.errorMsg ? ' (' + ev.errorMsg.errorMsg + ')' : '') + '. Звонок продолжается без них';
-    showToast(msg);
-    sync();
-  });
-  co.on('error', (ev) => {
-    console.error('[call] error:', ev);
-    if (mxCall === call) mxCallCleanup('Связь прервалась' + (ev && ev.errorMsg ? ' (' + ev.errorMsg + ')' : ''));
-  });
-  co.on('left-meeting', () => { if (mxCall === call) mxCallCleanup(call.startedAt ? 'Звонок завершён' : 'Не удалось подключиться к звонку'); });
 
-  console.info('[call] connecting to', url);
-  try { await co.join({ url, token }); }
-  catch (e) { console.error('[call] join failed:', e); throw e; }
+  zg.on('roomStreamUpdate', async (roomID, updateType, streamList) => {
+    if (mxCall !== call) return;
+    for (const st of streamList) {
+      const uid = st.user.userID;
+      if (uid === call.myUserId) continue;
+      if (updateType === 'ADD') {
+        try {
+          const stream = await zg.startPlayingStream(st.streamID);
+          if (mxCall !== call) return;
+          call.remote.set(uid, { userId: uid, name: st.user.userName, streamId: st.streamID, stream, camOn: stream.getVideoTracks().length > 0 });
+        } catch (e) { console.error('[call] startPlayingStream failed:', e); }
+      } else {
+        try { zg.stopPlayingStream(st.streamID); } catch (e) {}
+        call.remote.delete(uid);
+        // в личном звонке собеседник вышел — звонок окончен
+        if (!call.isGroup && call.startedAt && call.remote.size === 0) { mxCallCleanup('Звонок завершён'); return; }
+      }
+    }
+    sync();
+  });
+  zg.on('remoteCameraStatusUpdate', (streamID, status) => {
+    call.remote.forEach(p => { if (p.streamId === streamID) p.camOn = status === 'OPEN'; });
+    sync();
+  });
+  zg.on('roomStateChanged', (roomID, reason, errorCode) => {
+    if (mxCall !== call) return;
+    if (reason === 'KICKOUT' || reason === 'LOGIN_FAILED' || reason === 'RECONNECT_FAILED') {
+      console.error('[call] roomStateChanged:', reason, errorCode);
+      mxCallCleanup('Связь прервалась');
+    }
+  });
+
+  console.info('[call] connecting to room', r.roomId);
+  try { await zg.loginRoom(r.roomId, r.token, { userID: r.userId, userName: r.userName }, { userUpdate: true }); }
+  catch (e) { console.error('[call] loginRoom failed:', e); throw e; }
   call.connected = true;
   call.timer = setInterval(mxCallUpdateStatus, 1000);
+
+  // свои микрофон и камера: если не получилось — звонок продолжается без них
+  try {
+    const local = await zg.createStream({ camera: { audio: true, video: true } });
+    if (mxCall !== call) { zg.destroyStream(local); return; }
+    call.localStream = local;
+    if (!call.video) { await zg.enableVideoCaptureDevice(local, false); call.camOn = false; }
+    zg.startPublishingStream(r.roomId + '_' + r.userId, local);
+  } catch (e) {
+    console.error('[call] createStream failed:', e);
+    call.micOn = false; call.camOn = false;
+    showToast('Не удалось включить микрофон или камеру. Проверьте разрешения в браузере. Звонок продолжается без них');
+  }
   sync();
   mxCallUpdateStatus();
 }
@@ -4472,7 +4464,15 @@ function mxCallCleanup(message) {
   mxCall = null;
   if (call) {
     if (call.timer) clearInterval(call.timer);
-    try { if (call.co) { const c = call.co; c.leave().catch(() => {}).then(() => { try { c.destroy(); } catch (e) {} }); } } catch (e) {}
+    try {
+      const zg = call.zg;
+      if (zg) {
+        if (call.localStream) { try { zg.stopPublishingStream(call.roomId + '_' + call.myUserId); } catch (e) {} try { zg.destroyStream(call.localStream); } catch (e) {} }
+        if (call.remote) call.remote.forEach(p => { try { zg.stopPlayingStream(p.streamId); } catch (e) {} });
+        try { zg.logoutRoom(call.roomId); } catch (e) {}
+        try { zg.destroyEngine(); } catch (e) {}
+      }
+    } catch (e) {}
     if (call.id && !call.leftSent) { call.leftSent = true; MchatAPI.leaveCall(call.id).catch(() => {}); }
   }
   document.getElementById('call-screen').classList.remove('active');
@@ -4492,9 +4492,9 @@ async function mxStartCall(withVideo) {
   let r;
   try { r = await MchatAPI.startCall(currentChatId, !!withVideo); }
   catch (e) { showToast(MchatAPI.errorText(e)); return; }
-  const call = mxCall = { id: r.callId, chatId: currentChatId, outgoing: true, video: !!withVideo, isGroup: ch.type === 'GROUP', co: null, connected: false, startedAt: 0, timer: null };
+  const call = mxCall = { id: r.callId, chatId: currentChatId, outgoing: true, video: !!withVideo, isGroup: ch.type === 'GROUP', zg: null, connected: false, startedAt: 0, timer: null };
   mxCallShowScreen(ch.name, person, withVideo);
-  try { await mxCallConnect(call, r.token, r.url); }
+  try { await mxCallConnect(call, r); }
   catch (e) { if (mxCall === call) mxCallCleanup('Не удалось подключиться к звонку' + (e && e.message ? ' (' + e.message + ')' : '')); }
 }
 
@@ -4525,9 +4525,9 @@ async function mxCallAccept() {
   let r;
   try { r = await MchatAPI.acceptCall(p.callId); }
   catch (e) { showToast(MchatAPI.errorText(e)); return; }
-  const call = mxCall = { id: p.callId, chatId: r.chatId, video: !!r.video, isGroup: !!r.isGroup, co: null, connected: false, startedAt: 0, timer: null };
+  const call = mxCall = { id: p.callId, chatId: r.chatId, video: !!r.video, isGroup: !!r.isGroup, zg: null, connected: false, startedAt: 0, timer: null };
   mxCallShowScreen(p.isGroup && p.title ? p.title : (p.from.name || p.from.username), p.from, r.video);
-  try { await mxCallConnect(call, r.token, r.url); }
+  try { await mxCallConnect(call, r); }
   catch (e) { if (mxCall === call) mxCallCleanup('Не удалось подключиться к звонку' + (e && e.message ? ' (' + e.message + ')' : '')); }
 }
 function mxOnCallEnded(p) {
@@ -4544,14 +4544,19 @@ function mxOnCallHandled(p) { // на другом моём устройстве
 
 // ---------- кнопки на экране звонка ----------
 function mxCallToggleMic() {
-  if (!mxCall || !mxCall.co) return;
-  mxCall.co.setLocalAudio(!mxCall.co.localAudio());
-  mxCallSetButtons(mxCall.co.localAudio(), mxCall.co.localVideo());
+  if (!mxCall || !mxCall.zg || !mxCall.localStream) return;
+  mxCall.micOn = !mxCall.micOn;
+  mxCall.zg.muteMicrophone(!mxCall.micOn);
+  mxCallSetButtons(mxCall.micOn, mxCall.camOn);
 }
-function mxCallToggleCam() {
-  if (!mxCall || !mxCall.co) return;
-  mxCall.co.setLocalVideo(!mxCall.co.localVideo());
-  mxCallSetButtons(mxCall.co.localAudio(), mxCall.co.localVideo());
+async function mxCallToggleCam() {
+  if (!mxCall || !mxCall.zg || !mxCall.localStream) return;
+  const call = mxCall;
+  try {
+    await call.zg.enableVideoCaptureDevice(call.localStream, !call.camOn);
+    call.camOn = !call.camOn;
+  } catch (e) { showToast(mxMediaErrorText('cam', e)); }
+  mxCallSync(call);
 }
 function mxCallEnd() { mxCallCleanup('Звонок завершён'); }
 

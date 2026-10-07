@@ -36,11 +36,10 @@ app.use((req, res, next) => {
 });
 
 const wsOrigin = config.appOrigin.replace(/^http/, 'ws');
-// Daily.co (звонки): документация https://docs.daily.co/guides/privacy-and-security/content-security-policy
-// Режим call object + avoidEval: пакет звонка грузится script-тегом с доменов Daily, сигналинг идёт по https/wss.
-const dailyDomains = ['daily.co', 'dailywebrtc.com', 'dailywebrtc.net'];
-const dailyScript = dailyDomains.map((d) => `https://*.${d}`);
-const dailyConnect = dailyDomains.flatMap((d) => [`https://*.${d}`, `wss://*.${d}`]);
+// ZEGOCLOUD (звонки): веб-клиент ходит на их серверы по https (проверка/логирование) и wss (сигналинг).
+// Сам клиент грузится из /vendor или с cdn.jsdelivr.net; медиа идёт по WebRTC и CSP не затрагивается.
+const zegoDomains = ['zegocloud.com', 'zego.im', 'coolzcloud.com'];
+const zegoConnect = zegoDomains.flatMap((d) => [`https://*.${d}`, `wss://*.${d}`]);
 app.use(
   helmet({
     hsts: config.isProd ? { maxAge: 63072000, includeSubDomains: true } : false,
@@ -51,17 +50,17 @@ app.use(
         defaultSrc: ["'self'"],
         // 'unsafe-inline' нужен, пока в вёрстке есть onclick="..." и <script> внутри HTML.
         // Когда перейдёшь на addEventListener — можно убрать и получить сильную защиту от XSS.
-        // cdn.jsdelivr.net — запасной источник клиента Daily (с проверкой SRI-хэша), если локальный файл в /vendor повреждён
-        scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net', ...dailyScript],
+        // cdn.jsdelivr.net — запасной источник клиента ZEGOCLOUD, если локальный файл в /vendor не загрузился
+        scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
         scriptSrcAttr: ["'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
         mediaSrc: ["'self'", 'data:', 'blob:'],
         // data:/blob: нужны, чтобы превью видео и медиа историй из памяти браузера можно было загрузить на сервер
-        connectSrc: ["'self'", wsOrigin, 'data:', 'blob:', ...dailyConnect],
+        connectSrc: ["'self'", wsOrigin, 'data:', 'blob:', ...zegoConnect],
         workerSrc: ["'self'", 'blob:'],
-        frameSrc: ["'self'", ...dailyScript],
+        frameSrc: ["'self'"],
         manifestSrc: ["'self'"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],

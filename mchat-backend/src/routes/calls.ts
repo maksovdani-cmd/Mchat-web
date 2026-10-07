@@ -10,7 +10,7 @@ callsRouter.use(requireAuth);
 // Используем гибкую валидацию строки вместо строгого uuid(), чтобы принимать любые ID звонков
 const callId = z.string().min(1).max(100);
 
-/** Включены ли звонки на сервере (есть ключи LiveKit). */
+/** Включены ли звонки на сервере (заданы ZEGO_APP_ID и ZEGO_SERVER_SECRET). */
 callsRouter.get('/status', wrap(async (_req, res) => res.json(callStatus())));
 
 /** Позвонить в чат: личный — собеседнику, группа — всем участникам. */
