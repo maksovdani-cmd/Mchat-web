@@ -129,10 +129,9 @@ export async function startCall(userId: string, chatId: string, video: boolean) 
   if (!members.length) throw new HttpError(400, 'nobody_to_call');
   // одновременно у человека один звонок. «Зависший» звонок, где он один (никто не ответил / оборвалась связь),
   // закрываем сам — иначе после неудачной попытки нельзя было бы позвонить снова.
+   // старый звонок этого пользователя (например, зависший после закрытой вкладки) просто покидаем
   for (const c of [...calls.values()]) {
-    if (!c.joined.has(userId)) continue;
-    if (c.joined.size <= 1) finish(c, 'ended');
-    else throw new HttpError(409, 'already_in_call');
+    if (c.joined.has(userId)) await leaveCall(userId, c.id);
   }
   const id = crypto.randomUUID();
   const call: Call = {
