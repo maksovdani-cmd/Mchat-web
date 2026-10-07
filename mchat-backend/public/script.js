@@ -4394,6 +4394,7 @@ async function mxCallConnect(call, r) {
   const sync = () => mxCallSync(call);
 
   zg.on('roomStreamUpdate', async (roomID, updateType, streamList) => {
+    console.info('[call] roomStreamUpdate', updateType, streamList.map(x => x.streamID));
     if (mxCall !== call) return;
     for (const st of streamList) {
       const uid = st.user.userID;
@@ -4417,7 +4418,17 @@ async function mxCallConnect(call, r) {
     call.remote.forEach(p => { if (p.streamId === streamID) p.camOn = status === 'OPEN'; });
     sync();
   });
+  zg.on('roomUserUpdate', (roomID, updateType, userList) => console.info('[call] roomUserUpdate', updateType, userList.map(u => u.userID)));
+  zg.on('publisherStateUpdate', (res) => {
+    console.info('[call] publisher', res.state, res.errorCode, res.extendedData || '');
+    if (res.state === 'NO_PUBLISH' && res.errorCode) showToast('Не удалось передать звук/видео (код ' + res.errorCode + ')');
+  });
+  zg.on('playerStateUpdate', (res) => {
+    console.info('[call] player', res.streamID, res.state, res.errorCode, res.extendedData || '');
+    if (res.state === 'NO_PLAY' && res.errorCode) showToast('Не удалось принять поток собеседника (код ' + res.errorCode + ')');
+  });
   zg.on('roomStateChanged', (roomID, reason, errorCode) => {
+    console.info('[call] roomStateChanged', reason, errorCode);
     if (mxCall !== call) return;
     if (reason === 'KICKOUT' || reason === 'LOGIN_FAILED' || reason === 'RECONNECT_FAILED') {
       console.error('[call] roomStateChanged:', reason, errorCode);
@@ -4428,6 +4439,7 @@ async function mxCallConnect(call, r) {
   console.info('[call] connecting to room', r.roomId);
   try { await zg.loginRoom(r.roomId, r.token, { userID: r.userId, userName: r.userName }, { userUpdate: true }); }
   catch (e) { console.error('[call] loginRoom failed:', e); throw e; }
+  console.info('[call] logged in to room', r.roomId, 'as', r.userId);
   call.connected = true;
   call.timer = setInterval(mxCallUpdateStatus, 1000);
 
@@ -4437,7 +4449,8 @@ async function mxCallConnect(call, r) {
     if (mxCall !== call) { zg.destroyStream(local); return; }
     call.localStream = local;
     if (!call.video) { await zg.enableVideoCaptureDevice(local, false); call.camOn = false; }
-    zg.startPublishingStream(r.roomId + '_' + r.userId, local);
+    const pub = zg.startPublishingStream(r.roomId + '_' + r.userId, local);
+    console.info('[call] startPublishingStream', r.roomId + '_' + r.userId, pub);
   } catch (e) {
     console.error('[call] createStream failed:', e);
     call.micOn = false; call.camOn = false;

@@ -127,9 +127,7 @@ export async function startCall(userId: string, chatId: string, video: boolean) 
   if (m.chat.type === 'CHANNEL') throw new HttpError(400, 'no_calls_in_channel');
   const members = await prisma.chatMember.findMany({ where: { chatId, userId: { not: userId } }, select: { userId: true } });
   if (!members.length) throw new HttpError(400, 'nobody_to_call');
-  // одновременно у человека один звонок. «Зависший» звонок, где он один (никто не ответил / оборвалась связь),
-  // закрываем сам — иначе после неудачной попытки нельзя было бы позвонить снова.
-   // старый звонок этого пользователя (например, зависший после закрытой вкладки) просто покидаем
+  // одновременно у человека один звонок. Старый (в том числе «зависший» после закрытой вкладки) просто покидаем.
   for (const c of [...calls.values()]) {
     if (c.joined.has(userId)) await leaveCall(userId, c.id);
   }
