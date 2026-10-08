@@ -57,6 +57,8 @@ model User {
   avatarUrl      String?
   /// обложка профиля (URL загруженной картинки)
   bannerUrl      String?
+  /// id своего трека (Media kind=TRACK), название которого показывается под ником в профиле
+  musicTrack     String?
   verified       Boolean  @default(false)
   /// когда выдали галочку и до какого момента она действует (null = навсегда)
   verifiedAt     DateTime?
@@ -82,6 +84,9 @@ model User {
   hiddenMessages MessageHide[]
   friendsSent     Friendship[] @relation("FriendRequester")
   friendsReceived Friendship[] @relation("FriendAddressee")
+  following       Follow[]     @relation("Follower")
+  followers       Follow[]     @relation("Following")
+  channelComments ChannelComment[]
   posts          Post[]
   postLikes      PostLike[]
   postComments   PostComment[]
@@ -207,6 +212,7 @@ model Message {
 
   reactions Reaction[]
   hides     MessageHide[]
+  comments  ChannelComment[]
 
   @@unique([senderId, clientId])
   @@index([chatId, createdAt])
@@ -405,4 +411,29 @@ model VerifyRequest {
 
   @@index([status, createdAt])
   @@index([userId])
+}
+
+/// Подписка: followerId подписан на followingId. Взаимные подписки = «Друзья».
+model Follow {
+  followerId  String
+  follower    User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following   User     @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@id([followerId, followingId])
+  @@index([followingId])
+}
+
+/// Комментарий под постом канала («Прокомментировать»). Писать могут все участники.
+model ChannelComment {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([messageId, createdAt])
 }

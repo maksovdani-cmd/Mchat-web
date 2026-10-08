@@ -1,5 +1,6 @@
 import { Prisma, type MemberRole, type MessageKind } from '@prisma/client';
 import { prisma } from '../db';
+import { friendIds } from './friends';
 import { HttpError } from '../utils/errors';
 import { randomToken } from '../utils/crypto';
 import { normalizeUsername } from '../utils/validate';
@@ -537,17 +538,14 @@ export async function setMemberRole(userId: string, chatId: string, targetId: st
 /** Контакты: друзья + собеседники личных чатов. Из них выбираем участников группы/канала. */
 export async function listContacts(userId: string) {
   const [friends, directs] = await Promise.all([
-    prisma.friendship.findMany({
-      where: { status: 'ACCEPTED', OR: [{ requesterId: userId }, { addresseeId: userId }] },
-      select: { requesterId: true, addresseeId: true },
-    }),
+    friendIds(userId),
     prisma.chatMember.findMany({
       where: { userId, chat: { type: 'DIRECT' } },
       select: { chat: { select: { members: { where: { userId: { not: userId } }, select: { userId: true } } } } },
     }),
   ]);
   const ids = new Set<string>();
-  friends.forEach((f) => ids.add(f.requesterId === userId ? f.addresseeId : f.requesterId));
+  friends.forEach((id) => ids.add(id));
   directs.forEach((d) => d.chat.members.forEach((m) => ids.add(m.userId)));
   ids.delete(userId);
   if (!ids.size) return [];
@@ -586,4 +584,45 @@ export async function joinPublicChannel(userId: string, chatId: string) {
 export async function setChatMuted(userId: string, chatId: string, muted: boolean) {
   await assertMember(chatId, userId);
   await prisma.chatMember.update({ where: { chatId_userId: { chatId, userId } }, data: { muted } });
+}
+
+
+/** Вкладки «Медиа | Ссылки | Музыка | Голосовые» в профиле группы/канала. */
+export type SharedTab = 'media' | 'links' | 'music' | 'voice';
+export async function listShared(userId: string, chatId: string, tab: SharedTab, limit = 60) {
+  await assertMember(chatId, userId);
+  const where: Prisma.MessageWhereInput = { chatId, deletedAt: null, hides: { none: { userId } } };
+  if (tab === 'media') where.kind = { in: ['IMAGE', 'VIDEO'] };
+  else if (tab === 'voice') where.kind = { in: ['VOICE', 'VIDEO_NOTE'] };
+  else if (tab === 'music') Object.assign(where, { kind: 'FILE', media: { is: { mime: { startsWith: 'audio/' } } } });
+  else Object.assign(where, { kind: 'TEXT', OR: [{ text: { contains: 'http://' } }, { text: { contains: 'https://' } }] });
+  const rows = await prisma.message.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: limit, include: messageInclude });
+  return rows.map(toMessageDTO);
+}
+
+// ───────────────────────── комментарии под постами канала ─────────────────────────
+const commentDTO = (c: { id: string; text: string; createdAt: Date; user: { id: string; username: string; name: string; avatarUrl: string | null } }) => ({
+  id: c.id, text: c.text, createdAt: c.createdAt.toISOString(),
+  user: { id: c.user.id, username: c.user.username, name: c.user.name, avatar: c.user.avatarUrl },
+});
+const commentInclude = { user: { select: { id: true, username: true, name: true, avatarUrl: true } } } as const;
+
+async function assertChannelPost(userId: string, messageId: string) {
+  const msg = await prisma.message.findUnique({ where: { id: messageId }, select: { chatId: true, deletedAt: true, chat: { select: { type: true } } } });
+  if (!msg || msg.deletedAt) throw new HttpError(404, 'message_not_found');
+  await assertMember(msg.chatId, userId);
+  if (msg.chat.type !== 'CHANNEL') throw new HttpError(400, 'not_a_channel');
+}
+export async function listComments(userId: string, messageId: string) {
+  await assertChannelPost(userId, messageId);
+  const rows = await prisma.channelComment.findMany({ where: { messageId }, orderBy: { createdAt: 'asc' }, take: 200, include: commentInclude });
+  return rows.map(commentDTO);
+}
+/** Комментировать может любой участник канала (даже если писать посты может только админ). */
+export async function addComment(userId: string, messageId: string, text: string) {
+  await assertChannelPost(userId, messageId);
+  const clean = text.trim();
+  if (!clean) throw new HttpError(400, 'empty_message');
+  if (clean.length > 1000) throw new HttpError(400, 'message_too_long');
+  return commentDTO(await prisma.channelComment.create({ data: { messageId, userId, text: clean }, include: commentInclude }));
 }

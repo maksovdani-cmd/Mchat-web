@@ -168,8 +168,9 @@ function openUserProfile(username) {
     : `<svg width="34" height="34" fill="none" stroke="var(--text2)" stroke-width="1.2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
   postsByUser[username] = []; repostsByUser[username] = [];
   document.getElementById('up-posts-count').textContent = '0';
-  document.getElementById('up-reposts-count').textContent = '0';
-  document.getElementById('uptab-posts').click ? null : null;
+  document.getElementById('up-followers-count').textContent = '0';
+  document.getElementById('up-following-count').textContent = '0';
+  mxRenderUserBanner(null); mxRenderUserMusic(null);
   upFriendState = { status: 'none', id: null };
   mxRenderFriendButton();
   const statusEl = document.getElementById('up-status');
@@ -180,7 +181,6 @@ function openUserProfile(username) {
   Promise.all([fetchUserPosts(username), fetchUserReposts(username)]).then(() => {
     if (upViewedUsername !== username) return;
     document.getElementById('up-posts-count').textContent = postsByUser[username].filter(p => p.privacy !== 'private').length;
-    document.getElementById('up-reposts-count').textContent = repostsByUser[username].length;
     renderUserProfileGrid();
   }).catch(e => { if (upViewedUsername === username) showToast(MchatAPI.errorText(e)); });
   // имя, био, аватар, галочка, статус и дружба — с сервера (локально чужих данных нет)
@@ -192,6 +192,10 @@ function openUserProfile(username) {
     if (u.avatar) document.getElementById('up-avatar').innerHTML = `<img src="${esc(u.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">`;
     upFriendState = u.friendship || { status: 'none', id: null };
     mxRenderFriendButton();
+    mxRenderUserBanner(u.banner);
+    mxRenderUserMusic(u.musicTrack, u.username);
+    document.getElementById('up-followers-count').textContent = u.followers || 0;
+    document.getElementById('up-following-count').textContent = u.following || 0;
     mxSetPresenceText('up-status', u.online, u.lastSeenAt);
   }).catch(() => {});
 }
@@ -571,8 +575,9 @@ async function onLoggedIn(me) {
     verified: !!me.verified,
     role: me.role,
     banner: me.banner || null,
-    followers: 0,
-    following: 0
+    followers: me.followers || 0,
+    following: me.following || 0,
+    musicTrack: me.musicTrack || null
   };
   saveUser();
   updateProfileUI(); renderFeed();
@@ -642,11 +647,12 @@ function bindRealtimeHandlers() {
   };
   h.onFriendUpdate = (p) => {
     if (upViewedUsername && p.user && p.user.username === upViewedUsername) {
-      upFriendState = { status: p.status, id: p.id };
+      upFriendState = { status: p.status, id: null };
       mxRenderFriendButton();
     }
-    if (p.status === 'incoming') showToast((p.user && p.user.name ? p.user.name : 'Пользователь') + ' хочет добавить вас в друзья');
-    if (p.status === 'friends') showToast((p.user && p.user.name ? p.user.name : 'Пользователь') + ' принял(а) заявку в друзья');
+    const who = p.user && p.user.name ? p.user.name : 'Пользователь';
+    if (p.status === 'follower') showToast(who + ' подписался(ась) на вас');
+    if (p.status === 'friends') showToast('Вы с ' + who + ' теперь друзья');
   };
   h.onLoginCode = showLoginCodeModal;
   h.onNewDevice = (d) => showToast('Новый вход в аккаунт: ' + (d && d.label ? d.label : 'устройство'));
@@ -785,6 +791,7 @@ function updateProfileUI() {
   document.getElementById('posts-count').textContent = posts.filter(p=>p.username===currentUser.username).length;
   document.getElementById('followers-count').textContent = currentUser.followers||0;
   document.getElementById('following-count').textContent = currentUser.following||0;
+  mxRenderOwnMusic();
   if (currentUser.avatar) {
     document.getElementById('avatar-container').innerHTML = `<img src="${currentUser.avatar}" style="width:100%;height:100%;object-fit:cover">`;
   } else {
@@ -857,6 +864,8 @@ function avatarLongPress(e) {
 }
 
 function closeAvatarFull() {
+  if (Date.now() - mxSwipeAt < 350) return; // жест листания не должен закрывать просмотр
+  mxGallery.urls = [];
   document.getElementById('avatar-fullscreen').classList.remove('active');
 }
 
@@ -914,7 +923,7 @@ function setupAvatarCropper(imageUrl) {
   m.className = 'modal active';
   m.style.zIndex = '950';
   m.onclick = (e) => { if(e.target === m) m.remove(); };
-  m.innerHTML = `<div class="modal-box" style="width:380px;max-width:90vw;padding:0">
+  m.innerHTML = `<div class="modal-box" style="width:min(94vw,560px);max-width:94vw;max-height:94vh;overflow-y:auto;padding:0">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px;border-bottom:1px solid var(--border)">
       <div style="font-family:var(--font);font-size:17px;font-weight:800">Кадрировать аватар</div>
       <button onclick="this.closest('.modal').remove()" style="background:none;border:none;color:var(--text2);cursor:pointer;width:32px;height:32px;display:flex;align-items:center;justify-content:center">
@@ -922,8 +931,9 @@ function setupAvatarCropper(imageUrl) {
       </button>
     </div>
     <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
-      <div id="avatar-cropper-container" style="width:100%;aspect-ratio:1;border-radius:50%;overflow:hidden;background:var(--surf2);position:relative;display:flex;align-items:center;justify-content:center">
+      <div id="avatar-cropper-container" style="width:100%;aspect-ratio:1;border-radius:18px;overflow:hidden;background:var(--surf2);position:relative;display:flex;align-items:center;justify-content:center;touch-action:none">
         <img id="avatar-cropper-img" src="${imageUrl}" style="width:150%;height:150%;object-fit:cover;position:absolute;cursor:grab;user-select:none">
+        <div style="position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle closest-side at center,transparent 98%,rgba(0,0,0,.6) 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)"></div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         <span style="font-size:12px;color:var(--text2);min-width:60px">Масштаб:</span>
@@ -3149,7 +3159,7 @@ function bubbleBodyHtml(m) {
     </div>`;
   }
   if (m.kind === 'IMAGE') {
-    return `<img class="mx-img" src="${esc(m.mediaUrl||'')}" onerror="mxMediaLost(this)" onclick="event.stopPropagation();mxOpenImage('${esc(m.mediaUrl||'')}')">${mxUploadBar(m)}`;
+    return `<img class="mx-img" src="${esc(m.mediaUrl||'')}" onerror="mxMediaLost(this)" onclick="event.stopPropagation();mxOpenImage('${esc(m.mediaUrl||'')}')">${mxUploadBar(m)}${m.text ? `<div class="mx-txt" style="padding:6px 8px 2px">${esc(m.text)}</div>` : ''}`;
   }
   if (m.kind === 'VIDEO') {
     if (!m.mediaUrl) return `<div class="mx-lost">Отправка видео…</div>${mxUploadBar(m)}`;
@@ -3186,7 +3196,7 @@ function renderMessages(id) {
     const senderHtml = (isGroup && !m.outgoing && m.senderName) ? `<div class="mx-sender">${esc(m.senderName)}</div>` : '';
     const fwdHtml = m.forwardedFrom ? `<div class="mx-fwd">Переслано от ${esc(m.forwardedFrom)}</div>` : '';
     const editedHtml = m.editedAt ? '<span class="mx-edited">ред.</span>' : '';
-    return `<div class="${cls.join(' ')}" data-id="${esc(m.id)}"${m.pending?' style="opacity:.6"':''} onclick="mxOpenReactions('${esc(m.id)}', event)" oncontextmenu="event.preventDefault();mxOpenContextMenu('${esc(m.id)}', event)">${senderHtml}${fwdHtml}${replyQuoteHtml(m)}${bubbleBodyHtml(m)}${reactionsHtml(m)}<div class="mt">${editedHtml}${esc(m.time)}</div></div>`;
+    return `<div class="${cls.join(' ')}" data-id="${esc(m.id)}"${m.pending?' style="opacity:.6"':''} onclick="mxOpenReactions('${esc(m.id)}', event)" oncontextmenu="event.preventDefault();mxOpenContextMenu('${esc(m.id)}', event)">${senderHtml}${fwdHtml}${replyQuoteHtml(m)}${bubbleBodyHtml(m)}${reactionsHtml(m)}${mxCommentBtnHtml(m)}<div class="mt">${editedHtml}${esc(m.time)}</div></div>`;
   }).join('');
   c.scrollTop = c.scrollHeight;
 }
@@ -3197,11 +3207,47 @@ function mxScrollToMessage(id) {
   el.classList.add('mx-flash');
   setTimeout(() => el.classList.remove('mx-flash'), 1300);
 }
+let mxGallery = { urls: [], i: 0 }, mxSwipeAt = 0;
 function mxOpenImage(url) {
   if (!url) return;
-  document.getElementById('avatar-full-img').src = url;
+  const urls = (messages[currentChatId] || []).filter((m) => m.kind === 'IMAGE' && m.mediaUrl && !m.pending).map((m) => m.mediaUrl);
+  mxGallery.urls = urls.length ? urls : [url];
+  mxGallery.i = Math.max(0, mxGallery.urls.indexOf(url));
+  document.getElementById('avatar-fullscreen').style.zIndex = '900'; // поверх профиля группы
+  mxGalleryShow(0);
   document.getElementById('avatar-fullscreen').classList.add('active');
 }
+function mxGalleryShow(dir) {
+  const img = document.getElementById('avatar-full-img'), box = document.getElementById('avatar-fullscreen');
+  img.src = mxGallery.urls[mxGallery.i]; mxGallery.cur = img.getAttribute('src');
+  if (dir) img.animate([{ opacity: .25, transform: `translateX(${dir * 48}px)` }, { opacity: 1, transform: 'none' }], { duration: 180 });
+  let c = document.getElementById('mx-gal-count');
+  if (!c) { c = document.createElement('div'); c.id = 'mx-gal-count'; c.style.cssText = 'position:absolute;top:max(18px,env(safe-area-inset-top));left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:700;pointer-events:none'; box.appendChild(c); }
+  c.textContent = mxGallery.urls.length > 1 ? (mxGallery.i + 1) + ' / ' + mxGallery.urls.length : '';
+}
+function mxGalleryStep(d) { // d = +1 вперёд (свайп влево), -1 назад (свайп вправо)
+  const n = mxGallery.i + d;
+  if (n < 0 || n >= mxGallery.urls.length) return;
+  mxGallery.i = n; mxSwipeAt = Date.now(); mxGalleryShow(d);
+}
+(function mxGalleryBindSwipe() {
+  const box = document.getElementById('avatar-fullscreen');
+  if (!box) return;
+  box.style.touchAction = 'pan-y';
+  let x0 = null, y0 = 0;
+  const active = () => mxGallery.urls.length > 1 && mxGallery.cur === document.getElementById('avatar-full-img').getAttribute('src');
+  box.addEventListener('pointerdown', (e) => { x0 = e.clientX; y0 = e.clientY; });
+  box.addEventListener('pointerup', (e) => {
+    if (x0 === null) return;
+    const dx = e.clientX - x0, dy = e.clientY - y0; x0 = null;
+    if (active() && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) mxGalleryStep(dx < 0 ? 1 : -1);
+  });
+  box.addEventListener('pointercancel', () => { x0 = null; });
+  document.addEventListener('keydown', (e) => {
+    if (!box.classList.contains('active') || !active()) return;
+    if (e.key === 'ArrowLeft') mxGalleryStep(-1); else if (e.key === 'ArrowRight') mxGalleryStep(1);
+  });
+})();
 
 const msgPreview = (m) => m.kind === 'VOICE' ? '🎤 Голосовое сообщение' : m.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : m.kind === 'IMAGE' ? '📷 Фото' : m.kind === 'VIDEO' ? '🎬 Видео' : m.kind === 'FILE' ? '📎 ' + (m.fileName || 'Файл') : m.text;
 
@@ -3912,6 +3958,7 @@ function mxTrackRowHtml(t) {
       <div class="mx-track-title">${esc(t.title || 'Без названия')}</div>
       <div class="mx-track-sub">${esc(t.artist || '')}${t.durationSec ? ' · ' + esc(fmtDur(t.durationSec)) : ''}</div>
     </div>
+    <button class="mx-track-del" onclick="mxSetProfileTrack(${currentUser && currentUser.musicTrack && currentUser.musicTrack.id === t.id ? 'null' : `'${esc(t.id)}'`})" title="Показать под ником в профиле" style="color:${currentUser && currentUser.musicTrack && currentUser.musicTrack.id === t.id ? 'var(--accent)' : 'inherit'}"><svg width="18" height="18" fill="${currentUser && currentUser.musicTrack && currentUser.musicTrack.id === t.id ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="12 2 15.1 8.6 22 9.3 17 14.1 18.2 21 12 17.8 5.8 21 7 14.1 2 9.3 8.9 8.6"/></svg></button>
     <button class="mx-track-del" onclick="mxDeleteTrack('${esc(t.id)}')" title="Удалить">${MX_ICO.del}</button>
   </div>`;
 }
@@ -4103,51 +4150,155 @@ function mxChatHeaderTap() {
 }
 
 // ---------- информация о группе/канале: участники, добавление позже, уведомления, выход ----------
-let mxInfoMembers = [];
+let mxInfoMembers = [], mxInfoTab = 'media';
 async function mxOpenChatInfo() {
   const ch = chats.find(c => c.id === currentChatId);
   if (!ch) return;
   document.querySelectorAll('#mx-info-modal').forEach(x => x.remove());
-  const modal = document.createElement('div');
-  modal.className = 'modal active';
-  modal.id = 'mx-info-modal';
-  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-  modal.innerHTML = '<div class="mx-modal-box"><div style="padding:30px;text-align:center;color:var(--text2)">Загрузка…</div></div>';
-  document.getElementById('app').appendChild(modal);
-  try { mxInfoMembers = (await MchatAPI.chatMembers(ch.id)).members; }
-  catch (e) { modal.remove(); showToast(MchatAPI.errorText(e)); return; }
+  // полноэкранный профиль вместо маленького поп-апа по центру
+  const page = document.createElement('div');
+  page.id = 'mx-info-modal';
+  page.className = 'overlay active';
+  page.style.cssText = 'background:var(--bg);z-index:860;overflow-y:auto;align-items:center';
+  page.innerHTML = '<div style="padding:80px 30px;text-align:center;color:var(--text2)">Загрузка…</div>';
+  document.getElementById('app').appendChild(page);
+  mxInfoMembers = []; mxInfoTab = 'media';
+  const staff = ch.role === 'OWNER' || ch.role === 'ADMIN';
+  if (ch.type !== 'CHANNEL' || staff) { // у подписчиков канала список закрыт сервером — это не ошибка
+    try { mxInfoMembers = (await MchatAPI.chatMembers(ch.id)).members; }
+    catch (e) { page.remove(); showToast(MchatAPI.errorText(e)); return; }
+  }
   mxRenderChatInfo();
 }
+function mxInfoClose() { const m = document.getElementById('mx-info-modal'); if (m) m.remove(); }
+const MX_INFO_ICO = {
+  chat: '<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>',
+  bell: '<path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/>',
+  bellOff: '<path d="M13.7 21a2 2 0 01-3.4 0M18.6 13A17.9 17.9 0 0118 8a6 6 0 00-9.3-5M6.3 6.3A6 6 0 006 8c0 7-3 9-3 9h14M1 1l22 22"/>',
+  video: '<polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/>',
+  link: '<path d="M10 13a5 5 0 007.5.5l3-3a5 5 0 00-7-7l-1.7 1.7M14 11a5 5 0 00-7.5-.5l-3 3a5 5 0 007 7l1.7-1.7"/>',
+  leave: '<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>',
+  edit: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>'
+};
+const mxInfoSvg = (k, size) => `<svg width="${size || 22}" height="${size || 22}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">${MX_INFO_ICO[k]}</svg>`;
 function mxRenderChatInfo() {
   const modal = document.getElementById('mx-info-modal');
   const ch = chats.find(c => c.id === currentChatId);
   if (!modal || !ch) return;
   const isChannel = ch.type === 'CHANNEL';
   const staff = ch.role === 'OWNER' || ch.role === 'ADMIN';
-  const roleLabel = r => r === 'OWNER' ? 'создатель' : r === 'ADMIN' ? 'админ' : '';
-  const members = mxInfoMembers.map(m => `<div style="display:flex;align-items:center;gap:10px;padding:7px 2px">
-      <div style="width:34px;height:34px;border-radius:50%;background:var(--surf2);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700">${m.avatar ? `<img src="${esc(m.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">` : esc((m.name || m.username).charAt(0).toUpperCase())}</div>
-      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.name || m.username)}</div><div style="font-size:12px;color:var(--text2)">@${esc(m.username)}${roleLabel(m.role) ? ' · ' + roleLabel(m.role) : ''}</div></div>
+  const ROLE = { OWNER: ['Владелец', '#8b5cf6'], ADMIN: ['Админ', '#22c55e'] };
+  const pill = r => ROLE[r] ? `<span style="font-size:11px;font-weight:700;color:#fff;background:${ROLE[r][1]};border-radius:8px;padding:2px 8px;flex-shrink:0">${ROLE[r][0]}</span>` : '';
+  const members = mxInfoMembers.map(m => `<div style="display:flex;align-items:center;gap:10px;padding:8px 2px">
+      <div style="width:40px;height:40px;border-radius:50%;background:var(--surf2);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700">${m.avatar ? `<img src="${esc(m.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">` : esc((m.name || m.username).charAt(0).toUpperCase())}</div>
+      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.name || m.username)}</div><div style="font-size:12px;color:var(--text2)">@${esc(m.username)}</div></div>
+      ${pill(m.role)}
       ${staff && m.role !== 'OWNER' && m.id !== currentUser.id && (ch.role === 'OWNER' || m.role === 'MEMBER') ? `<button onclick="mxKickMember('${esc(m.id)}')" style="background:none;border:none;color:#f43f5e;font-size:12px;cursor:pointer">Удалить</button>` : ''}
     </div>`).join('');
-  modal.innerHTML = `<div class="mx-modal-box" style="max-height:88vh;overflow-y:auto">
-    <h3 style="margin-bottom:4px">${esc(ch.name)}</h3>
-    <div class="mx-hint" style="margin-bottom:10px">${isChannel ? 'Канал' : 'Группа'} · ${mxPlural(ch.memberCount, isChannel ? ['подписчик','подписчика','подписчиков'] : ['участник','участника','участников'])}</div>
-    ${ch.description ? `<div style="font-size:13px;color:var(--text2);margin-bottom:12px">${esc(ch.description)}</div>` : ''}
-    <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surf);border-radius:12px;padding:12px;margin-bottom:10px">
-      <div style="font-size:14px">Уведомления</div>${mxSwitchHtml(!ch.muted, `mxToggleMute('${esc(ch.id)}')`)}
+  const act = (ico, label, onclick, danger) => `<button onclick="${onclick}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px;border:none;border-radius:14px;background:var(--surf);color:${danger ? '#f43f5e' : 'var(--text)'};font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">${ico}<span>${label}</span></button>`;
+  const third = isChannel
+    ? act(mxInfoSvg('link'), 'Ссылка', 'mxCopyInvite()')
+    : act(mxInfoSvg('video'), 'Видеочат', 'mxInfoVideoChat()');
+  const tab = (id, label) => `<button id="mx-info-tab-${id}" onclick="mxInfoSwitchTab('${id}')" style="flex:1;padding:12px 2px;background:none;border:none;border-bottom:2px solid ${mxInfoTab === id ? 'var(--accent)' : 'transparent'};color:${mxInfoTab === id ? 'var(--text)' : 'var(--text2)'};font-family:var(--font);font-size:13px;font-weight:${mxInfoTab === id ? 700 : 500};cursor:pointer">${label}</button>`;
+  modal.innerHTML = `<div style="width:100%;max-width:520px;flex-shrink:0">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:max(14px,env(safe-area-inset-top)) 10px 0">
+      <button onclick="mxInfoClose()" title="Назад" style="background:none;border:none;color:var(--text);cursor:pointer;width:40px;height:40px;display:flex;align-items:center;justify-content:center"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>
+      ${staff ? `<button onclick="mxOpenEditChat()" title="Изменить" style="background:none;border:none;color:var(--text);cursor:pointer;width:40px;height:40px;display:flex;align-items:center;justify-content:center">${mxInfoSvg('edit', 20)}</button>` : '<span></span>'}
     </div>
-    ${staff ? `<div class="mx-row-btns" style="margin-bottom:10px">
-      <button class="mx-btn" onclick="mxOpenEditChat()">Изменить</button>
-      <button class="mx-btn primary" onclick="mxOpenAddMembers()">Добавить участников</button>
-    </div>` : ''}
-    ${staff && ch.inviteCode ? `<button class="mx-btn" style="width:100%;margin-bottom:10px" onclick="mxCopyInvite()">Скопировать ссылку-приглашение</button>` : ''}
-    <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin:8px 0 2px">${isChannel ? 'Подписчики' : 'Участники'}</div>
-    <div>${members}</div>
-    ${ch.role !== 'OWNER' ? `<button class="mx-btn" style="width:100%;margin-top:12px;color:#f43f5e" onclick="mxLeaveChat()">${isChannel ? 'Отписаться' : 'Покинуть группу'}</button>` : ''}
-    <button class="mx-btn" style="width:100%;margin-top:8px" onclick="document.getElementById('mx-info-modal').remove()">Закрыть</button>
+    <div style="display:flex;flex-direction:column;align-items:center;text-align:center;padding:4px 20px 14px">
+      <div style="width:116px;height:116px;border-radius:50%;background:var(--surf2);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:700;margin-bottom:12px">${chatAvatarHtml(ch)}</div>
+      <div style="font-family:var(--font);font-size:22px;font-weight:800;word-break:break-word">${esc(ch.name)}</div>
+      <div style="font-size:13px;color:var(--text2);margin-top:4px">${isChannel ? 'Канал' : 'Группа'} · ${mxPlural(ch.memberCount, isChannel ? ['подписчик','подписчика','подписчиков'] : ['участник','участника','участников'])}</div>
+      ${ch.description ? `<div style="font-size:13px;line-height:1.5;margin-top:10px;max-width:380px">${esc(ch.description)}</div>` : ''}
+    </div>
+    <div style="display:flex;gap:8px;padding:0 14px 14px">
+      ${act(mxInfoSvg('chat'), 'Чат', 'mxInfoClose()')}
+      ${act(mxInfoSvg(ch.muted ? 'bellOff' : 'bell'), ch.muted ? 'Без звука' : 'Звук', `mxToggleMute('${esc(ch.id)}')`)}
+      ${third}
+      ${act(mxInfoSvg('leave'), 'Покинуть', ch.role === 'OWNER' ? `showToast('Владелец не может покинуть чат')` : 'mxLeaveChat()', true)}
+    </div>
+    ${staff && !isChannel && ch.inviteCode ? `<div style="padding:0 14px 12px"><button class="mx-btn" style="width:100%" onclick="mxCopyInvite()">Скопировать ссылку-приглашение</button></div>` : ''}
+    ${staff ? `<div style="padding:0 14px 6px"><button onclick="mxOpenAddMembers()" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px;border:none;border-radius:14px;background:var(--surf);color:var(--accent);font-family:var(--font);font-size:14px;font-weight:700;cursor:pointer">${mxInfoSvg('plus', 20)} Добавить участников</button></div>` : ''}
+    ${members ? `<div style="padding:4px 14px 10px"><div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin:8px 0 2px">${isChannel ? 'Подписчики' : 'Участники'}</div>${members}</div>` : ''}
+    <div style="display:flex;border-bottom:1px solid var(--border);margin-top:6px">${tab('media', 'Медиа')}${tab('links', 'Ссылки')}${tab('music', 'Музыка')}${tab('voice', 'Голосовые')}</div>
+    <div id="mx-info-shared" style="padding:10px 14px calc(30px + env(safe-area-inset-bottom))"></div>
   </div>`;
+  mxLoadInfoShared();
 }
+function mxInfoSwitchTab(tab) {
+  mxInfoTab = tab;
+  ['media', 'links', 'music', 'voice'].forEach(id => {
+    const b = document.getElementById('mx-info-tab-' + id); if (!b) return;
+    const on = id === tab;
+    b.style.borderBottomColor = on ? 'var(--accent)' : 'transparent'; b.style.color = on ? 'var(--text)' : 'var(--text2)'; b.style.fontWeight = on ? 700 : 500;
+  });
+  mxLoadInfoShared();
+}
+/** Сетка/список прикреплённых файлов из этого чата для выбранной вкладки. */
+async function mxLoadInfoShared() {
+  const box = document.getElementById('mx-info-shared');
+  if (!box) return;
+  const tab = mxInfoTab, chatId = currentChatId;
+  box.innerHTML = '<div class="mx-hint" style="text-align:center;padding:18px">Загрузка…</div>';
+  let list;
+  try { list = (await MchatAPI.chatShared(chatId, tab)).messages; }
+  catch (e) { if (mxInfoTab === tab) box.innerHTML = '<div class="mx-hint" style="text-align:center;padding:18px">Не удалось загрузить</div>'; return; }
+  if (mxInfoTab !== tab || currentChatId !== chatId || !document.getElementById('mx-info-shared')) return;
+  if (!list.length) { box.innerHTML = '<div class="mx-hint" style="text-align:center;padding:24px 0">Здесь пока ничего нет</div>'; return; }
+  if (tab === 'media') {
+    box.innerHTML = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px">' + list.map(m => m.kind === 'IMAGE'
+      ? `<img src="${esc(m.mediaUrl || '')}" loading="lazy" onclick="mxOpenImage('${esc(m.mediaUrl || '')}')" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;background:var(--surf2);cursor:zoom-in">`
+      : `<video src="${esc(m.mediaUrl || '')}" preload="metadata" muted playsinline onclick="this.controls=true;this.play()" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;background:#000"></video>`).join('') + '</div>';
+  } else if (tab === 'links') {
+    box.innerHTML = list.map(m => (m.text.match(/https?:\/\/[^\s<>"]+/g) || []).map(u =>
+      `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer" style="display:block;padding:10px 12px;margin-bottom:6px;border-radius:12px;background:var(--surf);color:var(--accent);font-size:13px;word-break:break-all;text-decoration:none">${esc(u)}</a>`).join('')).join('');
+  } else {
+    box.innerHTML = list.map(m => `<div style="padding:8px 10px;margin-bottom:6px;border-radius:12px;background:var(--surf)">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(tab === 'music' ? (m.fileName || 'Трек') : (m.senderName || 'Голосовое'))} · ${esc(fmtClock(m.createdAt))}</div>
+      <audio controls preload="none" src="${esc(m.mediaUrl || '')}" style="width:100%;height:36px"></audio></div>`).join('');
+  }
+}
+function mxInfoVideoChat() { mxInfoClose(); mxStartCall(true); }
+
+// ---------- каналы: кнопка «Прокомментировать» под постом ----------
+function mxCommentBtnHtml(m) {
+  if (!currentChatMeta || currentChatMeta.type !== 'CHANNEL' || m.pending || m.kind === 'VOICE') return '';
+  return `<button onclick="event.stopPropagation();mxOpenComments('${esc(m.id)}')" style="display:flex;align-items:center;gap:6px;margin-top:6px;padding:6px 10px;border:none;border-radius:10px;background:rgba(255,255,255,.08);color:var(--accent);font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Прокомментировать</button>`;
+}
+async function mxOpenComments(msgId) {
+  document.querySelectorAll('#mx-cmt-modal').forEach(x => x.remove());
+  const m = document.createElement('div');
+  m.className = 'modal active'; m.id = 'mx-cmt-modal'; m.style.zIndex = '900'; m.style.alignItems = 'flex-end';
+  m.onclick = (e) => { if (e.target === m) m.remove(); };
+  m.innerHTML = `<div class="mx-modal-box" style="width:100%;max-width:520px;border-radius:24px 24px 0 0;max-height:80vh">
+    <h3>Комментарии</h3>
+    <div id="mx-cmt-list" style="flex:1;overflow-y:auto;min-height:120px"><div class="mx-hint" style="text-align:center;padding:20px">Загрузка…</div></div>
+    <div style="display:flex;gap:8px"><input class="mx-input" id="mx-cmt-input" placeholder="Написать комментарий..." maxlength="1000" autocomplete="off" onkeydown="if(event.key==='Enter')mxSendComment('${esc(msgId)}')"><button class="mx-btn primary" style="flex:none;padding:12px 16px" onclick="mxSendComment('${esc(msgId)}')">Отправить</button></div>
+  </div>`;
+  document.getElementById('app').appendChild(m);
+  try { mxRenderComments((mxCmtCache[msgId] = (await MchatAPI.comments(msgId)).comments)); }
+  catch (e) { m.remove(); showToast(MchatAPI.errorText(e)); }
+}
+function mxRenderComments(list) {
+  const box = document.getElementById('mx-cmt-list');
+  if (!box) return;
+  box.innerHTML = list.length ? list.map(c => `<div style="display:flex;gap:10px;padding:8px 0">
+      <div style="width:34px;height:34px;border-radius:50%;background:var(--surf2);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700">${c.user.avatar ? `<img src="${esc(c.user.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">` : esc((c.user.name || c.user.username).charAt(0).toUpperCase())}</div>
+      <div style="min-width:0"><div style="font-size:13px;font-weight:700">${esc(c.user.name || c.user.username)} <span style="font-weight:400;color:var(--text2);font-size:11px">${esc(fmtClock(c.createdAt))}</span></div><div style="font-size:14px;line-height:1.4;word-break:break-word">${esc(c.text)}</div></div>
+    </div>`).join('') : '<div class="mx-hint" style="text-align:center;padding:24px 0">Комментариев пока нет — будь первым</div>';
+  box.scrollTop = box.scrollHeight;
+}
+async function mxSendComment(msgId) {
+  const inp = document.getElementById('mx-cmt-input');
+  const text = inp && inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  try { const r = await MchatAPI.addComment(msgId, text); mxRenderComments((mxCmtCache[msgId] = (mxCmtCache[msgId] || []).concat(r.comment))); }
+  catch (e) { inp.value = text; showToast(MchatAPI.errorText(e)); }
+}
+const mxCmtCache = {};
+
 function mxSwitchHtml(on, onclick) {
   return `<div onclick="${onclick}" style="width:44px;height:26px;border-radius:13px;background:${on ? 'var(--accent)' : 'var(--surf2)'};position:relative;cursor:pointer;flex-shrink:0;transition:background .15s"><div style="position:absolute;top:3px;left:${on ? '21px' : '3px'};width:20px;height:20px;border-radius:50%;background:#fff;transition:left .15s"></div></div>`;
 }
@@ -4181,7 +4332,7 @@ function mxOpenEditChat() {
   const ch = chats.find(c => c.id === currentChatId);
   if (!ch) return;
   const modal = document.getElementById('mx-info-modal');
-  modal.innerHTML = `<div class="mx-modal-box">
+  modal.innerHTML = `<div class="mx-modal-box" style="margin-top:max(40px,env(safe-area-inset-top))">
     <h3 style="margin-bottom:14px">Изменить</h3>
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
       <div id="mx-edit-av" style="width:64px;height:64px;border-radius:50%;background:var(--surf2);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:24px">${chatAvatarHtml(ch)}</div>
@@ -4220,12 +4371,12 @@ async function mxSaveEditChat() {
 async function mxOpenAddMembers() {
   mxPick = new Set();
   const modal = document.getElementById('mx-info-modal');
-  modal.innerHTML = '<div class="mx-modal-box"><div style="padding:30px;text-align:center;color:var(--text2)">Загрузка…</div></div>';
+  modal.innerHTML = '<div class="mx-modal-box" style="margin-top:max(40px,env(safe-area-inset-top))"><div style="padding:30px;text-align:center;color:var(--text2)">Загрузка…</div></div>';
   try { mxContactsCache = (await MchatAPI.chatContacts()).contacts; }
   catch (e) { showToast(MchatAPI.errorText(e)); mxRenderChatInfo(); return; }
   const inChat = new Set(mxInfoMembers.map(m => m.id));
   const free = mxContactsCache.filter(c => !inChat.has(c.id));
-  modal.innerHTML = `<div class="mx-modal-box">
+  modal.innerHTML = `<div class="mx-modal-box" style="margin-top:max(40px,env(safe-area-inset-top))">
     <h3 style="margin-bottom:10px">Добавить участников</h3>
     <div class="mx-hint" id="mx-create-count" style="margin-bottom:6px"></div>
     <div style="max-height:320px;overflow-y:auto;background:var(--surf);border-radius:12px;padding:4px 10px;margin-bottom:12px">${mxContactRowsHtml(free, 'mxToggleCreatePick')}</div>
@@ -4571,6 +4722,25 @@ async function mxCallToggleCam() {
   } catch (e) { showToast(mxMediaErrorText('cam', e)); }
   mxCallSync(call);
 }
+/** Смена камеры в видеозвонке: facingMode 'user' <-> 'environment'. */
+async function mxCallFlipCam() {
+  const call = mxCall;
+  if (!call || !call.zg || !call.localStream) return;
+  if (!call.camOn) { showToast('Сначала включи камеру'); return; }
+  const next = (call.facing || 'user') === 'user' ? 'environment' : 'user';
+  try {
+    let probe;
+    try { probe = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: next } } }); }
+    catch (e) { probe = await navigator.mediaDevices.getUserMedia({ video: { facingMode: next } }); }
+    const deviceId = probe.getVideoTracks()[0].getSettings().deviceId;
+    probe.getTracks().forEach((t) => t.stop());
+    await call.zg.useVideoDevice(call.localStream, deviceId); // подменяем камеру в уже идущей трансляции
+    call.facing = next;
+    const self = document.getElementById('call-self');
+    self.style.transform = next === 'user' ? 'scaleX(-1)' : 'none'; // зеркалим только фронтальную
+    mxCallSync(call);
+  } catch (e) { showToast(mxMediaErrorText('cam', e)); }
+}
 function mxCallEnd() { mxCallCleanup('Звонок завершён'); }
 
 async function mxCallAddPeople() {
@@ -4691,47 +4861,84 @@ async function mxBackgroundChosen(evt) {
 // ============================================================
 // ДРУЗЬЯ
 // ============================================================
-const MX_FRIEND_LABEL = { none: 'Добавить в друзья', outgoing: 'Заявка отправлена', incoming: 'Принять заявку', friends: 'В друзьях' };
+const MX_FRIEND_LABEL = { none: 'Подписаться', following: 'Вы подписаны', follower: 'Подписаться в ответ', friends: 'Друзья' };
 function mxRenderFriendButton() {
   const btn = document.getElementById('up-friend-btn');
-  const decline = document.getElementById('up-friend-decline');
   if (!btn) return;
   const s = upFriendState.status;
-  if (!s || s === 'self' || !upViewedUsername) { btn.style.display = 'none'; if (decline) decline.style.display = 'none'; return; }
+  if (!s || s === 'self' || !upViewedUsername) { btn.style.display = 'none'; return; }
   btn.style.display = 'inline-flex';
   btn.disabled = false;
-  btn.className = 'mx-friend-btn' + (s === 'none' ? ' add' : s === 'outgoing' ? ' pending' : s === 'friends' ? ' friends' : s === 'incoming' ? ' accept' : '');
+  btn.className = 'mx-friend-btn' + (s === 'none' || s === 'follower' ? ' accept' : s === 'friends' ? ' friends' : ' pending');
   btn.textContent = MX_FRIEND_LABEL[s] || MX_FRIEND_LABEL.none;
-  if (decline) decline.style.display = (s === 'incoming') ? 'inline-flex' : 'none';
 }
+/** «Подписаться» / «Отписаться». Взаимная подписка сервер сам превращает в статус «Друзья». */
 async function mxFriendAction() {
   const btn = document.getElementById('up-friend-btn');
   if (!upViewedUsername || !btn || btn.disabled) return;
+  const name = upViewedUsername, st = upFriendState.status;
+  if (st === 'following' || st === 'friends') {
+    showConfirm(st === 'friends' ? 'Отписаться? Вы перестанете быть друзьями' : 'Отписаться?', async () => {
+      try { upFriendState = await MchatAPI.unfollow(name); mxRenderFriendButton(); mxBumpFollowers(-1); }
+      catch (e) { showToast(MchatAPI.errorText(e)); }
+    });
+    return;
+  }
   btn.disabled = true;
   try {
-    if (upFriendState.status === 'none') {
-      upFriendState = await MchatAPI.friendRequest(upViewedUsername);
-    } else if (upFriendState.status === 'outgoing') {
-      upFriendState = await MchatAPI.friendRemove(upFriendState.id);
-    } else if (upFriendState.status === 'incoming') {
-      upFriendState = await MchatAPI.friendAccept(upFriendState.id);
-      showToast('Теперь вы друзья');
-    } else if (upFriendState.status === 'friends') {
-      btn.disabled = false;
-      showConfirm('Удалить из друзей?', async () => {
-        try { upFriendState = await MchatAPI.friendRemove(upFriendState.id); mxRenderFriendButton(); }
-        catch (e) { showToast(MchatAPI.errorText(e)); }
-      });
-      return;
-    }
+    upFriendState = await MchatAPI.follow(name);
+    mxBumpFollowers(+1);
+    if (upFriendState.status === 'friends') showToast('Теперь вы друзья');
     mxRenderFriendButton();
   } catch (e) { showToast(MchatAPI.errorText(e)); }
   finally { btn.disabled = false; }
 }
-async function mxFriendDecline() {
-  if (!upFriendState.id) return;
-  try { upFriendState = await MchatAPI.friendRemove(upFriendState.id); mxRenderFriendButton(); }
-  catch (e) { showToast(MchatAPI.errorText(e)); }
+function mxBumpFollowers(d) { // счётчик «Подписчики» в открытом профиле двигаем сразу, не дожидаясь перезагрузки
+  const el = document.getElementById('up-followers-count');
+  if (el) el.textContent = Math.max(0, (parseInt(el.textContent, 10) || 0) + d);
+}
+function mxRenderUserBanner(url) {
+  const b = document.getElementById('up-banner'), av = document.getElementById('up-avatar');
+  if (!b) return;
+  b.style.display = url ? 'block' : 'none';
+  b.style.backgroundImage = url ? `url("${String(url).replace(/"/g, '%22')}")` : '';
+  if (av) { av.style.marginTop = url ? '-58px' : ''; av.style.border = url ? '4px solid var(--bg)' : ''; av.style.position = 'relative'; }
+}
+/** Название песни из профиля под ником; клик открывает плеер и сразу запускает трек. */
+let mxProfileTrack = null;
+function mxRenderUserMusic(track, username) {
+  mxProfileTrack = track ? Object.assign({ artist: '@' + (username || '') }, track) : null;
+  const el = document.getElementById('up-music');
+  if (!el) return;
+  el.style.display = track ? 'flex' : 'none';
+  document.getElementById('up-music-title').textContent = track ? track.title : '';
+}
+function mxProfileMusicPlay(track) {
+  const t = track || mxProfileTrack;
+  if (!t) return;
+  const key = 'profile_' + t.id;
+  audioRegistry[key] = { title: t.title, artist: t.artist || '', url: t.url, avatar: null };
+  currentReelsAudioId = key;
+  openAudioModal();
+  const a = window._mxTrackAudio;
+  if (!a || window._mxTrackAudioId !== key || a.paused) mxAudioToggle(); // запускаем плеер
+}
+async function mxSetProfileTrack(id) {
+  try {
+    const r = await MchatAPI.updateMe({ musicTrack: id });
+    currentUser.musicTrack = r.musicTrack || null; saveUser(); mxRenderOwnMusic();
+    showToast(id ? 'Трек показан в профиле' : 'Трек убран из профиля');
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
+}
+function mxRenderOwnMusic() {
+  const host = document.getElementById('profile-username');
+  if (!host) return;
+  let el = document.getElementById('profile-music');
+  if (!el) { el = document.createElement('div'); el.id = 'profile-music'; host.insertAdjacentElement('afterend', el); }
+  const t = currentUser && currentUser.musicTrack;
+  el.style.cssText = t ? 'display:flex;justify-content:center;align-items:center;gap:6px;font-size:13px;color:var(--accent);cursor:pointer;margin:4px 0' : 'display:none';
+  el.innerHTML = t ? `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><span>${esc(t.title)}</span>` : '';
+  el.onclick = () => mxProfileMusicPlay(Object.assign({ artist: '@' + currentUser.username }, t));
 }
 function mxSetPresenceText(elId, online, lastSeenAt) {
   const el = document.getElementById(elId);
@@ -5392,7 +5599,7 @@ async function mxCameraSend() {
   if (sendBtn) sendBtn.disabled = true;
   try {
     if (mxCam.mode === 'photo' && mxCam.photoBlob) {
-      const camPhoto = await mxCompressImage(new File([mxCam.photoBlob], 'photo.jpg', { type: mxCam.photoBlob.type || 'image/jpeg' }), mxHD);
+      const camPhoto = await mxCompressImage(new File([mxCam.photoBlob], 'photo.jpg', { type: mxCam.photoBlob.type || 'image/jpeg' }), false);
       const media = await MchatAPI.uploadMedia('image', camPhoto, {});
       const saved = await MchatAPI.sendMessage(chatId, '', MchatAPI.newClientId(), { kind: 'IMAGE', mediaId: media.id });
       onIncomingMessage(saved);
@@ -5487,14 +5694,7 @@ function mxKindOfFile(f) {
   if (/^video\/(mp4|webm|quicktime)$/.test(t)) return 'video';
   return 'file'; // всё остальное уходит документом
 }
-// ── Сжатие фото перед отправкой + режим HD ──
-let mxHD = false;
-function mxToggleHD() {
-  mxHD = !mxHD;
-  const b = document.getElementById('mx-hd-btn');
-  if (b) { b.style.opacity = mxHD ? '1' : '.6'; b.style.color = mxHD ? 'var(--accent)' : ''; }
-  showToast(mxHD ? 'HD: фото уходят в высоком качестве' : 'Обычное качество: фото сжимаются');
-}
+// ── Сжатие фото перед отправкой (HD выбирается в окне предпросмотра) ──
 /** Сжимает картинку на canvas. Обычный режим: до 1280px, quality 0.6, цель ≤200 КБ.
  *  HD: до 2560px, quality 0.85, цель ≤2 МБ. GIF не трогаем (иначе пропадёт анимация). */
 async function mxCompressImage(file, hd) {
@@ -5533,25 +5733,93 @@ async function mxAttachChosen(evt) {
   evt.target.value = '';
   const chatId = currentChatId;
   if (!files.length || !chatId) return;
-  for (const f of files) await mxSendAttachment(chatId, f);
+  for (const f of files) {
+    if (mxKindOfFile(f) === 'image' && f.type !== 'image/gif') {
+      const r = await mxPreviewOpen(f); // полноэкранный предпросмотр: HD, маркер, подпись
+      if (r) await mxSendAttachment(chatId, r.file, { caption: r.caption, hd: r.hd });
+    } else await mxSendAttachment(chatId, f);
+  }
+}
+
+// ── Полноэкранный предпросмотр фото из галереи ──
+let mxPv = null;
+function mxPreviewOpen(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.getElementById('mx-pv-canvas');
+      const k = Math.min(1, 2560 / Math.max(img.naturalWidth, img.naturalHeight)); // рабочее разрешение холста
+      cv.width = Math.max(1, Math.round(img.naturalWidth * k)); cv.height = Math.max(1, Math.round(img.naturalHeight * k));
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      mxPv = { resolve, file, url, hd: false, marker: false, drawn: false, last: null };
+      document.getElementById('mx-pv-caption').value = '';
+      mxPreviewBind(cv); mxPreviewSyncUi();
+      document.getElementById('mx-preview').classList.add('active');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve({ file, caption: '', hd: false }); }; // не показать — отправляем как есть
+    img.src = url;
+  });
+}
+function mxPreviewBind(cv) {
+  if (cv._bound) return; cv._bound = true;
+  const pt = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height }; };
+  const stroke = (a, b) => {
+    const c = cv.getContext('2d');
+    c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = '#ff3b5c'; c.lineWidth = Math.max(4, cv.width / 140);
+    c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+    mxPv.drawn = true;
+  };
+  cv.addEventListener('pointerdown', (e) => { if (!mxPv || !mxPv.marker) return; cv.setPointerCapture(e.pointerId); mxPv.last = pt(e); stroke(mxPv.last, mxPv.last); });
+  cv.addEventListener('pointermove', (e) => { if (!mxPv || !mxPv.marker || !mxPv.last) return; const p = pt(e); stroke(mxPv.last, p); mxPv.last = p; });
+  ['pointerup', 'pointercancel'].forEach((t) => cv.addEventListener(t, () => { if (mxPv) mxPv.last = null; }));
+}
+function mxPreviewSyncUi() {
+  const hd = document.getElementById('mx-pv-hd'), mk = document.getElementById('mx-pv-marker'), cv = document.getElementById('mx-pv-canvas');
+  hd.style.background = mxPv.hd ? 'var(--accent)' : 'transparent'; hd.style.borderColor = mxPv.hd ? 'var(--accent)' : 'rgba(255,255,255,.5)';
+  mk.style.background = mxPv.marker ? 'var(--accent)' : 'transparent';
+  cv.style.cursor = mxPv.marker ? 'crosshair' : 'default';
+}
+function mxPreviewToggleHD() { if (!mxPv) return; mxPv.hd = !mxPv.hd; mxPreviewSyncUi(); showToast(mxPv.hd ? 'HD: до 2560 px' : 'Обычное качество: до 1280 px'); }
+function mxPreviewToggleMarker() { if (!mxPv) return; mxPv.marker = !mxPv.marker; mxPreviewSyncUi(); }
+function mxPreviewClose() {
+  if (!mxPv) return;
+  const pv = mxPv; mxPv = null;
+  document.getElementById('mx-preview').classList.remove('active');
+  URL.revokeObjectURL(pv.url); pv.resolve(null);
+}
+async function mxPreviewSend() {
+  if (!mxPv) return;
+  const pv = mxPv; mxPv = null;
+  const caption = document.getElementById('mx-pv-caption').value.trim();
+  let file = pv.file;
+  if (pv.drawn) { // есть рисунок маркером — отправляем содержимое холста
+    const blob = await new Promise((res) => document.getElementById('mx-pv-canvas').toBlob(res, 'image/jpeg', 0.92));
+    if (blob) file = new File([blob], (pv.file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  }
+  document.getElementById('mx-preview').classList.remove('active');
+  URL.revokeObjectURL(pv.url);
+  pv.resolve({ file, caption, hd: pv.hd });
 }
 function mxUpdateProgress(id, pct) {
   const bar = document.querySelector('.msg[data-id="' + id + '"] .mx-upbar i');
   if (bar) bar.style.width = pct + '%';
 }
-async function mxSendAttachment(chatId, file) {
-  if (mxKindOfFile(file) === 'image') file = await mxCompressImage(file, mxHD);
+async function mxSendAttachment(chatId, file, opts) {
+  opts = opts || {};
+  const caption = (opts.caption || '').trim();
+  if (mxKindOfFile(file) === 'image') file = await mxCompressImage(file, !!opts.hd); // HD → 2560 px, иначе 1280 px
   const kind = mxKindOfFile(file);
   if (file.size > MX_ATTACH_LIMIT_MB[kind] * 1024 * 1024) { showToast('«' + file.name + '» больше ' + MX_ATTACH_LIMIT_MB[kind] + ' МБ'); return; }
   const clientId = MchatAPI.newClientId();
-  const local = { id: clientId, clientId, chatId, kind: MX_ATTACH_KIND[kind], text: '', fileName: file.name, fileSize: file.size,
+  const local = { id: clientId, clientId, chatId, kind: MX_ATTACH_KIND[kind], text: caption, fileName: file.name, fileSize: file.size,
     mediaUrl: kind === 'image' ? URL.createObjectURL(file) : '', reactions: [], time: fmtClock(new Date().toISOString()),
     outgoing: true, pending: true, progress: 0 };
   (messages[chatId] = messages[chatId] || []).push(local);
   if (currentChatId === chatId) renderMessages(chatId);
   try {
     const media = await MchatAPI.uploadMedia(kind, file, { name: file.name, onProgress: (p) => { local.progress = p; mxUpdateProgress(clientId, p); } });
-    const saved = await MchatAPI.sendMessage(chatId, '', clientId, { kind: MX_ATTACH_KIND[kind], mediaId: media.id });
+    const saved = await MchatAPI.sendMessage(chatId, caption, clientId, { kind: MX_ATTACH_KIND[kind], mediaId: media.id });
     onIncomingMessage(saved); // склеится с заглушкой по clientId
   } catch (e) {
     messages[chatId] = (messages[chatId] || []).filter((x) => x !== local);
@@ -5559,6 +5827,9 @@ async function mxSendAttachment(chatId, file) {
     showToast(MchatAPI.errorText(e));
   }
 }
+
+// Не даём бесплатному хостингу уснуть: раз в 10 минут стучимся на /ping
+setInterval(() => { fetch('/ping', { cache: 'no-store' }).catch(() => {}); }, 10 * 60 * 1000);
 
 init();
 document.addEventListener('DOMContentLoaded', () => {

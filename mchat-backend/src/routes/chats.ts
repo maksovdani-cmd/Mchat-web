@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
-  addMembers, createGroupOrChannel, getChatDTO, getOrCreateDirectChat, joinByInvite, joinPublicChannel, listChats, listContacts,
+  addComment, addMembers, createGroupOrChannel, listComments, listShared, getChatDTO, getOrCreateDirectChat, joinByInvite, joinPublicChannel, listChats, listContacts,
   listMembers, listMessages, removeMember, searchPublicChannels, setChatBackground, setChatMuted, setMemberRole, updateChatInfo,
 } from '../services/chat';
 import { emitToChat, emitToUser, leaveUserFromChat } from '../realtime/hub';
@@ -138,6 +138,20 @@ chatsRouter.patch('/:id', wrap(async (req, res) => {
   await updateChatInfo(userId, chatId, b);
   changed(chatId);
   res.json({ chat: await getChatDTO(userId, chatId) });
+}));
+
+chatsRouter.get('/:id/shared', wrap(async (req, res) => {
+  const { tab } = z.object({ tab: z.enum(['media', 'links', 'music', 'voice']).default('media') }).parse(req.query);
+  res.json({ messages: await listShared(authOf(req).userId, String(req.params.id), tab) });
+}));
+
+/** Комментарии под постом канала: id — id сообщения. */
+chatsRouter.get('/comments/:id', wrap(async (req, res) => {
+  res.json({ comments: await listComments(authOf(req).userId, String(req.params.id)) });
+}));
+chatsRouter.post('/comments/:id', wrap(async (req, res) => {
+  const { text } = z.object({ text: z.string().max(1000) }).parse(req.body);
+  res.json({ comment: await addComment(authOf(req).userId, String(req.params.id), text) });
 }));
 
 chatsRouter.get('/:id/members', wrap(async (req, res) => {

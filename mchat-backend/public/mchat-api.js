@@ -362,9 +362,11 @@
     removeMember: (id, userId) => api('/chats/' + encodeURIComponent(id) + '/members/' + encodeURIComponent(userId), { method: 'DELETE' }),
     setMemberRole: (id, userId, role) => api('/chats/' + encodeURIComponent(id) + '/members/' + encodeURIComponent(userId) + '/role', { method: 'PUT', body: { role: role } }),
     friends: () => api('/friends'),
-    friendRequest: (username) => api('/friends/request', { method: 'POST', body: { username: username } }),
-    friendAccept: (id) => api('/friends/' + encodeURIComponent(id) + '/accept', { method: 'POST', body: {} }),
-    friendRemove: (id) => api('/friends/' + encodeURIComponent(id), { method: 'DELETE' }),
+    follow: (username) => api('/friends/follow', { method: 'POST', body: { username: username } }),
+    unfollow: (username) => api('/friends/follow/' + encodeURIComponent(username), { method: 'DELETE' }),
+    chatShared: (id, tab) => api('/chats/' + encodeURIComponent(id) + '/shared?tab=' + encodeURIComponent(tab)),
+    comments: (msgId) => api('/chats/comments/' + encodeURIComponent(msgId)),
+    addComment: (msgId, text) => api('/chats/comments/' + encodeURIComponent(msgId), { method: 'POST', body: { text: text } }),
 
     // файлы и треки («нота»)
     uploadMedia: uploadMedia,

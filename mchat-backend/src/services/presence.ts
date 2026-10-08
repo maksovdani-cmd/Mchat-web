@@ -1,4 +1,5 @@
 import { prisma } from '../db';
+import { friendIds } from './friends';
 import { emitToRooms, emitToUser, isConnected } from '../realtime/hub';
 
 /**
@@ -8,14 +9,11 @@ import { emitToRooms, emitToUser, isConnected } from '../realtime/hub';
 export async function broadcastPresence(userId: string, online: boolean | null, at = new Date()) {
   const [chats, friends] = await Promise.all([
     prisma.chatMember.findMany({ where: { userId }, select: { chatId: true } }),
-    prisma.friendship.findMany({
-      where: { status: 'ACCEPTED', OR: [{ requesterId: userId }, { addresseeId: userId }] },
-      select: { requesterId: true, addresseeId: true },
-    }),
+    friendIds(userId),
   ]);
   const payload = { userId, online, at: at.toISOString() };
   emitToRooms(chats.map((c) => `chat:${c.chatId}`), 'presence', payload);
-  for (const f of friends) emitToUser(f.requesterId === userId ? f.addresseeId : f.requesterId, 'presence', payload);
+  for (const id of friends) emitToUser(id, 'presence', payload);
 }
 
 /** Пользователь только что включил/выключил «скрыть статус» — сообщаем всем актуальное состояние. */

@@ -4,7 +4,7 @@ import { prisma } from '../db';
 import { authOf, requireAuth } from '../middleware/auth';
 import { searchLimiter } from '../middleware/security';
 import { disconnectUser } from '../realtime/hub';
-import { friendInfo } from '../services/friends';
+import { followCounts, friendInfo } from '../services/friends';
 import { gcMedia, mediaUrl, toMediaDTO } from '../services/media';
 import { announcePresence, visiblePresence } from '../services/presence';
 import { publicUserSelect } from '../services/chat';
@@ -24,6 +24,13 @@ const toPublic = (u: { id: string; username: string; name: string; avatarUrl: st
   ...(u.bio !== undefined ? { bio: u.bio } : {}),
 });
 
+/** Трек из профиля: {id, title, url} или null (если трека больше нет). */
+const trackOf = async (ownerId: string, id: string | null) => {
+  if (!id) return null;
+  const m = await prisma.media.findFirst({ where: { id, ownerId, kind: 'TRACK' } });
+  return m ? { id: m.id, title: m.title || 'Без названия', url: mediaUrl(m.id) } : null;
+};
+
 usersRouter.get(
   '/me',
   wrap(async (req, res) => {
@@ -33,6 +40,8 @@ usersRouter.get(
       bio: u.bio,
       email: u.email,
       banner: u.bannerUrl,
+      ...(await followCounts(u.id)),
+      musicTrack: await trackOf(u.id, u.musicTrack),
       role: u.role,
       settings: { notifyMessages: u.notifyMessages, hideOnline: u.hideOnline, hideRead: u.hideRead },
       deviceId: authOf(req).deviceId,
@@ -49,6 +58,7 @@ const patchSchema = z
     hideRead: z.boolean(),
     avatarMediaId: z.string().min(1).max(40).nullable(),
     bannerMediaId: z.string().min(1).max(40).nullable(),
+    musicTrack: z.string().min(1).max(40).nullable(),
   })
   .partial()
   .strict();
@@ -57,7 +67,7 @@ usersRouter.patch(
   '/me',
   wrap(async (req, res) => {
     const userId = authOf(req).userId;
-    const { avatarMediaId, bannerMediaId, ...rest } = patchSchema.parse(req.body);
+    const { avatarMediaId, bannerMediaId, musicTrack, ...rest } = patchSchema.parse(req.body);
     const data: Record<string, unknown> = { ...rest };
     const before = await prisma.user.findUnique({ where: { id: userId }, select: { hideOnline: true, avatarUrl: true, bannerUrl: true } });
     // аватар/обложка: только своя картинка; null — убрать
@@ -68,6 +78,10 @@ usersRouter.patch(
         if (!m || m.ownerId !== userId || m.kind !== 'IMAGE') throw new HttpError(400, 'bad_media');
       }
       data[key] = id === null ? null : mediaUrl(id);
+    }
+    if (musicTrack !== undefined) {
+      if (musicTrack !== null && !(await trackOf(userId, musicTrack))) throw new HttpError(400, 'bad_media');
+      data.musicTrack = musicTrack;
     }
     const u = await prisma.user.update({ where: { id: userId }, data });
     // старые файлы аватара/обложки больше не нужны
@@ -80,6 +94,7 @@ usersRouter.patch(
     res.json({
       ...toPublic(u),
       banner: u.bannerUrl,
+      musicTrack: await trackOf(u.id, u.musicTrack),
       bio: u.bio,
       settings: { notifyMessages: u.notifyMessages, hideOnline: u.hideOnline, hideRead: u.hideRead },
     });
@@ -135,14 +150,16 @@ usersRouter.get(
     const me = authOf(req).userId;
     const u = await prisma.user.findUnique({
       where: { username: normalizeUsername(String(req.params.username)) },
-      select: { ...publicUserSelect, bio: true, bannerUrl: true, hideOnline: true, lastSeenAt: true },
+      select: { ...publicUserSelect, bio: true, bannerUrl: true, musicTrack: true, hideOnline: true, lastSeenAt: true },
     });
     if (!u) throw new HttpError(404, 'user_not_found');
-    const [friendship, tracks] = await Promise.all([
+    const [friendship, tracks, counts, musicTrack] = await Promise.all([
       u.id === me ? { status: 'self', id: null } : friendInfo(me, u.id),
       prisma.media.count({ where: { ownerId: u.id, kind: 'TRACK' } }),
+      followCounts(u.id),
+      trackOf(u.id, u.musicTrack),
     ]);
-    res.json({ ...toPublic(u), banner: u.bannerUrl, ...visiblePresence(u), friendship, tracksCount: tracks });
+    res.json({ ...toPublic(u), banner: u.bannerUrl, ...visiblePresence(u), friendship, tracksCount: tracks, ...counts, musicTrack });
   }),
 );
 
