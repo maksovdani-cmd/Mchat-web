@@ -29,7 +29,7 @@ app.disable('x-powered-by');
 
 // В проде: только HTTPS (а значит, и только WSS)
 app.use((req, res, next) => {
-  if (config.isProd && req.path !== '/healthz' && req.protocol !== 'https') {
+  if (config.isProd && req.path !== '/healthz' && req.path !== '/ping' && req.protocol !== 'https') {
     return res.redirect(301, `${config.appOrigin}${req.originalUrl}`);
   }
   next();
@@ -78,6 +78,11 @@ app.use(
 
 app.use(cookieParser());
 app.use(express.json({ limit: '64kb' }));
+
+// Лёгкий эндпоинт для «пинга»: не трогает базу, просто отвечает 200
+app.get('/ping', (_req, res) => {
+  res.status(200).send('ok');
+});
 
 app.get('/healthz', async (_req, res) => {
   try {
@@ -140,6 +145,14 @@ const expireNow = () => expireVerifications().catch((e) => console.error('expire
 expireNow();
 setInterval(expireNow, 5 * 60 * 1000).unref(); // срок галочки вышел — она исчезает (проверка раз в 5 минут)
 setInterval(() => purgeExpiredStories().catch((e) => console.error('purge stories', e)), 60 * 60 * 1000).unref();
+
+// Чтобы бесплатный Render не засыпал: раз в 10 минут сервер сам стучится на свой /ping (только в проде)
+if (config.isProd) {
+  const SERVER_URL = config.appOrigin;
+  setInterval(() => {
+    fetch(`${SERVER_URL}/ping`).catch((e) => console.error('self ping', e instanceof Error ? e.message : e));
+  }, 10 * 60 * 1000).unref();
+}
 
 server.listen(config.PORT, () => {
   console.log(`✅ Mchat запущен: ${config.appOrigin}  (порт ${config.PORT}, ${config.NODE_ENV})`);

@@ -5392,7 +5392,8 @@ async function mxCameraSend() {
   if (sendBtn) sendBtn.disabled = true;
   try {
     if (mxCam.mode === 'photo' && mxCam.photoBlob) {
-      const media = await MchatAPI.uploadMedia('image', mxCam.photoBlob, {});
+      const camPhoto = await mxCompressImage(new File([mxCam.photoBlob], 'photo.jpg', { type: mxCam.photoBlob.type || 'image/jpeg' }), mxHD);
+      const media = await MchatAPI.uploadMedia('image', camPhoto, {});
       const saved = await MchatAPI.sendMessage(chatId, '', MchatAPI.newClientId(), { kind: 'IMAGE', mediaId: media.id });
       onIncomingMessage(saved);
     } else if (mxCam.blob) {
@@ -5486,6 +5487,47 @@ function mxKindOfFile(f) {
   if (/^video\/(mp4|webm|quicktime)$/.test(t)) return 'video';
   return 'file'; // всё остальное уходит документом
 }
+// ── Сжатие фото перед отправкой + режим HD ──
+let mxHD = false;
+function mxToggleHD() {
+  mxHD = !mxHD;
+  const b = document.getElementById('mx-hd-btn');
+  if (b) { b.style.opacity = mxHD ? '1' : '.6'; b.style.color = mxHD ? 'var(--accent)' : ''; }
+  showToast(mxHD ? 'HD: фото уходят в высоком качестве' : 'Обычное качество: фото сжимаются');
+}
+/** Сжимает картинку на canvas. Обычный режим: до 1280px, quality 0.6, цель ≤200 КБ.
+ *  HD: до 2560px, quality 0.85, цель ≤2 МБ. GIF не трогаем (иначе пропадёт анимация). */
+async function mxCompressImage(file, hd) {
+  const t = (file.type || '').toLowerCase();
+  if (!/^image\/(jpeg|png|webp)$/.test(t)) return file;
+  const maxSide = hd ? 2560 : 1280;
+  const quality = hd ? 0.85 : 0.6;
+  const targetBytes = hd ? 2 * 1024 * 1024 : 200 * 1024;
+  try {
+    let src, w, h;
+    if (window.createImageBitmap) {
+      try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch (e) { src = await createImageBitmap(file); }
+      w = src.width; h = src.height;
+    } else {
+      src = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = URL.createObjectURL(file); });
+      w = src.naturalWidth; h = src.naturalHeight;
+    }
+    const k = Math.min(1, maxSide / Math.max(w, h));
+    const cw = Math.max(1, Math.round(w * k)), ch = Math.max(1, Math.round(h * k));
+    const canvas = document.createElement('canvas');
+    canvas.width = cw; canvas.height = ch;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cw, ch); // прозрачный PNG → белый фон в JPEG
+    ctx.drawImage(src, 0, 0, cw, ch);
+    if (src.close) src.close();
+    const toBlob = (q) => new Promise((res) => canvas.toBlob(res, 'image/jpeg', q));
+    let q = quality, blob = await toBlob(q);
+    while (blob && blob.size > targetBytes && q > 0.35) { q -= 0.1; blob = await toBlob(q); } // подбираем качество под целевой размер
+    if (!blob || blob.size >= file.size) return file; // сжатие не помогло — оставляем оригинал
+    const name = (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
+    return new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() });
+  } catch (e) { return file; }
+}
 async function mxAttachChosen(evt) {
   const files = Array.from(evt.target.files || []).slice(0, 10);
   evt.target.value = '';
@@ -5498,6 +5540,7 @@ function mxUpdateProgress(id, pct) {
   if (bar) bar.style.width = pct + '%';
 }
 async function mxSendAttachment(chatId, file) {
+  if (mxKindOfFile(file) === 'image') file = await mxCompressImage(file, mxHD);
   const kind = mxKindOfFile(file);
   if (file.size > MX_ATTACH_LIMIT_MB[kind] * 1024 * 1024) { showToast('«' + file.name + '» больше ' + MX_ATTACH_LIMIT_MB[kind] + ' МБ'); return; }
   const clientId = MchatAPI.newClientId();
