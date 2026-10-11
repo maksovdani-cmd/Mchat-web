@@ -10,6 +10,8 @@ export interface PushPayload {
   body: string;
   tag?: string;
   data?: Record<string, unknown>;
+  /** сколько секунд push-сервис хранит уведомление, если устройство офлайн (звонок — меньше минуты, иначе он «позвонит» вчерашним днём) */
+  ttl?: number;
 }
 
 /**
@@ -54,7 +56,8 @@ export async function hasPushChannel(userId: string): Promise<boolean> {
   return (await prisma.pushSubscription.count({ where: { userId } })) > 0;
 }
 
-export async function sendPushToUser(userId: string, payload: PushPayload): Promise<number> {
+export async function sendPushToUser(userId: string, input: PushPayload): Promise<number> {
+  const { ttl, ...payload } = input;
   const subs = await prisma.pushSubscription.findMany({ where: { userId } });
   let sent = 0;
   await Promise.all(
@@ -63,7 +66,7 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
         await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
           JSON.stringify(payload),
-          { TTL: 60 * 60 * 24, urgency: 'high' },
+          { TTL: ttl ?? 60 * 60 * 24, urgency: 'high' },
         );
         sent++;
       } catch (e) {

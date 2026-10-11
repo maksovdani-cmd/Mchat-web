@@ -170,6 +170,43 @@ export function toStoryDTO(s: StoryRow, viewerId: string) {
   };
 }
 
+/**
+ * Лента историй: активные (не старше 24 часов) истории ВСЕХ остальных пользователей, сгруппированные по автору.
+ * Сначала те, на кого я подписан, затем остальные; внутри — по времени самой свежей истории.
+ * (Раньше клиент запрашивал только свои истории, поэтому чужие нигде не показывались.)
+ */
+export async function listStoriesFeed(viewerId: string) {
+  const [rows, follows] = await Promise.all([
+    prisma.story.findMany({
+      where: { expiresAt: { gt: new Date() }, authorId: { not: viewerId } },
+      orderBy: { createdAt: 'asc' },
+      include: storyInclude,
+      take: 500,
+    }),
+    prisma.follow.findMany({ where: { followerId: viewerId }, select: { followingId: true } }),
+  ]);
+  const following = new Set(follows.map((f) => f.followingId));
+  const groups = new Map<string, {
+    username: string; name: string; avatar: string | null; verified: boolean; following: boolean; latestAt: number;
+    stories: ReturnType<typeof toStoryDTO>[];
+  }>();
+  for (const s of rows) {
+    let g = groups.get(s.authorId);
+    if (!g) {
+      g = {
+        username: s.author.username, name: s.author.name, avatar: s.author.avatarUrl, verified: s.author.verified,
+        following: following.has(s.authorId), latestAt: 0, stories: [],
+      };
+      groups.set(s.authorId, g);
+    }
+    g.stories.push(toStoryDTO(s, viewerId));
+    g.latestAt = Math.max(g.latestAt, s.createdAt.getTime());
+  }
+  return [...groups.values()]
+    .sort((a, b) => Number(b.following) - Number(a.following) || b.latestAt - a.latestAt)
+    .slice(0, 60);
+}
+
 export async function listUserStories(viewerId: string, username: string) {
   const u = await prisma.user.findUnique({ where: { username: username.toLowerCase() }, select: { id: true } });
   if (!u) throw new HttpError(404, 'user_not_found');

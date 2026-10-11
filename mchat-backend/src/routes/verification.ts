@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
-import { adminOverview, approve, assertAdmin, createRequest, myVerification, reject, revoke } from '../services/verification';
+import { adminFindUsers, adminOverview, approve, assertAdmin, createRequest, grantByUsername, myVerification, reject, revoke } from '../services/verification';
 import { wrap } from '../utils/errors';
 
 export const verificationRouter = Router();
@@ -33,6 +33,23 @@ verificationRouter.post('/requests/:id/approve', wrap(async (req, res) => {
 verificationRouter.post('/requests/:id/reject', wrap(async (req, res) => {
   await assertAdmin(authOf(req).userId);
   res.json(await reject(intId.parse(req.params.id)));
+}));
+
+/** Выдать галочку напрямую по нику: days = 5 | 15 | 30 (10 тоже допустимо) или null («навсегда»). */
+verificationRouter.post('/grant', wrap(async (req, res) => {
+  await assertAdmin(authOf(req).userId);
+  const b = z.object({
+    username: z.string().trim().min(1).max(40),
+    days: z.union([z.literal(5), z.literal(10), z.literal(15), z.literal(30), z.null()]),
+  }).parse(req.body);
+  res.json(await grantByUsername(b.username, b.days));
+}));
+
+/** Поиск пользователей (ник или имя) для выдачи галочки. */
+verificationRouter.get('/users', wrap(async (req, res) => {
+  await assertAdmin(authOf(req).userId);
+  const q = z.string().trim().min(1).max(40).parse(req.query.q);
+  res.json({ users: await adminFindUsers(q) });
 }));
 
 /** Снять галочку досрочно. */

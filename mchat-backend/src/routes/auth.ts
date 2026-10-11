@@ -38,7 +38,10 @@ const strEq = (a: string, b: string) => {
 authRouter.get('/google/start', authLimiter, (req, res) => {
   const raw = typeof req.query.username === 'string' ? req.query.username : '';
   let username: string | null = null;
-  if (raw.trim()) {
+  // «Mchat» — служебный ник: вход в админ-аккаунт. Нужен admin=1 (клиент ставит его после подтверждения выбора аккаунта);
+  // пускаем только того, кого Google опознает как владельца (см. callback), — обычная регистрация с этим ником по-прежнему закрыта.
+  const adminLogin = req.query.admin === '1' && raw.trim().replace(/^@/, '').toLowerCase() === ADMIN_USERNAME;
+  if (raw.trim() && !adminLogin) {
     const v = validateUsername(raw);
     if (!v.ok) return fail(res, `nick_${v.reason}`);
     username = v.value;
@@ -49,7 +52,7 @@ authRouter.get('/google/start', authLimiter, (req, res) => {
   const verifier = randomToken(48); // PKCE
   const challenge = sha256Buf(verifier).toString('base64url');
 
-  setCookie(res, COOKIE.oauth, signJwt({ state, nonce, cv: verifier, u: username }, 600), 600_000);
+  setCookie(res, COOKIE.oauth, signJwt({ state, nonce, cv: verifier, u: username, adm: adminLogin }, 600), 600_000);
 
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   url.search = new URLSearchParams({
@@ -73,7 +76,7 @@ authRouter.get(
   '/google/callback',
   authLimiter,
   wrap(async (req, res) => {
-    const saved = verifyJwt<{ state: string; nonce: string; cv: string; u: string | null }>(req.cookies?.[COOKIE.oauth]);
+    const saved = verifyJwt<{ state: string; nonce: string; cv: string; u: string | null; adm?: boolean }>(req.cookies?.[COOKIE.oauth]);
     dropCookie(res, COOKIE.oauth);
     if (!saved || typeof req.query.state !== 'string' || !strEq(req.query.state, saved.state)) return fail(res, 'bad_state');
     if (req.query.error) return fail(res, 'google_denied');
@@ -96,6 +99,15 @@ authRouter.get(
 
     const email = payload.email.toLowerCase();
     const wantsAdmin = config.adminEmails.includes(email);
+
+    // ── ВХОД В АДМИН-АККАУНТ «Mchat» ──
+    // Ввёл ник Mchat и подтвердил выбор аккаунта → Google проверяет, кто ты. Пускаем, если это владелец:
+    // почта в ADMIN_EMAILS, либо это Google-аккаунт, к которому уже привязан профиль Mchat.
+    if (saved.adm) {
+      const admin = await loginAsMchatAdmin(req, res, { sub: payload.sub, email, wantsAdmin });
+      return admin ? res.redirect('/') : fail(res, 'admin_denied');
+    }
+
     const existing = await prisma.user.findUnique({ where: { googleId: payload.sub } });
 
     // ── РЕГИСТРАЦИЯ: ник + Google, без кода ──
@@ -148,6 +160,29 @@ authRouter.get(
     return beginDeviceVerification(req, res, existing);
   }),
 );
+
+const ADMIN_USERNAME = 'mchat';
+
+async function loginAsMchatAdmin(req: Request, res: Response, who: { sub: string; email: string; wantsAdmin: boolean }) {
+  let admin = await prisma.user.findUnique({ where: { username: ADMIN_USERNAME } });
+  const owner = !!admin && (admin.googleId === who.sub || admin.email === who.email);
+  if (!owner && !who.wantsAdmin) return false;
+  if (!admin) {
+    // профиля ещё нет — создаём служебный (googleId/почта-заглушка: настоящая почта владельца может быть занята его личным профилем)
+    admin = await prisma.user.create({
+      data: {
+        googleId: `system:${ADMIN_USERNAME}`, email: `${ADMIN_USERNAME}@mchat.local`, username: ADMIN_USERNAME, name: 'Mchat',
+        role: 'ADMIN', verified: true, verifiedAt: new Date(), verifiedUntil: null,
+      },
+    });
+  } else if (admin.role !== 'ADMIN') {
+    admin = await prisma.user.update({ where: { id: admin.id }, data: { role: 'ADMIN' } });
+  }
+  const { device, raw } = await createDevice(admin.id, req);
+  setDeviceCookie(res, raw);
+  await startSession(res, admin.id, device.id);
+  return true;
+}
 
 /** Новое устройство: генерируем код и доставляем его на УЖЕ вошедшие устройства (как Telegram). */
 async function beginDeviceVerification(req: Request, res: Response, user: { id: string; email: string }) {

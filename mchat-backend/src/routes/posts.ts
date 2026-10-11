@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
   addComment, addRepost, addStoryComment, createPost, createStory, deletePost, deleteStory, getPost, listFeed, listReposts,
-  listUserPosts, listUserStories, searchPosts, setLike, setStoryLike,
+  listStoriesFeed, listUserPosts, listUserStories, searchPosts, setLike, setStoryLike,
 } from '../services/posts';
 import { wrap } from '../utils/errors';
 
@@ -67,6 +67,11 @@ postsRouter.post('/:id/repost', wrap(async (req, res) => {
 // ───────── истории ─────────
 export const storiesRouter = Router();
 storiesRouter.use(requireAuth);
+
+/** Истории других пользователей для полоски в шапке ленты. */
+storiesRouter.get('/feed', wrap(async (req, res) => {
+  res.json({ groups: await listStoriesFeed(authOf(req).userId) });
+}));
 
 storiesRouter.get('/', wrap(async (req, res) => {
   const username = z.string().min(1).max(40).parse(req.query.username);

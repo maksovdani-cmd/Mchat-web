@@ -100,6 +100,9 @@
     bad_state: 'Ошибка безопасности входа. Попробуй ещё раз',
     too_many_codes: 'Слишком много попыток. Подожди 15 минут',
     account_conflict: 'Этот Google-аккаунт уже связан с другим профилем',
+    admin_denied: 'Этот Google-аккаунт не имеет доступа к аккаунту Mchat',
+    too_many_pinned_chats: 'Можно закрепить не больше 10 чатов',
+    support_unavailable: 'Техподдержка сейчас недоступна, попробуй позже',
   };
   const errorText = (e) => {
     const code = typeof e === 'string' ? e : e && e.code;
@@ -203,6 +206,7 @@
     const qs = new URLSearchParams({ kind: kind });
     if (opts.duration) qs.set('duration', String(Math.round(opts.duration)));
     if (opts.name) qs.set('name', opts.name);
+    if (opts.hd) qs.set('hd', '1');
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/media?' + qs.toString());
@@ -280,6 +284,7 @@
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', (e) => {
       if (e.data && e.data.type === 'open-chat' && handlers.onOpenChat) handlers.onOpenChat(e.data.chatId);
+      if (e.data && e.data.type === 'answer-call' && window.mxAcceptCallFromPush) window.mxAcceptCallFromPush(e.data);
     });
     registerSW();
   }
@@ -291,7 +296,7 @@
     newClientId: newClientId,
 
     // auth
-    startGoogle: (username) => { window.location.href = '/api/auth/google/start?username=' + encodeURIComponent(username || ''); },
+    startGoogle: (username, admin) => { window.location.href = '/api/auth/google/start?username=' + encodeURIComponent(username || '') + (admin ? '&admin=1' : ''); },
     pending: () => api('/auth/pending'),
     verifyCode: (code) => api('/auth/verify-code', { method: 'POST', body: { code: code } }),
     sendEmailCode: () => api('/auth/send-email-code', { method: 'POST', body: {} }),
@@ -327,6 +332,11 @@
     inviteToCall: (id, userIds) => api('/calls/' + encodeURIComponent(id) + '/invite', { method: 'POST', body: { userIds: userIds } }),
     chatContacts: () => api('/chats/contacts'),
     searchChannels: (q) => api('/chats/search?q=' + encodeURIComponent(q)),
+    pinChat: (id, pinned) => api('/chats/' + encodeURIComponent(id) + '/pin-chat', { method: 'PUT', body: { pinned: !!pinned } }),
+    storiesFeed: () => api('/stories/feed'),
+    sendSupport: (text) => api('/support', { method: 'POST', body: { text: text, clientId: newClientId() } }),
+    adminGrantVerification: (username, days) => api('/verification/grant', { method: 'POST', body: { username: username, days: days } }),
+    adminFindUsers: (q) => api('/verification/users?q=' + encodeURIComponent(q)),
     joinChannel: (id) => api('/chats/' + encodeURIComponent(id) + '/join', { method: 'POST', body: {} }),
     muteChat: (id, muted) => api('/chats/' + encodeURIComponent(id) + '/mute', { method: 'PUT', body: { muted: !!muted } }),
     createGroup: (b) => api('/chats/group', { method: 'POST', body: b }),

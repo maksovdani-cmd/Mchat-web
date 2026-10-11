@@ -52,6 +52,43 @@ export async function adminOverview() {
   };
 }
 
+/**
+ * Выдать галочку напрямую (без запроса): days = 5/15/30 (или 10) либо null — «навсегда».
+ * Если у человека уже есть галочка — срок заменяется новым, отсчёт идёт от сегодняшнего дня.
+ */
+export async function grantByUsername(rawUsername: string, days: number | null) {
+  if (days !== null && !(ALLOWED_DAYS as readonly number[]).includes(days)) throw new HttpError(400, 'bad_days');
+  const username = rawUsername.trim().replace(/^@/, '').toLowerCase();
+  const u = await prisma.user.findUnique({ where: { username }, select: { id: true } });
+  if (!u) throw new HttpError(404, 'user_not_found');
+  const now = new Date();
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: u.id },
+      data: { verified: true, verifiedAt: now, verifiedUntil: days === null ? null : new Date(now.getTime() + days * DAY_MS) },
+    }),
+    // открытые запросы этого человека считаем решёнными
+    prisma.verifyRequest.updateMany({ where: { userId: u.id, status: 'PENDING' }, data: { status: 'APPROVED', decidedAt: now, days } }),
+  ]);
+  return { ok: true };
+}
+
+/** Поиск людей для выдачи галочки в панели админа. */
+export async function adminFindUsers(q: string) {
+  const s = q.trim().replace(/^@/, '');
+  if (!s) return [];
+  const rows = await prisma.user.findMany({
+    where: { OR: [{ username: { contains: s, mode: 'insensitive' } }, { name: { contains: s, mode: 'insensitive' } }] },
+    orderBy: { createdAt: 'desc' },
+    take: 15,
+    select: userSel,
+  });
+  return rows.map((u) => ({
+    id: u.id, username: u.username, name: u.name, avatar: u.avatarUrl,
+    verified: u.verified, verifiedAt: u.verifiedAt?.toISOString() ?? null, verifiedUntil: u.verifiedUntil?.toISOString() ?? null,
+  }));
+}
+
 /** Одобрить: days = 5/10/15/30 или null («навсегда»). Дата выдачи фиксируется, срок считается от неё. */
 export async function approve(requestId: number, days: number | null) {
   if (days !== null && !(ALLOWED_DAYS as readonly number[]).includes(days)) throw new HttpError(400, 'bad_days');

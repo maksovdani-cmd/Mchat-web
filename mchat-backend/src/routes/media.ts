@@ -30,6 +30,7 @@ mediaRouter.post('/', uploadLimiter, wrap(async (req, res) => {
     kind: z.enum(['voice', 'videonote', 'image', 'track', 'video', 'file']),
     duration: z.coerce.number().min(0).max(3600).optional(),
     name: z.string().max(200).optional(),
+    hd: z.enum(['0', '1']).optional(),
   }).parse(req.query);
   const kind = KIND[q.kind];
   const rule = MEDIA_RULES[kind];
@@ -59,6 +60,7 @@ mediaRouter.post('/', uploadLimiter, wrap(async (req, res) => {
       ownerId: userId, kind, mime, size, file,
       title: kind === 'TRACK' ? cleanTitle(q.name ?? '') || 'Без названия' : kind === 'FILE' ? cleanFileName(q.name ?? '') : null,
       durationSec: q.duration ? Math.round(q.duration) : null,
+      hd: q.hd === '1' && (kind === 'IMAGE' || kind === 'VIDEO' || kind === 'VIDEO_NOTE'),
     },
   });
   res.json({ media: toMediaDTO(media) });

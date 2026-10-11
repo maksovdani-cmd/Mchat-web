@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
   addComment, addMembers, createGroupOrChannel, listComments, listShared, getChatDTO, getOrCreateDirectChat, joinByInvite, joinPublicChannel, listChats, listContacts,
-  listMembers, listMessages, removeMember, searchPublicChannels, setChatBackground, setChatMuted, setMemberRole, updateChatInfo,
+  listMembers, listMessages, removeMember, searchPublicChannels, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
 } from '../services/chat';
 import { emitToChat, emitToUser, leaveUserFromChat } from '../realtime/hub';
 import { joinAllToChat, pinAndDispatch, readAndBroadcast, sendAndDispatch } from '../services/messaging';
@@ -25,7 +25,7 @@ chatsRouter.get('/contacts', wrap(async (req, res) => {
 
 /** Глобальный поиск публичных каналов. */
 chatsRouter.get('/search', wrap(async (req, res) => {
-  const q = z.string().trim().min(2).max(60).parse(req.query.q);
+  const q = z.string().trim().min(1).max(60).parse(req.query.q);
   res.json({ channels: await searchPublicChannels(authOf(req).userId, q) });
 }));
 
@@ -45,6 +45,14 @@ chatsRouter.put('/:id/mute', wrap(async (req, res) => {
   const { muted } = z.object({ muted: z.boolean() }).parse(req.body);
   await setChatMuted(userId, String(req.params.id), muted);
   res.json({ muted });
+}));
+
+/** Закрепить чат в списке «Чаты» / открепить (только для меня). */
+chatsRouter.put('/:id/pin-chat', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const { pinned } = z.object({ pinned: z.boolean() }).parse(req.body);
+  await setChatPinned(userId, String(req.params.id), pinned);
+  res.json({ pinned, chat: await getChatDTO(userId, String(req.params.id)) });
 }));
 
 /** «Написать» на профиле: найти или создать личный диалог. */

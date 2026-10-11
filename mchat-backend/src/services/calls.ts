@@ -106,8 +106,8 @@ async function ring(call: Call, uids: string[]) {
       callId: call.id, chatId: call.chatId, video: call.video, isGroup: call.isGroup, title: call.title, from: userBrief(caller),
     });
     sendPushToUser(uid, {
-      title: 'Входящий звонок', body: `${caller.name || caller.username}${call.video ? ' · видео' : ''}`,
-      tag: 'call-' + call.id, data: { chatId: call.chatId, callId: call.id },
+      title: call.video ? 'Входящий видеозвонок' : 'Входящий звонок', body: `${call.isGroup && call.title ? call.title + ' · ' : ''}${caller.name || caller.username}`,
+      tag: 'call-' + call.id, data: { kind: 'call', chatId: call.chatId, callId: call.id, video: call.video }, ttl: 45,
     }).catch(() => {});
   }
   if (call.timer) clearTimeout(call.timer);

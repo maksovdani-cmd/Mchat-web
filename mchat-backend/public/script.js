@@ -1195,19 +1195,24 @@ function renderStories() {
 }
 
 let svCurrentIdx = 0;
+// Просмотр историй: свои (svList = null) или чужие (svList — истории одного автора из ленты, svAuthor — он сам)
+let svList = null, svAuthor = null;
+function svStories() { return svList || myStories; }
+function svWho() { return svList && svAuthor ? svAuthor : currentUser; }
 function _stopStoryInterval() {
   const viewer = document.getElementById('story-viewer');
   if (viewer && viewer._iv) { clearInterval(viewer._iv); viewer._iv = null; }
 }
 
 function viewStoryAt(idx) {
+  svList = null; svAuthor = null;
   svCurrentIdx = idx;
   _openStoryViewer();
 }
 
 function _openStoryViewer() {
   _stopStoryInterval();
-  const story = myStories[svCurrentIdx];
+  const story = svStories()[svCurrentIdx];
   if (!story) return;
   if (!story.likes) story.likes = 0;
   if (!story.liked) story.liked = false;
@@ -1267,16 +1272,19 @@ function _openStoryViewer() {
   });
 
   const hoursLeft = Math.max(0, Math.ceil((24*60*60*1000 - (Date.now() - story.publishedAt)) / (60*60*1000)));
-  document.getElementById('sv-username').textContent = currentUser.username;
+  const who = svWho();
+  document.getElementById('sv-username').textContent = who.username;
   document.getElementById('sv-time').textContent = `${hoursLeft}ч осталось`;
   const av = document.getElementById('sv-avatar');
-  av.innerHTML = currentUser.avatar ? `<img src="${currentUser.avatar}" style="width:100%;height:100%;object-fit:cover">` : `<span style="color:#fff;font-weight:700">${currentUser.username.charAt(0).toUpperCase()}</span>`;
+  av.innerHTML = who.avatar ? `<img src="${esc(who.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">` : `<span style="color:#fff;font-weight:700">${esc(who.username.charAt(0).toUpperCase())}</span>`;
+  const delBtn = document.getElementById('sv-delete-btn');
+  if (delBtn) delBtn.style.display = svList ? 'none' : '';
 
   svRenderLike();
   svRenderComments();
 
   const barsEl = document.getElementById('sv-bars');
-  barsEl.innerHTML = myStories.map((s, i) => `<div class="sv-bar"><div class="sv-bar-fill" id="sv-fill-${i}" style="width:${i < svCurrentIdx ? '100%' : '0%'}"></div></div>`).join('');
+  barsEl.innerHTML = svStories().map((s, i) => `<div class="sv-bar"><div class="sv-bar-fill" id="sv-fill-${i}" style="width:${i < svCurrentIdx ? '100%' : '0%'}"></div></div>`).join('');
 
   document.getElementById('story-viewer').classList.add('active');
 
@@ -1292,7 +1300,7 @@ function _openStoryViewer() {
     if (fill) fill.style.width = pct + '%';
     if (pct >= 100) {
       clearInterval(iv);
-      if (svCurrentIdx + 1 < myStories.length) { svCurrentIdx++; setTimeout(_openStoryViewer, 150); }
+      if (svCurrentIdx + 1 < svStories().length) { svCurrentIdx++; setTimeout(_openStoryViewer, 150); }
       else { setTimeout(closeStoryViewer, 300); }
     }
   }, 100);
@@ -1301,7 +1309,7 @@ function _openStoryViewer() {
 }
 
 function svTapLeft() { if (svCurrentIdx > 0) { svCurrentIdx--; _openStoryViewer(); } }
-function svTapRight() { if (svCurrentIdx + 1 < myStories.length) { svCurrentIdx++; _openStoryViewer(); } else { closeStoryViewer(); } }
+function svTapRight() { if (svCurrentIdx + 1 < svStories().length) { svCurrentIdx++; _openStoryViewer(); } else { closeStoryViewer(); } }
 
 let svLongPressActive = false;
 let svLongPressTimer = null;
@@ -1355,7 +1363,7 @@ function setupStoryLongPress() {
 }
 
 function svRenderLike() {
-  const story = myStories[svCurrentIdx];
+  const story = svStories()[svCurrentIdx];
   if (!story) return;
   const ico = document.getElementById('sv-like-ico');
   ico.setAttribute('fill', story.liked ? '#f43f5e' : 'none');
@@ -1364,7 +1372,7 @@ function svRenderLike() {
 }
 
 function svToggleLike() {
-  const story = myStories[svCurrentIdx];
+  const story = svStories()[svCurrentIdx];
   if (!story) return;
   story.liked = !story.liked;
   story.likes = (story.likes || 0) + (story.liked ? 1 : -1);
@@ -1378,7 +1386,7 @@ function svToggleLike() {
 }
 
 function svRenderComments() {
-  const story = myStories[svCurrentIdx];
+  const story = svStories()[svCurrentIdx];
   const el = document.getElementById('sv-comments-list');
   if (!story || !story.comments || story.comments.length === 0) { el.innerHTML = ''; return; }
   const last = story.comments.slice(-3);
@@ -1388,7 +1396,7 @@ function svRenderComments() {
 async function svSendComment() {
   const input = document.getElementById('sv-comment-input');
   const text = input.value.trim();
-  const story = myStories[svCurrentIdx];
+  const story = svStories()[svCurrentIdx];
   if (!text || !story) return;
   try {
     const r = await MchatAPI.commentStory(story.id, text);
@@ -1478,6 +1486,9 @@ async function deleteAccount() {
 }
 
 function closeStoryViewer() {
+  const closedOthers = !!svList;
+  svList = null; svAuthor = null;
+  if (closedOthers && window.mxStoriesViewed) window.mxStoriesViewed();
   const v = document.getElementById('story-viewer');
   if (v._iv) clearInterval(v._iv);
   v.classList.remove('active');
@@ -1529,7 +1540,7 @@ async function scStartCamera() {
   try {
     if (scCameraStream) scCameraStream.getTracks().forEach(t=>t.stop());
     scCameraStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: scCameraFacing, width:{ideal:1280}, height:{ideal:720} },
+      video: mxHdPref() ? { facingMode: scCameraFacing, width:{ideal:1920}, height:{ideal:1080} } : { facingMode: scCameraFacing, width:{ideal:640}, height:{ideal:480} },
       audio: true
     });
     const cam = document.getElementById('sc-camera');
@@ -1607,7 +1618,7 @@ function scStartRecord(e) {
   }
 
   try {
-    scMediaRecorder = new MediaRecorder(recordStream, {mimeType:'video/webm;codecs=vp8,opus'});
+    scMediaRecorder = new MediaRecorder(recordStream, Object.assign({mimeType:'video/webm;codecs=vp8,opus'}, mxRecorderBitrates(mxHdPref())));
   } catch(e) {
     scMediaRecorder = new MediaRecorder(recordStream);
   }
@@ -1983,8 +1994,11 @@ async function publishStory() {
   try {
     let mediaId;
     if (scMediaUrl) {
-      const blob = await mxUrlToBlob(scMediaUrl);
-      mediaId = (await MchatAPI.uploadMedia(scMediaType === 'video' ? 'video' : 'image', blob, {})).id;
+      let blob = await mxUrlToBlob(scMediaUrl);
+      const hd = mxHdPref();
+      if (scMediaType === 'video') blob = await mxCompressVideoBlob(blob, hd);
+      else blob = await mxCompressImage(new File([blob], 'story.jpg', { type: blob.type || 'image/jpeg' }), hd);
+      mediaId = (await MchatAPI.uploadMedia(scMediaType === 'video' ? 'video' : 'image', blob, { hd: hd })).id;
     }
     const r = await MchatAPI.createStory({ mediaId: mediaId, bg: scBgs[scBgIdx], textBlocks: allTextBlocks });
     myStories.push(storyFromServer(r.story));
@@ -2938,6 +2952,7 @@ const AVATAR_SVG_OPEN = '<svg width="22" height="22" fill="none" stroke="var(--t
 // серверный формат → формат, который ждёт твой UI
 function chatFromServer(c) {
   return {
+    pinnedChat: !!c.pinnedChat, pinnedChatAt: c.pinnedChatAt || null,
     id: c.id, type: c.type, name: c.name, description: c.description, avatar: c.avatar, peer: c.peer,
     unread: c.unread || 0, role: c.role, canPost: c.canPost !== false, canModerate: !!c.canModerate, muted: !!c.muted, isPublic: !!c.isPublic,
     memberCount: c.memberCount || 0, inviteCode: c.inviteCode || null, pinned: c.pinned || null, background: c.background || null,
@@ -2980,7 +2995,7 @@ function mxGlobalBox() {
 }
 function mxSearchGlobalChannels(q) {
   clearTimeout(mxGlobalTimer);
-  if (!q || q.trim().length < 2) { mxGlobalResults = []; mxRefreshGlobalChannels(); return; }
+  if (!q || q.trim().replace(/^[@#]+/, '').length < 1) { mxGlobalResults = []; mxRefreshGlobalChannels(); return; }
   mxGlobalTimer = setTimeout(async () => {
     const seq = ++mxGlobalSeq;
     try {
@@ -3091,18 +3106,20 @@ async function openChat(id) {
   document.getElementById('chat-open-av').innerHTML = ch.avatar
     ? `<img src="${esc(ch.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">`
     : (ch.type && ch.type !== 'DIRECT' ? `<div class="mx-letter-av${ch.type === 'CHANNEL' ? ' channel' : ''}">${esc((ch.name||'#').charAt(0).toUpperCase())}</div>` : AVATAR_SVG_OPEN);
-  updateChatStatus(ch);
-  mxApplyChatBackground();
-  renderPinnedBar(ch.pinned || null);
+  // каждый шаг защищён: сбой в одном (например, в закреплённом сообщении) не должен мешать открыть чат
+  try { updateChatStatus(ch); } catch (e) { console.warn('status', e); }
+  try { mxApplyChatBackground(); } catch (e) { console.warn('background', e); }
+  try { renderPinnedBar(ch.pinned || null); } catch (e) { console.warn('pinned', e); }
   const inputRow = document.getElementById('mx-input-row');
   const readonlyRow = document.getElementById('mx-readonly');
   const canPost = ch.canPost !== false;
   if (inputRow) inputRow.style.display = canPost ? 'flex' : 'none';
   if (readonlyRow) readonlyRow.style.display = canPost ? 'none' : 'flex';
-  renderMessages(id);
+  try { renderMessages(id); } catch (e) { console.warn('render', e); }
   goTo('s-chat-open');
-  await loadChatHistory(id);
+  try { await loadChatHistory(id); } catch (e) { console.warn('history', e); }
   markCurrentChatRead();
+  if (window.mxAfterOpenChat) window.mxAfterOpenChat(ch);
 }
 
 async function openChatById(id) {
@@ -3537,8 +3554,8 @@ function confirmVideoCover() {
   document.getElementById('pc-video-cover-selector').style.display = 'none';
 }
 
-const VERIFY_DAYS = [[5, '5 дней'], [10, '10 дней'], [15, '15 дней'], [30, '30 дней'], [null, 'Навсегда']];
-function fmtDate(iso) { return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+const VERIFY_DAYS = [[5, '5 дней'], [15, '15 дней'], [30, '30 дней'], [null, 'Навсегда']];
+function fmtDate(iso) { return new Date(iso).toLocaleDateString(currentLanguage === 'en' ? 'en-GB' : 'ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
 
 async function openAdminPanel() {
   document.querySelectorAll('.modal.mx-admin').forEach(x => x.remove());
@@ -3565,6 +3582,10 @@ async function openAdminPanel() {
     <h3 style="margin-bottom:16px">👑 Админ панель верификации</h3>
     <div style="max-height:440px;overflow-y:auto">`;
 
+  // Выдать/забрать галочку напрямую: найти человека по нику или имени и выбрать срок
+  html += `<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Выдать галочку по нику</div>
+    <input id="adm-find" placeholder="@username" autocomplete="off" oninput="adminFindUsers(this.value)" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:none;background:var(--surf);color:var(--text);font-family:var(--font);font-size:14px;margin-bottom:8px">
+    <div id="adm-find-res" style="margin-bottom:10px"></div>`;
   html += `<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Новые запросы (${pending.length})</div>`;
   if (!pending.length) html += '<div style="text-align:center;padding:14px;color:var(--text2)">Нет новых запросов</div>';
   pending.forEach(r => {
@@ -3603,6 +3624,31 @@ async function openAdminPanel() {
     <button onclick="this.closest('.modal').remove()" style="width:100%;padding:12px;border-radius:14px;border:none;background:var(--surf);color:var(--text);margin-top:12px;cursor:pointer">Закрыть</button>
   </div>`;
   m.innerHTML = html;
+}
+
+let admFindTimer = null;
+function adminFindUsers(q) {
+  clearTimeout(admFindTimer);
+  const box = document.getElementById('adm-find-res');
+  if (!box) return;
+  if (!q.trim()) { box.innerHTML = ''; return; }
+  admFindTimer = setTimeout(async () => {
+    try {
+      const r = await MchatAPI.adminFindUsers(q.trim());
+      if (!document.getElementById('adm-find-res')) return;
+      const b = 'flex:1;min-width:64px;padding:8px 6px;border-radius:8px;border:none;color:#fff;cursor:pointer;font-size:12px;';
+      box.innerHTML = r.users.length ? r.users.map(u => `<div style="background:var(--surf);border-radius:12px;padding:10px;margin-bottom:6px">
+        <div style="font-weight:600;font-size:14px;margin-bottom:6px">${esc(u.name)} (@${esc(u.username)})${u.verified ? ' ✓' : ''}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${VERIFY_DAYS.map(([d, label]) => `<button onclick="adminGrant('${esc(u.username)}',${d === null ? 'null' : d})" style="${b}background:var(--accent)">${label}</button>`).join('')}
+          ${u.verified ? `<button onclick="verifyRevoke('${esc(u.id)}')" style="${b}background:#dc2626">Снять</button>` : ''}
+        </div></div>`).join('') : '<div style="text-align:center;padding:10px;color:var(--text2)">Ничего не найдено</div>';
+    } catch (e) { showToast(MchatAPI.errorText(e)); }
+  }, 250);
+}
+async function adminGrant(username, days) {
+  try { await MchatAPI.adminGrantVerification(username, days); showToast(days === null ? 'Галочка выдана навсегда' : 'Галочка выдана на ' + days + ' дн.'); openAdminPanel(); }
+  catch (e) { showToast(MchatAPI.errorText(e)); }
 }
 
 async function verifyApprove(id, days) {
@@ -4986,7 +5032,7 @@ async function mxPin(id) {
 // ============================================================
 const MX_QUICK_EMOJI = ['\uD83D\uDC4D','\u2764\uFE0F','\uD83D\uDE02','\uD83D\uDE2E','\uD83D\uDE22','\uD83D\uDD25'];
 function mxCloseFloating() {
-  document.querySelectorAll('.mx-react, .mx-ctx, .mx-ctx-scrim').forEach(el => el.remove());
+  document.querySelectorAll('.mx-react, .mx-ctx, .mx-ctx-scrim, .mx-emoji-sheet').forEach(el => el.remove());
 }
 function mxPositionNear(el, panel) {
   const r = el.getBoundingClientRect();
@@ -5462,7 +5508,7 @@ async function mxCameraOpen() {
 async function mxCameraStartStream() {
   if (!mxCam) return;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: mxCam.facing }, audio: mxCam.mode === 'circle' });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: Object.assign({ facingMode: mxCam.facing }, mxHdPref() ? { width: { ideal: 1920 }, height: { ideal: 1080 } } : { width: { ideal: 640 }, height: { ideal: 480 } }), audio: mxCam.mode === 'circle' });
     mxCam.stream = stream;
     const video = document.getElementById('mx-cam-video');
     video.srcObject = stream;
@@ -5518,7 +5564,7 @@ function mxCameraTakePhoto() {
     video.parentNode.appendChild(still);
     document.getElementById('mx-cam-live').style.display = 'none';
     document.getElementById('mx-cam-review').style.display = 'flex';
-  }, 'image/jpeg', 0.9);
+  }, 'image/jpeg', mxHdPref() ? 0.92 : 0.8);
 }
 // Фронтальная камера в превью показана зеркально. Чтобы отправленный кружок выглядел ровно так же, как
 // пользователь видел себя при съёмке (а не «наоборот»), зеркалим кадры при записи через canvas.
@@ -5549,7 +5595,7 @@ function mxCameraStartRecording() {
     try { mxCam.mirror = mxMirroredStream(mxCam.stream, document.getElementById('mx-cam-video')); source = mxCam.mirror.stream; }
     catch (e) { mxCam.mirror = null; source = mxCam.stream; }
   }
-  try { recorder = new MediaRecorder(source, mime ? { mimeType: mime } : undefined); }
+  try { recorder = new MediaRecorder(source, Object.assign(mime ? { mimeType: mime } : {}, mxRecorderBitrates(mxHdPref()))); }
   catch (e) { if (mxCam.mirror) { mxCam.mirror.stop(); mxCam.mirror = null; } showToast('Запись видео не поддерживается'); return; }
   mxCam.recorder = recorder; mxCam.chunks = []; mxCam.recording = true; mxCam.elapsed = 0;
   recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) mxCam.chunks.push(e.data); };
@@ -5599,12 +5645,16 @@ async function mxCameraSend() {
   if (sendBtn) sendBtn.disabled = true;
   try {
     if (mxCam.mode === 'photo' && mxCam.photoBlob) {
-      const camPhoto = await mxCompressImage(new File([mxCam.photoBlob], 'photo.jpg', { type: mxCam.photoBlob.type || 'image/jpeg' }), false);
-      const media = await MchatAPI.uploadMedia('image', camPhoto, {});
+      const hd = mxHdPref();
+      const camPhoto = await mxCompressImage(new File([mxCam.photoBlob], 'photo.jpg', { type: mxCam.photoBlob.type || 'image/jpeg' }), hd);
+      const media = await MchatAPI.uploadMedia('image', camPhoto, { hd: hd });
       const saved = await MchatAPI.sendMessage(chatId, '', MchatAPI.newClientId(), { kind: 'IMAGE', mediaId: media.id });
       onIncomingMessage(saved);
     } else if (mxCam.blob) {
-      const media = await MchatAPI.uploadMedia('videonote', mxCam.blob, { duration: mxCam.elapsed });
+      const hd = mxHdPref();
+      showToast('Сжимаю видео…');
+      const vn = await mxCompressVideoBlob(mxCam.blob, hd, mxCam.elapsed);
+      const media = await MchatAPI.uploadMedia('videonote', vn, { duration: mxCam.elapsed, hd: hd });
       const saved = await MchatAPI.sendMessage(chatId, '', MchatAPI.newClientId(), { kind: 'VIDEO_NOTE', mediaId: media.id, durationSec: mxCam.elapsed });
       onIncomingMessage(saved);
     }
@@ -5737,7 +5787,7 @@ async function mxAttachChosen(evt) {
     if (mxKindOfFile(f) === 'image' && f.type !== 'image/gif') {
       const r = await mxPreviewOpen(f); // полноэкранный предпросмотр: HD, маркер, подпись
       if (r) await mxSendAttachment(chatId, r.file, { caption: r.caption, hd: r.hd });
-    } else await mxSendAttachment(chatId, f);
+    } else await mxSendAttachment(chatId, f, { hd: mxHdPref() });
   }
 }
 
@@ -5808,7 +5858,8 @@ function mxUpdateProgress(id, pct) {
 async function mxSendAttachment(chatId, file, opts) {
   opts = opts || {};
   const caption = (opts.caption || '').trim();
-  if (mxKindOfFile(file) === 'image') file = await mxCompressImage(file, !!opts.hd); // HD → 2560 px, иначе 1280 px
+  if (mxKindOfFile(file) === 'image') file = await mxCompressImage(file, !!opts.hd); // HD → до 2 МБ, иначе до 200 КБ
+  else if (mxKindOfFile(file) === 'video') { showToast('Сжимаю видео…'); file = await mxCompressVideoFile(file, !!opts.hd); }
   const kind = mxKindOfFile(file);
   if (file.size > MX_ATTACH_LIMIT_MB[kind] * 1024 * 1024) { showToast('«' + file.name + '» больше ' + MX_ATTACH_LIMIT_MB[kind] + ' МБ'); return; }
   const clientId = MchatAPI.newClientId();
@@ -5818,7 +5869,7 @@ async function mxSendAttachment(chatId, file, opts) {
   (messages[chatId] = messages[chatId] || []).push(local);
   if (currentChatId === chatId) renderMessages(chatId);
   try {
-    const media = await MchatAPI.uploadMedia(kind, file, { name: file.name, onProgress: (p) => { local.progress = p; mxUpdateProgress(clientId, p); } });
+    const media = await MchatAPI.uploadMedia(kind, file, { name: file.name, hd: !!opts.hd && (kind === 'image' || kind === 'video'), onProgress: (p) => { local.progress = p; mxUpdateProgress(clientId, p); } });
     const saved = await MchatAPI.sendMessage(chatId, caption, clientId, { kind: MX_ATTACH_KIND[kind], mediaId: media.id });
     onIncomingMessage(saved); // склеится с заглушкой по clientId
   } catch (e) {

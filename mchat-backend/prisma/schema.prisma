@@ -183,6 +183,8 @@ model ChatMember {
   background String?
   /// уведомления этого чата выключены (переключатель «Вкл/Выкл» у канала)
   muted      Boolean  @default(false)
+  /// чат закреплён вверху списка (только для этого участника); время закрепления — для порядка
+  pinnedAt   DateTime?
 
   @@id([chatId, userId])
   @@index([userId])
@@ -231,6 +233,8 @@ model Media {
   durationSec Int?
   /// имя файла на диске внутри UPLOAD_DIR (не путь!)
   file        String
+  /// отправлено в режиме HD (фото/видео в высоком качестве) — в чате показывается значок HD
+  hd          Boolean   @default(false)
   createdAt   DateTime  @default(now())
 
   messages    Message[]

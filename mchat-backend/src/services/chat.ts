@@ -26,7 +26,7 @@ export const messageInclude = {
   sender: { select: { id: true, name: true, username: true } },
   replyTo: { select: { id: true, text: true, kind: true, deletedAt: true, sender: { select: { id: true, name: true } } } },
   reactions: { select: { emoji: true, userId: true } },
-  media: { select: { title: true, size: true } },
+  media: { select: { title: true, size: true, hd: true } },
 } satisfies Prisma.MessageInclude;
 export type FullMessage = Prisma.MessageGetPayload<{ include: typeof messageInclude }>;
 
@@ -49,6 +49,8 @@ export interface MessageDTO {
   createdAt: string;
   editedAt: string | null;
   reactions: ReactionDTO[];
+  /** фото/видео отправлено в HD */
+  hd: boolean;
 }
 
 export const previewOf = (kind: MessageKind, text: string) =>
@@ -85,6 +87,7 @@ export const toMessageDTO = (m: FullMessage): MessageDTO => ({
   createdAt: m.createdAt.toISOString(),
   editedAt: m.editedAt?.toISOString() ?? null,
   reactions: groupReactions(m.reactions),
+  hd: !!m.media?.hd,
 });
 
 // ───────────────────────── права ─────────────────────────
@@ -240,6 +243,8 @@ export async function getChatDTO(userId: string, chatId: string) {
     memberCount: chat._count.members,
     isPublic: chat.isPublic,
     muted: m.muted,
+    pinnedChat: !!m.pinnedAt,
+    pinnedChatAt: m.pinnedAt ? m.pinnedAt.toISOString() : null,
     background: backgroundOf(m.background),
     inviteCode: !isDirect && m.role !== 'MEMBER' ? chat.inviteCode : null,
     peer: peer && {
@@ -554,14 +559,27 @@ export async function listContacts(userId: string) {
 }
 
 /** Глобальный поиск публичных каналов (по названию и описанию). */
-export async function searchPublicChannels(userId: string, q: string) {
+/**
+ * Глобальный поиск каналов («Чаты» → «Поиск»). Находит:
+ *  • публичные каналы по названию и описанию (без учёта регистра, «@» и «#» в начале запроса игнорируются);
+ *  • каналы, где я уже состою, — даже если они закрытые.
+ * Слова запроса ищутся независимо друг от друга, поэтому «новости мира» найдёт «Мир: новости».
+ */
+export async function searchPublicChannels(userId: string, rawQuery: string) {
+  const q = rawQuery.replace(/^[@#\s]+/, '').trim();
+  if (!q) return [];
+  const words = [...new Set(q.split(/\s+/).filter(Boolean))].slice(0, 5);
+  const textMatch = (w: string) => ({ OR: [{ title: { contains: w, mode: 'insensitive' as const } }, { description: { contains: w, mode: 'insensitive' as const } }] });
   const rows = await prisma.chat.findMany({
     where: {
-      type: 'CHANNEL', isPublic: true,
-      OR: [{ title: { contains: q, mode: 'insensitive' } }, { description: { contains: q, mode: 'insensitive' } }],
+      type: 'CHANNEL',
+      AND: [
+        { OR: [{ isPublic: true }, { members: { some: { userId } } }] },
+        { OR: [{ AND: words.map(textMatch) }, textMatch(q)] },
+      ],
     },
-    orderBy: { members: { _count: 'desc' } },
-    take: 20,
+    orderBy: [{ members: { _count: 'desc' } }, { lastMessageAt: 'desc' }],
+    take: 30,
     include: { _count: { select: { members: true } }, members: { where: { userId }, select: { muted: true } } },
   });
   return rows.map((c) => ({
@@ -570,6 +588,7 @@ export async function searchPublicChannels(userId: string, q: string) {
     memberCount: c._count.members,
     joined: c.members.length > 0,
     muted: c.members[0]?.muted ?? false,
+    isPublic: c.isPublic,
   }));
 }
 
@@ -579,6 +598,18 @@ export async function joinPublicChannel(userId: string, chatId: string) {
   if (!chat || chat.type !== 'CHANNEL' || !chat.isPublic) throw new HttpError(404, 'chat_not_found');
   if (chat._count.members >= MAX_GROUP_MEMBERS) throw new HttpError(400, 'group_full');
   await prisma.chatMember.createMany({ data: [{ chatId, userId }], skipDuplicates: true });
+}
+
+export const MAX_PINNED_CHATS = 10;
+
+/** Закрепить чат вверху списка (или открепить). Закрепление личное: у собеседников список не меняется. */
+export async function setChatPinned(userId: string, chatId: string, pinned: boolean) {
+  await assertMember(chatId, userId);
+  if (pinned) {
+    const count = await prisma.chatMember.count({ where: { userId, pinnedAt: { not: null }, chatId: { not: chatId } } });
+    if (count >= MAX_PINNED_CHATS) throw new HttpError(400, 'too_many_pinned_chats');
+  }
+  await prisma.chatMember.update({ where: { chatId_userId: { chatId, userId } }, data: { pinnedAt: pinned ? new Date() : null } });
 }
 
 export async function setChatMuted(userId: string, chatId: string, muted: boolean) {

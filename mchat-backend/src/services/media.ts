@@ -42,6 +42,7 @@ export const toMediaDTO = (m: Media) => ({
   size: m.size,
   title: m.title,
   durationSec: m.durationSec,
+  hd: m.hd,
   createdAt: m.createdAt.toISOString(),
 });
 

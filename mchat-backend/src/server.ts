@@ -17,6 +17,7 @@ import { postsRouter, storiesRouter } from './routes/posts';
 import { purgeExpiredStories } from './services/posts';
 import { verificationRouter } from './routes/verification';
 import { callsRouter } from './routes/calls';
+import { supportRouter } from './routes/support';
 import { expireVerifications } from './services/verification';
 import { pushRouter } from './routes/push';
 import { usersRouter } from './routes/users';
@@ -55,14 +56,16 @@ app.use(
         // 'unsafe-inline' нужен, пока в вёрстке есть onclick="..." и <script> внутри HTML.
         // Когда перейдёшь на addEventListener — можно убрать и получить сильную защиту от XSS.
         // cdn.jsdelivr.net — запасной источник клиента ZEGOCLOUD, если локальный файл в /vendor не загрузился
-        scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+        // 'wasm-unsafe-eval' — MediaPipe Face Landmarker (маски в видеозвонках) работает на WebAssembly
+        scriptSrc: ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", 'https://cdn.jsdelivr.net'],
         scriptSrcAttr: ["'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
         mediaSrc: ["'self'", 'data:', 'blob:'],
         // data:/blob: нужны, чтобы превью видео и медиа историй из памяти браузера можно было загрузить на сервер
-        connectSrc: ["'self'", wsOrigin, 'data:', 'blob:', ...zegoConnect],
+        // cdn.jsdelivr.net и storage.googleapis.com — файлы и модель MediaPipe (маски в видеозвонках)
+        connectSrc: ["'self'", wsOrigin, 'data:', 'blob:', 'https://cdn.jsdelivr.net', 'https://storage.googleapis.com', ...zegoConnect],
         workerSrc: ["'self'", 'blob:'],
         frameSrc: ["'self'"],
         manifestSrc: ["'self'"],
@@ -105,6 +108,7 @@ app.use('/api/posts', postsRouter);
 app.use('/api/stories', storiesRouter);
 app.use('/api/verification', verificationRouter);
 app.use('/api/calls', callsRouter);
+app.use('/api/support', supportRouter);
 app.use('/api', usersRouter); // /api/me, /api/users/*, /api/me/devices
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
 
@@ -112,7 +116,7 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
 app.use(
   express.static(path.join(__dirname, '..', 'public'), {
     setHeaders(res, filePath) {
-      if (/(sw\.js|index\.html|manifest\.webmanifest|mchat-api\.js)$/.test(filePath)) {
+      if (/(sw\.js|index\.html|manifest\.webmanifest|mchat-api\.js|mchat-ext\.js|i18n\.js|masks\.js)$/.test(filePath)) {
         res.setHeader('Cache-Control', 'no-cache');
       }
       if (filePath.endsWith('sw.js')) res.setHeader('Service-Worker-Allowed', '/');
