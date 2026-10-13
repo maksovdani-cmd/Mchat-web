@@ -90,7 +90,14 @@ authRouter.get(
       const ticket = await oauth.verifyIdToken({ idToken: tokens.id_token, audience: config.GOOGLE_CLIENT_ID });
       payload = ticket.getPayload();
     } catch (e) {
-      console.error('google auth error:', (e as Error).message);
+      const errMessage = (e as Error).message;
+      console.error('google auth error:', errMessage);
+      
+      // Если код просрочен или уже использован (ошибка invalid_grant)
+      if (errMessage.includes('invalid_grant')) {
+        return fail(res, 'google_expired');
+      }
+      
       return fail(res, 'google_failed');
     }
     if (!payload?.sub || !payload.email || !payload.email_verified || payload.nonce !== saved.nonce) {
