@@ -7,7 +7,7 @@ import { authOf, requireAuth } from '../middleware/auth';
 import {
   canAccessMedia, cleanFileName, cleanTitle, FILE_EXTS, fileExt, MAX_TRACKS_PER_USER, MEDIA_RULES, toMediaDTO,
 } from '../services/media';
-import { ensureUploadDir, removeFile, saveUpload, sendFile } from '../services/storage';
+import { ensureUploadDir, publicUrlFor, removeFile, saveUpload, sendFile, storageMode } from '../services/storage';
 import { HttpError, wrap } from '../utils/errors';
 
 export const mediaRouter = Router();
@@ -58,6 +58,7 @@ mediaRouter.post('/', uploadLimiter, wrap(async (req, res) => {
   const media = await prisma.media.create({
     data: {
       ownerId: userId, kind, mime, size, file,
+      url: publicUrlFor(file), // облако: постоянная публичная ссылка; диск: null (отдаём через /api/media/:id)
       title: kind === 'TRACK' ? cleanTitle(q.name ?? '') || 'Без названия' : kind === 'FILE' ? cleanFileName(q.name ?? '') : null,
       durationSec: q.duration ? Math.round(q.duration) : null,
       hd: q.hd === '1' && (kind === 'IMAGE' || kind === 'VIDEO' || kind === 'VIDEO_NOTE'),
@@ -80,6 +81,13 @@ mediaRouter.get('/:id', wrap(async (req, res) => {
     const name = m.title || 'file';
     headers['Content-Disposition'] = `attachment; filename="${name.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`;
     headers['Content-Security-Policy'] = "sandbox; default-src 'none'";
+  }
+  // Файл лежит в облаке с публичным адресом: после проверки доступа отправляем прямо туда — трафик не идёт через сервер.
+  // Документы (FILE) отдаём только через сервер: им нужны заголовки «attachment» и sandbox.
+  if (storageMode === 's3' && m.url && m.kind !== 'FILE') {
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.redirect(302, m.url);
+    return;
   }
   await sendFile(req, res, m.file, headers);
 }));

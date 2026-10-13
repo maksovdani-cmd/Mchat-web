@@ -16,6 +16,10 @@ import { HttpError } from '../utils/errors';
 const useS3 = !!(config.S3_BUCKET && config.S3_ACCESS_KEY_ID && config.S3_SECRET_ACCESS_KEY);
 export const storageMode = useS3 ? 's3' : 'disk';
 
+/** Постоянный публичный адрес файла в облаке (null — диск или S3_PUBLIC_URL не задан). Именно он хранится в БД (Media.url). */
+export const publicUrlFor = (file: string): string | null =>
+  useS3 && config.s3PublicBase ? `${config.s3PublicBase}/${encodeURIComponent(file)}` : null;
+
 const s3 = useS3
   ? new S3Client({
       region: config.S3_REGION,
@@ -45,7 +49,7 @@ export async function saveUpload(req: Request, file: string, mime: string, maxBy
       req.on('aborted', () => reject(new Error('aborted')));
     });
     if (size === 0) throw new HttpError(400, 'empty_file');
-    await s3!.send(new PutObjectCommand({ Bucket: config.S3_BUCKET, Key: file, Body: Buffer.concat(chunks), ContentType: mime }));
+    await s3!.send(new PutObjectCommand({ Bucket: config.S3_BUCKET, Key: file, Body: Buffer.concat(chunks), ContentType: mime, CacheControl: 'public, max-age=31536000, immutable' }));
     return size;
   }
   const full = diskPath(file);

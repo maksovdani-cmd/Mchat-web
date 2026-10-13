@@ -235,6 +235,8 @@ model Media {
   file        String
   /// отправлено в режиме HD (фото/видео в высоком качестве) — в чате показывается значок HD
   hd          Boolean   @default(false)
+  /// постоянный публичный URL файла в облачном хранилище (S3/Supabase); null — файл на диске
+  url         String?
   createdAt   DateTime  @default(now())
 
   messages    Message[]

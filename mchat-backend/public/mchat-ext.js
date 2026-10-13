@@ -565,6 +565,63 @@
     return _flip.apply(this, arguments);
   };
 
+  /* ─── Панель звонка: «Динамик» и «Показать экран» ─── */
+  let speakerOn = true, sharing = null;
+
+  function applySpeaker() {
+    document.querySelectorAll('#call-grid video').forEach((v) => { v.muted = !speakerOn; });
+    const b = $('call-speaker');
+    if (!b) return;
+    b.classList.toggle('off', !speakerOn);
+    b.querySelector('.on-ico').style.display = speakerOn ? '' : 'none';
+    b.querySelector('.off-ico').style.display = speakerOn ? 'none' : '';
+  }
+  /** Динамик: звук собеседников включён/выключен (звук играет через плитки с видео). */
+  window.mxCallToggleSpeaker = function () { speakerOn = !speakerOn; applySpeaker(); };
+  const _sync = window.mxCallSync;
+  window.mxCallSync = function () { const r = _sync.apply(this, arguments); applySpeaker(); return r; };
+
+  async function stopShare(restoreCamera) {
+    const s = sharing;
+    if (!s) return;
+    sharing = null;
+    s.track.onended = null;
+    try { s.track.stop(); } catch (e) {}
+    const b = $('call-share'); if (b) b.classList.remove('mx-active');
+    const call = typeof mxCall !== 'undefined' ? mxCall : null;
+    if (restoreCamera && call && call.zg && call.localStream) {
+      try {
+        const cam = await navigator.mediaDevices.getUserMedia({ video: { facingMode: call.facing || 'user' } });
+        await call.zg.replaceTrack(call.localStream, cam.getVideoTracks()[0]);
+        const self = $('call-self');
+        if (self) { self.srcObject = null; self.srcObject = call.localStream; self.style.transform = (call.facing || 'user') === 'user' ? 'scaleX(-1)' : 'none'; }
+      } catch (e) { toast('Не удалось вернуть камеру'); }
+    }
+  }
+  /** Показ экрана собеседникам: захват экрана подменяет исходящее видео, по окончании возвращается камера. */
+  window.mxCallToggleShare = async function () {
+    const call = typeof mxCall !== 'undefined' ? mxCall : null;
+    if (sharing) { await stopShare(true); return; }
+    if (!call || !call.zg || !call.localStream) { toast('Сначала дождись соединения'); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { toast('Показ экрана не поддерживается на этом устройстве'); return; }
+    if (!call.camOn) { toast('Сначала включи камеру'); return; }
+    try {
+      const ds = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 15 }, audio: false });
+      const track = ds.getVideoTracks()[0];
+      if (window.MxMasks && MxMasks.active) await MxMasks.select(null);   // маски и показ экрана вместе не работают
+      await call.zg.replaceTrack(call.localStream, track);
+      sharing = { track };
+      track.onended = () => stopShare(true);                                 // нажали «Остановить показ» в браузере
+      const b = $('call-share'); if (b) b.classList.add('mx-active');
+      const self = $('call-self');
+      if (self) { self.srcObject = null; self.srcObject = call.localStream; self.style.transform = 'none'; }
+    } catch (e) {
+      if (!e || e.name !== 'NotAllowedError') toast('Не удалось показать экран');
+    }
+  };
+  const _cleanup2 = window.mxCallCleanup;
+  window.mxCallCleanup = function () { stopShare(false); speakerOn = true; applySpeaker(); return _cleanup2.apply(this, arguments); };
+
   /* ════════════════════════ 10. Настройка «Enter отправляет» ════════════════════════ */
   function mountEnterSetting() {
     const anchor = $('animations-item');

@@ -21,7 +21,7 @@ import { supportRouter } from './routes/support';
 import { expireVerifications } from './services/verification';
 import { pushRouter } from './routes/push';
 import { usersRouter } from './routes/users';
-import { ensureUploadDir } from './services/storage';
+import { ensureUploadDir, storageMode } from './services/storage';
 import { HttpError } from './utils/errors';
 
 const app = express();
@@ -44,6 +44,8 @@ const zegoDomains = [
   'zegocloud.com', 'zego.im',
   ...'abcdefghijklmnopqrstuvwxyz'.split('').map((c) => `cool${c}cloud.com`),
 ];
+// происхождение публичного бакета (если задан S3_PUBLIC_URL) — чтобы браузер мог играть/скачивать файлы прямо из облака
+const cloudOrigin: string[] = (() => { try { return config.s3PublicBase ? [new URL(config.s3PublicBase).origin] : []; } catch { return []; } })();
 const zegoConnect = zegoDomains.flatMap((d) => [`https://*.${d}`, `wss://*.${d}`]);
 app.use(
   helmet({
@@ -62,10 +64,10 @@ app.use(
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-        mediaSrc: ["'self'", 'data:', 'blob:'],
+        mediaSrc: ["'self'", 'data:', 'blob:', ...cloudOrigin],
         // data:/blob: нужны, чтобы превью видео и медиа историй из памяти браузера можно было загрузить на сервер
         // cdn.jsdelivr.net и storage.googleapis.com — файлы и модель MediaPipe (маски в видеозвонках)
-        connectSrc: ["'self'", wsOrigin, 'data:', 'blob:', 'https://cdn.jsdelivr.net', 'https://storage.googleapis.com', ...zegoConnect],
+        connectSrc: ["'self'", wsOrigin, 'data:', 'blob:', 'https://cdn.jsdelivr.net', 'https://storage.googleapis.com', ...cloudOrigin, ...zegoConnect],
         workerSrc: ["'self'", 'blob:'],
         frameSrc: ["'self'"],
         manifestSrc: ["'self'"],
@@ -142,6 +144,9 @@ const onError: ErrorRequestHandler = (err, _req, res, _next) => {
 app.use(onError);
 
 ensureUploadDir();
+if (config.isProd && storageMode === 'disk') {
+  console.warn('[storage] Файлы хранятся на диске сервера и пропадут при следующем деплое. Задай S3_* (см. CHANGES-step4.md), чтобы они жили в облаке.');
+}
 const server = http.createServer(app);
 const io = initSocket(server);
 

@@ -3210,6 +3210,7 @@ function renderMessages(id) {
     if (m.kind === 'VIDEO_NOTE') cls.push('mx-vn');
     if (m.kind === 'IMAGE') cls.push('mx-photo');
     if (m.kind === 'VIDEO') cls.push('mx-media');
+    if (m.kind === 'TEXT') cls.push('mx-tm');   // текст + время в одном потоке (Telegram)
     const senderHtml = (isGroup && !m.outgoing && m.senderName) ? `<div class="mx-sender">${esc(m.senderName)}</div>` : '';
     const fwdHtml = m.forwardedFrom ? `<div class="mx-fwd">Переслано от ${esc(m.forwardedFrom)}</div>` : '';
     const editedHtml = m.editedAt ? '<span class="mx-edited">ред.</span>' : '';

@@ -44,6 +44,8 @@ const schema = z.object({
   S3_REGION: z.string().default('auto'),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
+  /** Публичный адрес бакета (например https://<проект>.supabase.co/storage/v1/object/public/<бакет>). Если задан — файлы отдаются прямо из облака. */
+  S3_PUBLIC_URL: z.string().default(''),
   /** ZEGOCLOUD (звонки): AppID и ServerSecret (32 символа) из console.zegocloud.com → ваш проект. Без них звонки отключены. */
   ZEGO_APP_ID: z.coerce.number().int().positive().optional(),
   ZEGO_SERVER_SECRET: z.string().length(32, 'ZEGO_SERVER_SECRET должен быть ровно 32 символа').optional(),
@@ -74,6 +76,7 @@ export const config = {
   cookieSecure: appUrl.protocol === 'https:',
   adminEmails: env.ADMIN_EMAILS.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
   uploadDir: path.resolve(env.UPLOAD_DIR),
+  s3PublicBase: env.S3_PUBLIC_URL.trim().replace(/\/+$/, ''),
   googleRedirectUri: `${appUrl.origin}/api/auth/google/callback`,
   sessionTtlMs: 30 * 24 * 60 * 60 * 1000, // 30 дней
   deviceTtlMs: 365 * 24 * 60 * 60 * 1000, // 1 год

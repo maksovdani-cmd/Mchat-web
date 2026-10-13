@@ -253,14 +253,13 @@
   function mountUi() {
     const screen = $('call-screen');
     if (!screen || $('call-mask')) return;
-    const anyBtn = screen.querySelector('.call-btn');
-    const row = anyBtn && anyBtn.parentNode;
+    const row = $('call-extra');                      // верхняя «служебная» строка карточки управления звонком
     if (!row) return;
     const btn = document.createElement('button');
     btn.className = 'call-btn'; btn.id = 'call-mask'; btn.title = 'Маски'; btn.type = 'button';
     btn.innerHTML = '<svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 007 0"/><circle cx="9" cy="10" r=".6" fill="currentColor"/><circle cx="15" cy="10" r=".6" fill="currentColor"/></svg>';
     btn.onclick = () => togglePanel();
-    row.insertBefore(btn, row.children[2] || null);
+    row.appendChild(btn);
 
     const panel = document.createElement('div');
     panel.className = 'mx-mask-panel'; panel.id = 'mx-mask-panel';
