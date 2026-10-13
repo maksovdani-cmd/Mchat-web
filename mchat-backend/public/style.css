@@ -1042,3 +1042,24 @@ body,button,input,textarea,select,.pname,.sname,.chat-name,.mx-sender{font-famil
 .mx-chip.mine{background:rgba(108,108,245,.34);}
 .mo .mx-chip.mine{background:rgba(255,255,255,.32);}
 .mx-react{border:none;}
+
+/* ── Шапка и строка ввода — «овалы», как в Telegram (без полос и рамок) ── */
+.coh{background:transparent;gap:8px;padding:max(56px, calc(env(safe-area-inset-top) + 16px)) 10px 8px;}
+.mx-pill{background:var(--surf);background:color-mix(in srgb,var(--surf) 82%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 2px 14px rgba(0,0,0,.28);}
+.coh .mx-pill-back{width:46px;height:46px;border-radius:50%;flex:none;}
+.coh .mx-pill-title{flex:1;min-width:0;display:flex;align-items:center;gap:10px;height:46px;box-sizing:border-box;padding:3px 14px 3px 3px;border-radius:999px;}
+.coh .mx-pill-title #chat-open-av{width:40px;height:40px;}
+.coh .mx-pill-actions{flex:none;display:flex;align-items:center;gap:0;height:46px;box-sizing:border-box;padding:0 4px;border-radius:999px;}
+.coh .mx-pill-actions .ib{width:38px;height:38px;}
+
+.mx-compose{background:transparent;padding:4px 10px calc(10px + env(safe-area-inset-bottom));}
+.mx-compose .mir{background:var(--surf);background:color-mix(in srgb,var(--surf) 86%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-radius:28px;padding:4px 6px;gap:2px;box-shadow:0 2px 14px rgba(0,0,0,.28);}
+.mx-compose .mir .ib{width:40px;height:40px;}
+#message-input.mi2{background:transparent;border-radius:0;padding:12px 6px;min-height:44px;}
+#mx-mic-btn,.mx-compose .sb2{width:40px;height:40px;border-radius:50%;background:var(--accent);color:#fff;flex:none;}
+.mx-compose .sb2{margin:0;}
+.mx-ctxbar{background:var(--surf);border-radius:20px;margin:0 0 6px;padding:8px 8px 8px 14px;}
+.mx-pinned{margin:0 10px 6px;border-radius:20px;background:var(--surf);padding:8px 10px 8px 14px;}
+.mx-chan-bar{background:transparent;}
+.coh .mx-pill-back.ib.ghost{background:var(--surf);background:color-mix(in srgb,var(--surf) 82%,transparent);}
