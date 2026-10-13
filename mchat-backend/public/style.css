@@ -1030,7 +1030,15 @@ body,button,input,textarea,select,.pname,.sname,.chat-name,.mx-sender{font-famil
 .mx-mask-panel{padding-bottom:calc(250px + env(safe-area-inset-bottom));}
 
 /* Нижний «остров»: иконки видны и крупнее (в приложении PWA были слишком мелкие) */
-.nb{padding:12px 22px;}
-.nb svg{width:28px;height:28px;min-width:28px;flex:none;max-width:none;display:block;}
-.island-nav{padding:8px 9px;gap:4px;}
-@media (display-mode:standalone){.nb svg{width:30px;height:30px;min-width:30px;}.nb{padding:13px 22px;}}
+.nb{padding:10px 17px;}
+.nb svg{width:24px;height:24px;min-width:24px;flex:none;max-width:none;display:block;}
+.island-nav{padding:6px 7px;gap:2px;}
+@media (display-mode:standalone){.nb svg{width:25px;height:25px;min-width:25px;}.nb{padding:10px 17px;}}
+
+/* Как в Telegram: без разделительных линий и рамок — больше «воздуха» */
+.coh,.mir,.mx-pinned,.mx-ctxbar{border-top:none;border-bottom:none;}
+.coh{padding-bottom:12px;}
+.mx-chip{border:none;}
+.mx-chip.mine{background:rgba(108,108,245,.34);}
+.mo .mx-chip.mine{background:rgba(255,255,255,.32);}
+.mx-react{border:none;}
