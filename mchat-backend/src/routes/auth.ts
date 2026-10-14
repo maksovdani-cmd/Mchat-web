@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { Router, type Request, type Response } from 'express';
-import { OAuth2Client } from 'google-auth-library';
+import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 import { z } from 'zod';
 import { config } from '../config';
 import { prisma } from '../db';
@@ -30,6 +30,31 @@ const strEq = (a: string, b: string) => {
   const y = Buffer.from(b);
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 };
+
+/**
+ * Код авторизации Google одноразовый. Если браузер/PWA/service worker по ошибке откроет callback дважды
+ * (то же самое ?code=...), второй обмен даёт invalid_grant. Поэтому результат обмена на короткое время
+ * запоминаем по state: повторный и параллельный запрос получает тот же результат, а не ошибку.
+ */
+const exchanges = new Map<string, { code: string; at: number; p: Promise<TokenPayload | undefined> }>();
+function exchangeCode(state: string, code: string, verifier: string): Promise<TokenPayload | undefined> {
+  const now = Date.now();
+  for (const [k, v] of exchanges) if (now - v.at > 2 * 60_000) exchanges.delete(k);
+  const hit = exchanges.get(state);
+  if (hit && hit.code === code) {
+    console.log('google callback: повторный запрос с тем же кодом — использую результат первого');
+    return hit.p;
+  }
+  const p = (async () => {
+    const { tokens } = await oauth.getToken({ code, codeVerifier: verifier });
+    if (!tokens.id_token) throw new Error('no id_token');
+    const ticket = await oauth.verifyIdToken({ idToken: tokens.id_token, audience: config.GOOGLE_CLIENT_ID });
+    return ticket.getPayload();
+  })();
+  exchanges.set(state, { code, at: now, p });
+  p.catch(() => { if (exchanges.get(state)?.p === p) exchanges.delete(state); });
+  return p;
+}
 
 // ─────────────────────────────────────────────────────────────
 // 1. Старт: браузер уходит в Google
@@ -78,17 +103,15 @@ authRouter.get(
   wrap(async (req, res) => {
     const saved = verifyJwt<{ state: string; nonce: string; cv: string; u: string | null; adm?: boolean }>(req.cookies?.[COOKIE.oauth]);
     dropCookie(res, COOKIE.oauth);
+    console.log('google callback:', { hasOauthCookie: !!saved, ua: (req.get('user-agent') || '').slice(0, 80), sw: req.get('service-worker') || null, dest: req.get('sec-fetch-dest') || null });
     if (!saved || typeof req.query.state !== 'string' || !strEq(req.query.state, saved.state)) return fail(res, 'bad_state');
     if (req.query.error) return fail(res, 'google_denied');
     const code = req.query.code;
     if (typeof code !== 'string') return fail(res, 'google_failed');
 
-    let payload;
+    let payload: TokenPayload | undefined;
     try {
-      const { tokens } = await oauth.getToken({ code, codeVerifier: saved.cv });
-      if (!tokens.id_token) throw new Error('no id_token');
-      const ticket = await oauth.verifyIdToken({ idToken: tokens.id_token, audience: config.GOOGLE_CLIENT_ID });
-      payload = ticket.getPayload();
+      payload = await exchangeCode(saved.state, code, saved.cv);
     } catch (e) {
       const errMessage = (e as Error).message;
       console.error('google auth error:', errMessage);
@@ -142,6 +165,14 @@ authRouter.get(
       } catch (e) {
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
           // формат meta.target зависит от драйвера — надёжнее спросить базу напрямую
+          const again = await prisma.user.findUnique({ where: { googleId: payload.sub } });
+          if (again) {
+            // тот же Google-аккаунт уже создан соседним запросом (двойной callback) — просто входим
+            const { device, raw } = await createDevice(again.id, req);
+            setDeviceCookie(res, raw);
+            await startSession(res, again.id, device.id);
+            return res.redirect('/');
+          }
           const taken = await prisma.user.findUnique({ where: { username: saved.u }, select: { id: true } });
           return fail(res, taken ? 'nick_taken' : 'account_conflict');
         }
