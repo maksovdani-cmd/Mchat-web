@@ -115,7 +115,14 @@ authRouter.get(
       return admin ? res.redirect('/') : fail(res, 'admin_denied');
     }
 
-    const existing = await prisma.user.findUnique({ where: { googleId: payload.sub } });
+    let existing = await prisma.user.findUnique({ where: { googleId: payload.sub } });
+    if (!existing) {
+      // Старый аккаунт, у которого googleId не совпал (создан раньше / перенесён): Google подтвердил почту — привязываем и пускаем.
+      const byEmail = await prisma.user.findUnique({ where: { email } });
+      if (byEmail && !byEmail.googleId.startsWith('system:')) {
+        existing = await prisma.user.update({ where: { id: byEmail.id }, data: { googleId: payload.sub } });
+      }
+    }
 
     // ── РЕГИСТРАЦИЯ: ник + Google, без кода ──
     if (!existing) {
@@ -147,26 +154,40 @@ authRouter.get(
     }
 
     // ── ВХОД: известное устройство → сразу; новое → код ──
-    if (wantsAdmin && existing.role !== 'ADMIN') {
-      await prisma.user.update({ where: { id: existing.id }, data: { role: 'ADMIN' } });
+    try {
+      if (wantsAdmin && existing.role !== 'ADMIN') {
+        await prisma.user.update({ where: { id: existing.id }, data: { role: 'ADMIN' } });
+      }
+      const trusted = await findTrustedDevice(existing.id, req.cookies?.[COOKIE.device]);
+      if (trusted) {
+        await startSession(res, existing.id, trusted.id);
+        return res.redirect('/');
+      }
+      // Код отключён (REQUIRE_DEVICE_CODE=false): за безопасность входа отвечает Google — пускаем сразу,
+      // а уже вошедшие устройства просто получают уведомление «вход с нового устройства».
+      if (!config.requireDeviceCode) {
+        return await loginOnNewDevice(req, res, existing.id);
+      }
+      return await beginDeviceVerification(req, res, existing);
+    } catch (e) {
+      // Любой сбой на шаге кода/уведомлений не должен ронять вход: Google уже подтвердил владельца аккаунта.
+      console.error('login existing user failed:', (e as Error).message);
+      if (!res.headersSent && config.allowLoginWhenUndeliverable) {
+        try { return await loginOnNewDevice(req, res, existing.id); } catch (e2) { console.error('fallback login failed:', (e2 as Error).message); }
+      }
+      if (!res.headersSent) return fail(res, 'login_failed');
     }
-    const trusted = await findTrustedDevice(existing.id, req.cookies?.[COOKIE.device]);
-    if (trusted) {
-      await startSession(res, existing.id, trusted.id);
-      return res.redirect('/');
-    }
-    // Код отключён (REQUIRE_DEVICE_CODE=false): за безопасность входа отвечает Google — пускаем сразу,
-    // а уже вошедшие устройства просто получают уведомление «вход с нового устройства».
-    if (!config.requireDeviceCode) {
-      const { device, raw } = await createDevice(existing.id, req);
-      setDeviceCookie(res, raw);
-      await startSession(res, existing.id, device.id);
-      emitToUser(existing.id, 'auth:new-device', { label: device.label });
-      return res.redirect('/');
-    }
-    return beginDeviceVerification(req, res, existing);
   }),
 );
+
+/** Вход с нового устройства без кода: создаём доверенное устройство и сессию, уведомляем уже вошедшие устройства. */
+async function loginOnNewDevice(req: Request, res: Response, userId: string) {
+  const { device, raw } = await createDevice(userId, req);
+  setDeviceCookie(res, raw);
+  await startSession(res, userId, device.id);
+  try { emitToUser(userId, 'auth:new-device', { label: device.label }); } catch { /* уведомление не критично */ }
+  return res.redirect('/');
+}
 
 const ADMIN_USERNAME = 'mchat';
 
@@ -207,18 +228,27 @@ async function beginDeviceVerification(req: Request, res: Response, user: { id: 
   });
 
   // Канал 1: живое соединение (Socket.IO) на уже вошедших устройствах
-  const viaSocket = isConnected(user.id);
-  emitToUser(user.id, 'auth:login-code', { code, label, ip, expiresAt: expiresAt.toISOString() });
+  let viaSocket = false;
+  try {
+    viaSocket = isConnected(user.id);
+    emitToUser(user.id, 'auth:login-code', { code, label, ip, expiresAt: expiresAt.toISOString() });
+  } catch (e) { console.warn('login code: socket channel failed:', (e as Error).message); }
   // Канал 2: пуш-уведомление на телефон/браузер
-  const pushed = await sendPushToUser(user.id, {
-    title: 'Вход в Mchat с нового устройства',
-    body: `Код: ${code}. Устройство: ${label}. Если это не вы — никому не сообщайте код.`,
-    tag: 'login-code',
-    data: { kind: 'login-code' },
-  });
+  let pushed = 0;
+  try {
+    pushed = await sendPushToUser(user.id, {
+      title: 'Вход в Mchat с нового устройства',
+      body: `Код: ${code}. Устройство: ${label}. Если это не вы — никому не сообщайте код.`,
+      tag: 'login-code',
+      data: { kind: 'login-code' },
+    });
+  } catch (e) { console.warn('login code: push channel failed:', (e as Error).message); }
   // Канал 3: почта, с которой человек входит, — всегда (не зависит от того, открыт ли Mchat на другом устройстве)
-  const emailSent = await sendLoginCodeEmail(user.email, code, label);
-  if (emailSent) await prisma.loginCode.update({ where: { id: rec.id }, data: { emailSent: true } });
+  let emailSent = false;
+  try {
+    emailSent = await sendLoginCodeEmail(user.email, code, label);
+    if (emailSent) await prisma.loginCode.update({ where: { id: rec.id }, data: { emailSent: true } });
+  } catch (e) { console.warn('login code: email channel failed:', (e as Error).message); }
 
   // Код доставить некуда: почта не сработала, другие устройства не в сети и не подписаны на пуши.
   // Человека уже проверил Google — не запираем аккаунт навсегда, пускаем и предупреждаем в логах.
