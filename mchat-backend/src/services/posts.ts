@@ -14,8 +14,17 @@ const postInclude = (_viewerId: string) => ({
 
 type PostRow = Awaited<ReturnType<typeof loadPosts>>[number];
 
-export function toPostDTO(p: PostRow, viewerId: string) {
+/** У каких из этих авторов сейчас есть активная история (для цветного кольца вокруг аватарки в профиле и «Рилс»). */
+async function storyAuthorsOf(authorIds: string[]): Promise<Set<string>> {
+  const ids = [...new Set(authorIds)];
+  if (!ids.length) return new Set();
+  const rows = await prisma.story.groupBy({ by: ['authorId'], where: { authorId: { in: ids }, expiresAt: { gt: new Date() } } });
+  return new Set(rows.map((r) => r.authorId));
+}
+
+export function toPostDTO(p: PostRow, viewerId: string, storyAuthors?: Set<string>) {
   return {
+    hasStory: storyAuthors ? storyAuthors.has(p.authorId) : false,
     id: p.id,
     username: p.author.username,
     name: p.author.name,
@@ -41,7 +50,8 @@ function loadPosts(viewerId: string, where: object, take: number) {
 /** Лента: мои посты (включая архив) + публичные посты остальных. */
 export async function listFeed(viewerId: string) {
   const rows = await loadPosts(viewerId, { OR: [{ authorId: viewerId }, { privacy: 'public' }] }, 100);
-  return rows.map((p) => toPostDTO(p, viewerId));
+  const sa = await storyAuthorsOf(rows.map((r) => r.authorId));
+  return rows.map((p) => toPostDTO(p, viewerId, sa));
 }
 
 /** Посты одного пользователя: чужие — только публичные. */
@@ -50,13 +60,14 @@ export async function listUserPosts(viewerId: string, username: string) {
   if (!u) throw new HttpError(404, 'user_not_found');
   const where = u.id === viewerId ? { authorId: u.id } : { authorId: u.id, privacy: 'public' };
   const rows = await loadPosts(viewerId, where, 100);
-  return rows.map((p) => toPostDTO(p, viewerId));
+  const sa = await storyAuthorsOf(rows.map((r) => r.authorId));
+  return rows.map((p) => toPostDTO(p, viewerId, sa));
 }
 
 export async function getPost(viewerId: string, id: number) {
   const row = await prisma.post.findUnique({ where: { id }, include: postInclude(viewerId) });
   if (!row || (row.privacy === 'private' && row.authorId !== viewerId)) throw new HttpError(404, 'post_not_found');
-  return toPostDTO(row, viewerId);
+  return toPostDTO(row, viewerId, await storyAuthorsOf([row.authorId]));
 }
 
 export async function searchPosts(viewerId: string, q: string) {
@@ -64,7 +75,8 @@ export async function searchPosts(viewerId: string, q: string) {
     privacy: 'public',
     OR: [{ text: { contains: q, mode: 'insensitive' } }, { author: { name: { contains: q, mode: 'insensitive' } } }],
   }, 10);
-  return rows.map((p) => toPostDTO(p, viewerId));
+  const sa = await storyAuthorsOf(rows.map((r) => r.authorId));
+  return rows.map((p) => toPostDTO(p, viewerId, sa));
 }
 
 async function ownImage(userId: string, mediaId: string, kinds: string[]) {
@@ -133,7 +145,8 @@ export async function listReposts(viewerId: string, username: string) {
     orderBy: { createdAt: 'desc' }, take: 50,
     include: { post: { include: postInclude(viewerId) } },
   });
-  return rows.map((r) => ({ ...toPostDTO(r.post, viewerId), repostedAt: r.createdAt.toISOString() }));
+  const sa = await storyAuthorsOf(rows.map((r) => r.post.authorId));
+  return rows.map((r) => ({ ...toPostDTO(r.post, viewerId, sa), repostedAt: r.createdAt.toISOString() }));
 }
 
 // ───────────────────────────── истории ─────────────────────────────
@@ -150,6 +163,12 @@ type StoryRow = Awaited<ReturnType<typeof loadStories>>[number];
 
 function loadStories(where: object) {
   return prisma.story.findMany({ where: { expiresAt: { gt: new Date() }, ...where }, orderBy: { createdAt: 'asc' }, include: storyInclude });
+}
+
+/** Истории видят только подписчики автора (и сам автор). */
+async function canSeeStories(viewerId: string, authorId: string) {
+  if (viewerId === authorId) return true;
+  return (await prisma.follow.count({ where: { followerId: viewerId, followingId: authorId } })) > 0;
 }
 
 export function toStoryDTO(s: StoryRow, viewerId: string) {
@@ -171,21 +190,18 @@ export function toStoryDTO(s: StoryRow, viewerId: string) {
 }
 
 /**
- * Лента историй: активные (не старше 24 часов) истории ВСЕХ остальных пользователей, сгруппированные по автору.
- * Сначала те, на кого я подписан, затем остальные; внутри — по времени самой свежей истории.
- * (Раньше клиент запрашивал только свои истории, поэтому чужие нигде не показывались.)
+ * Лента историй: активные (не старше 24 часов) истории тех, НА КОГО Я ПОДПИСАН, сгруппированные по автору.
+ * Истории видны только подписчикам автора — чужим людям они в ленту не попадают.
  */
 export async function listStoriesFeed(viewerId: string) {
-  const [rows, follows] = await Promise.all([
-    prisma.story.findMany({
-      where: { expiresAt: { gt: new Date() }, authorId: { not: viewerId } },
-      orderBy: { createdAt: 'asc' },
-      include: storyInclude,
-      take: 500,
-    }),
-    prisma.follow.findMany({ where: { followerId: viewerId }, select: { followingId: true } }),
-  ]);
+  const follows = await prisma.follow.findMany({ where: { followerId: viewerId }, select: { followingId: true } });
   const following = new Set(follows.map((f) => f.followingId));
+  const rows = await prisma.story.findMany({
+    where: { expiresAt: { gt: new Date() }, authorId: { in: [...following] } },
+    orderBy: { createdAt: 'asc' },
+    include: storyInclude,
+    take: 500,
+  });
   const groups = new Map<string, {
     username: string; name: string; avatar: string | null; verified: boolean; following: boolean; latestAt: number;
     stories: ReturnType<typeof toStoryDTO>[];
@@ -210,6 +226,7 @@ export async function listStoriesFeed(viewerId: string) {
 export async function listUserStories(viewerId: string, username: string) {
   const u = await prisma.user.findUnique({ where: { username: username.toLowerCase() }, select: { id: true } });
   if (!u) throw new HttpError(404, 'user_not_found');
+  if (!(await canSeeStories(viewerId, u.id))) throw new HttpError(403, 'stories_followers_only');
   return (await loadStories({ authorId: u.id })).map((s) => toStoryDTO(s, viewerId));
 }
 
@@ -243,20 +260,21 @@ export async function deleteStory(userId: string, id: number) {
   if (s.mediaId) await gcMedia(s.mediaId);
 }
 
-async function liveStory(id: number) {
-  const s = await prisma.story.findUnique({ where: { id }, select: { id: true, expiresAt: true } });
+async function liveStory(id: number, viewerId: string) {
+  const s = await prisma.story.findUnique({ where: { id }, select: { id: true, expiresAt: true, authorId: true } });
   if (!s || s.expiresAt < new Date()) throw new HttpError(404, 'story_not_found');
+  if (!(await canSeeStories(viewerId, s.authorId))) throw new HttpError(403, 'stories_followers_only');
 }
 
 export async function setStoryLike(userId: string, id: number, liked: boolean) {
-  await liveStory(id);
+  await liveStory(id, userId);
   if (liked) await prisma.storyLike.upsert({ where: { storyId_userId: { storyId: id, userId } }, create: { storyId: id, userId }, update: {} });
   else await prisma.storyLike.deleteMany({ where: { storyId: id, userId } });
   return { likes: await prisma.storyLike.count({ where: { storyId: id } }), liked };
 }
 
 export async function addStoryComment(userId: string, id: number, text: string) {
-  await liveStory(id);
+  await liveStory(id, userId);
   const c = await prisma.storyComment.create({ data: { storyId: id, userId, text }, include: { user: { select: { username: true } } } });
   return { username: c.user.username, text: c.text, createdAt: c.createdAt.toISOString() };
 }

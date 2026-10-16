@@ -147,6 +147,7 @@ function mxSendLike(p) {
 // ============================================================
 let upViewedUsername = null;
 let upCurrentTab = 'posts';
+let upProfileInfo = null; // данные открытого чужого профиля с сервера (hasStory, подписки и т.д.)
 
 function goToUserOrOwnProfile(username) {
   if (currentUser && username === currentUser.username) { goTo('s-profile'); return; }
@@ -172,6 +173,8 @@ function openUserProfile(username) {
   document.getElementById('up-following-count').textContent = '0';
   mxRenderUserBanner(null); mxRenderUserMusic(null);
   upFriendState = { status: 'none', id: null };
+  upProfileInfo = null;
+  if (window.mxFeatOnUserOpen) window.mxFeatOnUserOpen(username);
   mxRenderFriendButton();
   const statusEl = document.getElementById('up-status');
   if (statusEl) statusEl.textContent = '';
@@ -197,6 +200,7 @@ function openUserProfile(username) {
     document.getElementById('up-followers-count').textContent = u.followers || 0;
     document.getElementById('up-following-count').textContent = u.following || 0;
     mxSetPresenceText('up-status', u.online, u.lastSeenAt);
+    if (window.mxFeatOnUserLoaded) window.mxFeatOnUserLoaded(u);
   }).catch(() => {});
 }
 
@@ -213,6 +217,8 @@ function switchUserProfileTab(tab) {
   document.getElementById('uptab-reposts').classList.toggle('active', tab==='reposts');
   document.getElementById('uptab-reposts').style.color = tab==='reposts' ? 'var(--text)' : 'var(--text2)';
   document.getElementById('uptab-reposts').style.borderBottomColor = tab==='reposts' ? 'var(--accent)' : 'transparent';
+  const mt = document.getElementById('uptab-moment');
+  if (mt) { mt.classList.toggle('active', tab==='moment'); mt.style.color = tab==='moment' ? 'var(--text)' : 'var(--text2)'; mt.style.borderBottomColor = tab==='moment' ? 'var(--accent)' : 'transparent'; }
   renderUserProfileGrid();
 }
 
@@ -220,6 +226,7 @@ function renderUserProfileGrid() {
   const grid = document.getElementById('up-grid');
   if (!grid || !upViewedUsername) return;
   let html = '';
+  if (upCurrentTab === 'moment') { mxMomentRenderUser(grid, upViewedUsername); return; }
   if (upCurrentTab === 'posts') {
     const userPosts = loadUserPosts(upViewedUsername).filter(p => p.privacy !== 'private' && !p.isRepost);
     if (userPosts.length === 0) { grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px 16px;color:var(--text2);font-size:13px">Пока нет постов</div>'; return; }
@@ -366,6 +373,8 @@ function pushNotif(text) {
 
 function openPrivacySettings() {
   const saved = JSON.parse(localStorage.getItem('mchat_privacy')||'{"privateAccount":false,"hideOnline":false,"hideRead":false,"hidePosts":false}');
+  // серверные настройки главнее локальной копии
+  if (currentUser && currentUser.settings) ['hideOnline','hideRead','hideFollowing'].forEach(k => { if (typeof currentUser.settings[k] === 'boolean') saved[k] = currentUser.settings[k]; });
   const m = document.createElement('div');
   m.className = 'modal active';
   m.style.zIndex = '800';
@@ -379,6 +388,7 @@ function openPrivacySettings() {
     ${tog('privateAccount','Закрытый аккаунт',saved.privateAccount)}
     ${tog('hideOnline','Скрыть статус «онлайн»',saved.hideOnline)}
     ${tog('hideRead','Скрыть прочитанность',saved.hideRead)}
+    ${tog('hideFollowing','Скрыть подписки',saved.hideFollowing)}
     ${tog('hidePosts','Скрыть посты от чужих',saved.hidePosts)}
     <button onclick="this.closest('.modal').remove();showToast('Настройки сохранены')" style="padding:13px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:var(--font);font-size:15px;font-weight:700;cursor:pointer;margin-top:4px">Сохранить</button>
   </div>`;
@@ -391,7 +401,8 @@ function togglePrivacy(key, btn) {
   saved[key] = btn.classList.contains('on');
   localStorage.setItem('mchat_privacy', JSON.stringify(saved));
   // hideOnline / hideRead применяются на сервере
-  if (key === 'hideOnline' || key === 'hideRead') {
+  if (key === 'hideOnline' || key === 'hideRead' || key === 'hideFollowing') {
+    if (currentUser) { currentUser.settings = Object.assign({}, currentUser.settings, { [key]: saved[key] }); }
     MchatAPI.updateMe({ [key]: saved[key] }).catch(e => showToast(MchatAPI.errorText(e)));
   }
 }
@@ -577,7 +588,9 @@ async function onLoggedIn(me) {
     banner: me.banner || null,
     followers: me.followers || 0,
     following: me.following || 0,
-    musicTrack: me.musicTrack || null
+    musicTrack: me.musicTrack || null,
+    momentActive: !!me.momentActive,   // есть «Момент» за последние 24 часа → иконка в профиле подсвечивается
+    settings: me.settings || {}
   };
   saveUser();
   updateProfileUI(); renderFeed();
@@ -653,11 +666,13 @@ function bindRealtimeHandlers() {
     const who = p.user && p.user.name ? p.user.name : 'Пользователь';
     if (p.status === 'follower') showToast(who + ' подписался(ась) на вас');
     if (p.status === 'friends') showToast('Вы с ' + who + ' теперь друзья');
+    // права на личные сообщения зависят от подписок — перечитываем чаты и обновляем поле ввода
+    refreshChats().then(() => { const cur = chats.find(c => c.id === currentChatId); if (cur) mxApplyChatInputState(cur); });
   };
   h.onLoginCode = showLoginCodeModal;
   h.onNewDevice = (d) => showToast('Новый вход в аккаунт: ' + (d && d.label ? d.label : 'устройство'));
   h.onUnauthorized = () => { resetSessionState(); goTo('s-login'); showToast('Сессия завершена. Войди снова'); };
-  h.onChatChanged = () => { refreshChats().then(mxApplyChatBackground); };
+  h.onChatChanged = () => { refreshChats().then(() => { mxApplyChatBackground(); const cur = chats.find(c => c.id === currentChatId); if (cur) { mxApplyChatInputState(cur); try { updateChatStatus(cur); } catch (e) {} } }); };
   h.onCallIncoming = mxOnCallIncoming; h.onCallEnded = mxOnCallEnded; h.onCallHandled = mxOnCallHandled;
   h.onReconnect = () => { refreshChats(); if (currentChatId) loadChatHistory(currentChatId); };
   h.onOpenChat = openChatById;
@@ -2124,6 +2139,8 @@ function renderProfileTabContent() {
     return;
   }
   
+  if (currentProfileTab === 'moment') { mxMomentRenderOwn(cont); return; }
+
   if (currentProfileTab === 'likes') {
     const liked = posts.filter(p => p.liked);
     if (liked.length === 0) {
@@ -2956,6 +2973,7 @@ function chatFromServer(c) {
     id: c.id, type: c.type, name: c.name, description: c.description, avatar: c.avatar, peer: c.peer,
     unread: c.unread || 0, role: c.role, canPost: c.canPost !== false, canModerate: !!c.canModerate, muted: !!c.muted, isPublic: !!c.isPublic,
     memberCount: c.memberCount || 0, inviteCode: c.inviteCode || null, pinned: c.pinned || null, background: c.background || null,
+    dm: c.dm || null, autoDeleteSec: c.autoDeleteSec || null, mutedUntil: c.mutedUntil || null,
     lastMessage: c.lastMessage ? c.lastMessage.text : '',
     time: c.lastMessage ? fmtChatTime(c.lastMessage.createdAt) : '',
     lastMessageAt: c.lastMessageAt
@@ -2966,7 +2984,7 @@ function msgFromServer(m) {
     id: m.id, clientId: m.clientId, chatId: m.chatId, senderId: m.senderId,
     senderName: m.senderName, senderUsername: m.senderUsername,
     kind: m.kind || 'TEXT', text: m.text, mediaUrl: m.mediaUrl, fileName: m.fileName, fileSize: m.fileSize, durationSec: m.durationSec,
-    replyTo: m.replyTo, forwardedFrom: m.forwardedFrom,
+    replyTo: m.replyTo, forwardedFrom: m.forwardedFrom, call: m.call || null,
     reactions: m.reactions || [], editedAt: m.editedAt,
     time: fmtClock(m.createdAt), createdAt: m.createdAt,
     outgoing: !!currentUser && m.senderId === currentUser.id, pending: false
@@ -3051,7 +3069,9 @@ function filterChats() {
   mxSearchGlobalChannels(q);
 }
 
+const MX_SAVED_AV = '<div class="mx-saved-av"><svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M6 3h12a1 1 0 011 1v17l-7-4.5L5 21V4a1 1 0 011-1z"/></svg></div>';
 function chatAvatarHtml(ch) {
+  if (ch.type === 'SAVED') return MX_SAVED_AV;
   if (ch.avatar) return `<img src="${esc(ch.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">`;
   if (ch.type && ch.type !== 'DIRECT') {
     return `<div class="mx-letter-av${ch.type === 'CHANNEL' ? ' channel' : ''}">${esc((ch.name || '#').charAt(0).toUpperCase())}</div>`;
@@ -3085,6 +3105,14 @@ function mxPlural(n, forms) {
 function updateChatStatus(ch) {
   const el = document.getElementById('chat-status');
   if (!el) return;
+  if (ch && ch.type === 'SAVED') { el.textContent = 'Заметки, файлы и пересланное' + (ch.autoDeleteSec ? ' · ⏱ 24 ч' : ''); el.style.color = 'var(--text2)'; return; }
+  try { updateChatStatusBase(ch); } catch (e) { console.warn('status', e); }
+  if (ch && ch.autoDeleteSec && el.textContent) el.textContent += ' · ⏱ 24 ч';
+  else if (ch && ch.autoDeleteSec) { el.textContent = '⏱ Очистка через 24 ч'; el.style.color = 'var(--text2)'; }
+}
+function updateChatStatusBase(ch) {
+  const el = document.getElementById('chat-status');
+  if (!el) return;
   if (ch && ch.type === 'GROUP') { el.textContent = mxPlural(ch.memberCount, ['участник', 'участника', 'участников']); el.style.color = 'var(--text2)'; return; }
   if (ch && ch.type === 'CHANNEL') { el.textContent = mxPlural(ch.memberCount, ['подписчик', 'подписчика', 'подписчиков']); el.style.color = 'var(--text2)'; return; }
   const peer = ch && ch.peer;
@@ -3098,28 +3126,51 @@ async function openChat(id) {
   if (!ch) return;
   currentChatId = id;
   currentChatPeer = ch.peer || null;
-  currentChatMeta = { type: ch.type, canPost: ch.canPost !== false, canModerate: !!ch.canModerate };
-  // звонить можно в личных чатах и группах (в каналах — нет)
-  ['mx-call-btn','mx-vcall-btn'].forEach(id => { const b = document.getElementById(id); if (b) b.style.display = ch.type === 'CHANNEL' ? 'none' : ''; });
+  currentChatMeta = { type: ch.type, canPost: ch.canPost !== false, canModerate: !!ch.canModerate, dm: ch.dm || null, autoDeleteSec: ch.autoDeleteSec || null };
   mxCancelCompose();
   document.getElementById('chat-name').textContent = ch.name;
-  document.getElementById('chat-open-av').innerHTML = ch.avatar
+  document.getElementById('chat-open-av').innerHTML = ch.type === 'SAVED' ? MX_SAVED_AV : ch.avatar
     ? `<img src="${esc(ch.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">`
     : (ch.type && ch.type !== 'DIRECT' ? `<div class="mx-letter-av${ch.type === 'CHANNEL' ? ' channel' : ''}">${esc((ch.name||'#').charAt(0).toUpperCase())}</div>` : AVATAR_SVG_OPEN);
   // каждый шаг защищён: сбой в одном (например, в закреплённом сообщении) не должен мешать открыть чат
   try { updateChatStatus(ch); } catch (e) { console.warn('status', e); }
   try { mxApplyChatBackground(); } catch (e) { console.warn('background', e); }
   try { renderPinnedBar(ch.pinned || null); } catch (e) { console.warn('pinned', e); }
-  const inputRow = document.getElementById('mx-input-row');
-  const readonlyRow = document.getElementById('mx-readonly');
-  const canPost = ch.canPost !== false;
-  if (inputRow) inputRow.style.display = canPost ? 'flex' : 'none';
-  if (readonlyRow) readonlyRow.style.display = canPost ? 'none' : 'flex';
+  mxApplyChatInputState(ch);
   try { renderMessages(id); } catch (e) { console.warn('render', e); }
   goTo('s-chat-open');
   try { await loadChatHistory(id); } catch (e) { console.warn('history', e); }
   markCurrentChatRead();
   if (window.mxAfterOpenChat) window.mxAfterOpenChat(ch);
+}
+
+/**
+ * Что показывать внизу чата и можно ли звонить: поле ввода или подсказка «писать нельзя».
+ *  • канал — публикуют только владелец и админы;
+ *  • личный чат — писать можно только взаимным подписчикам (или своему подписчику), при блокировке — нельзя;
+ *  • групповой звонок запускают только владелец и админы группы; в каналах и «Избранном» звонков нет.
+ */
+function mxApplyChatInputState(ch) {
+  if (!ch) return;
+  currentChatMeta = Object.assign(currentChatMeta || {}, { type: ch.type, canPost: ch.canPost !== false, canModerate: !!ch.canModerate, dm: ch.dm || null, autoDeleteSec: ch.autoDeleteSec || null });
+  const callsOk = ch.type === 'DIRECT' ? !(ch.dm && !ch.dm.canSend) : ch.type === 'GROUP' ? !!ch.canModerate : false;
+  ['mx-call-btn','mx-vcall-btn'].forEach(bid => { const b = document.getElementById(bid); if (b) b.style.display = callsOk ? '' : 'none'; });
+  const inputRow = document.getElementById('mx-input-row');
+  const readonlyRow = document.getElementById('mx-readonly');
+  const canPost = ch.canPost !== false;
+  if (inputRow) inputRow.style.display = canPost ? 'flex' : 'none';
+  if (readonlyRow) {
+    readonlyRow.style.display = canPost ? 'none' : 'flex';
+    if (!canPost) readonlyRow.innerHTML = mxReadonlyHtml(ch);
+  }
+}
+function mxReadonlyHtml(ch) {
+  if (ch.type === 'CHANNEL') return 'Публикации в этом канале доступны только владельцу и админам';
+  const r = ch.dm && ch.dm.reason;
+  if (r === 'blocked_by_me') return `Вы заблокировали этого пользователя <button class="mx-ro-btn" onclick="mxUnblockFromChat()">Разблокировать</button>`;
+  if (r === 'blocked') return 'Пользователь ограничил с вами общение';
+  if (r === 'dm_follow_required') return `Писать можно только взаимным подписчикам <button class="mx-ro-btn" onclick="mxFollowFromChat()">Подписаться</button>`;
+  return 'Писать в этот чат нельзя';
 }
 
 async function openChatById(id) {
@@ -3160,7 +3211,42 @@ function replyQuoteHtml(m) {
     <div class="mx-quote-name">${esc(m.replyTo.senderName || 'Собеседник')}</div><div class="mx-quote-text">${esc(label)}</div>
   </div>`;
 }
+/** Сколько эмодзи в сообщении, если там ТОЛЬКО эмодзи (1 или 2) — такие рисуем крупно; иначе 0. */
+const MX_EMOJI_RE = /(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|(?![\u00A9\u00AE\u2122])\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?)*)/gu;
+function mxBigEmojiCount(text) {
+  const t = String(text || '').replace(/\s+/g, '');
+  if (!t || t.length > 24) return 0;
+  const found = t.match(MX_EMOJI_RE);
+  if (!found || found.length > 2) return 0;
+  return t.replace(MX_EMOJI_RE, '') === '' ? found.length : 0;
+}
+function mxDayKey(iso) { const d = iso ? new Date(iso) : new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+/** «1 января 2035 г.» */
+function mxDayLabel(iso) { return (iso ? new Date(iso) : new Date()).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }); }
+function mxFmtCallDur(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  if (sec < 60) return mxPlural(sec, ['секунду', 'секунды', 'секунд']);
+  const m = Math.floor(sec / 60), r = sec % 60;
+  return mxPlural(m, ['минуту', 'минуты', 'минут']) + (r && m < 10 ? ' ' + r + ' с' : '');
+}
+/** Карточка завершённого звонка в переписке: «Разговор длился 5 минут» + кнопка «Перезвонить». */
+function mxCallCardHtml(m) {
+  const c = m.call || { status: 'missed', video: false, durationSec: 0 };
+  const mine = m.outgoing;
+  let title, sub = '', cls = '';
+  if (c.status === 'ended') { title = (c.video ? 'Видеозвонок' : 'Звонок') + (c.isGroup ? ' в группе' : ''); sub = 'Разговор длился ' + mxFmtCallDur(c.durationSec); }
+  else if (c.status === 'declined') { title = mine ? 'Исходящий звонок' : 'Отклонённый звонок'; sub = mine ? 'Собеседник отклонил' : 'Вы отклонили звонок'; cls = ' bad'; }
+  else { title = mine ? 'Исходящий звонок' : 'Пропущенный звонок'; sub = mine ? 'Нет ответа' : 'Вы не ответили'; cls = mine ? ' bad' : ' missed'; }
+  const ico = c.video
+    ? '<polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/>'
+    : '<path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.13.96.36 1.9.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0122 16.92z"/>';
+  const canRecall = !currentChatMeta || currentChatMeta.type === 'DIRECT' || (currentChatMeta.type === 'GROUP' && currentChatMeta.canModerate);
+  return `<div class="mx-callcard${cls}"><div class="mx-callcard-ico"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">${ico}</svg></div>
+    <div class="mx-callcard-txt"><div class="mx-callcard-title">${esc(title)}</div><div class="mx-callcard-sub">${esc(sub)}</div></div>
+    ${canRecall ? `<button class="mx-callcard-btn" onclick="event.stopPropagation();mxStartCall(${c.video ? 'true' : 'false'})">Перезвонить</button>` : ''}</div>`;
+}
 function bubbleBodyHtml(m) {
+  if (m.kind === 'CALL') return mxCallCardHtml(m);
   if (m.kind === 'VOICE') {
     return `<div class="mx-voice" data-audio-url="${esc(m.mediaUrl||'')}">
       <button class="mx-vplay" onclick="event.stopPropagation();mxVoicePlayToggle(this,'${esc(m.id)}')"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 20 12 7 20 7 4"/></svg></button>
@@ -3186,6 +3272,8 @@ function bubbleBodyHtml(m) {
     const href = m.mediaUrl ? ` href="${esc(m.mediaUrl)}" download="${esc(m.fileName||'file')}"` : '';
     return `<a class="mx-file"${href} onclick="event.stopPropagation()"><div class="mx-file-ico"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div class="mx-file-info"><div class="mx-file-name">${esc(m.fileName||'Файл')}</div><div class="mx-file-size">${esc(mxFmtSize(m.fileSize))}</div>${mxUploadBar(m)}</div></a>`;
   }
+  const big = mxBigEmojiCount(m.text);
+  if (big) return `<div class="mx-txt mx-bigemoji mx-be${big}">${esc(m.text)}</div>`;
   return `<div class="mx-txt">${esc(m.text)}</div>`;
 }
 function mxFmtSize(n) {
@@ -3204,9 +3292,15 @@ function mxMediaLost(el) {
 function renderMessages(id) {
   const c = document.getElementById('messages-container');
   const msgs = messages[id]||[];
-  const isGroup = currentChatMeta && currentChatMeta.type !== 'DIRECT';
+  const isGroup = currentChatMeta && (currentChatMeta.type === 'GROUP' || currentChatMeta.type === 'CHANNEL');
+  let lastDay = '';
   c.innerHTML = msgs.map(m => {
+    const day = mxDayKey(m.createdAt);
+    const daySep = day !== lastDay ? `<div class="mx-day" data-day="${day}">${esc(mxDayLabel(m.createdAt))}</div>` : '';
+    lastDay = day;
+    if (m.kind === 'CALL') return `${daySep}<div class="msg mx-callmsg ${m.outgoing?'mo':'mi'}" data-id="${esc(m.id)}" data-day="${day}">${bubbleBodyHtml(m)}<div class="mt">${esc(m.time)}</div></div>`;
     const cls = ['msg', m.outgoing?'mo':'mi'];
+    if (m.kind === 'TEXT' && mxBigEmojiCount(m.text)) cls.push('mx-emoji-only');
     if (m.kind === 'VIDEO_NOTE') cls.push('mx-vn');
     if (m.kind === 'IMAGE') cls.push('mx-photo');
     if (m.kind === 'VIDEO') cls.push('mx-media');
@@ -3214,9 +3308,10 @@ function renderMessages(id) {
     const senderHtml = (isGroup && !m.outgoing && m.senderName) ? `<div class="mx-sender">${esc(m.senderName)}</div>` : '';
     const fwdHtml = m.forwardedFrom ? `<div class="mx-fwd">Переслано от ${esc(m.forwardedFrom)}</div>` : '';
     const editedHtml = m.editedAt ? '<span class="mx-edited">ред.</span>' : '';
-    return `<div class="${cls.join(' ')}" data-id="${esc(m.id)}"${m.pending?' style="opacity:.6"':''} onclick="mxOpenReactions('${esc(m.id)}', event)" oncontextmenu="event.preventDefault();mxOpenContextMenu('${esc(m.id)}', event)">${senderHtml}${fwdHtml}${replyQuoteHtml(m)}${bubbleBodyHtml(m)}${reactionsHtml(m)}${mxCommentBtnHtml(m)}<div class="mt">${editedHtml}${esc(m.time)}</div></div>`;
+    return `${daySep}<div class="${cls.join(' ')}" data-id="${esc(m.id)}" data-day="${day}"${m.pending?' style="opacity:.6"':''} onclick="mxOpenReactions('${esc(m.id)}', event)" oncontextmenu="event.preventDefault();mxOpenContextMenu('${esc(m.id)}', event)">${senderHtml}${fwdHtml}${replyQuoteHtml(m)}${bubbleBodyHtml(m)}${reactionsHtml(m)}${mxCommentBtnHtml(m)}<div class="mt">${editedHtml}${esc(m.time)}</div></div>`;
   }).join('');
   c.scrollTop = c.scrollHeight;
+  if (window.mxAfterRender) window.mxAfterRender(c, id); // плавающая дата и кнопка «вниз»
 }
 function mxScrollToMessage(id) {
   const el = document.querySelector(`#messages-container .msg[data-id="${CSS.escape(id)}"]`);
@@ -3267,7 +3362,7 @@ function mxGalleryStep(d) { // d = +1 вперёд (свайп влево), -1 �
   });
 })();
 
-const msgPreview = (m) => m.kind === 'VOICE' ? '🎤 Голосовое сообщение' : m.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : m.kind === 'IMAGE' ? '📷 Фото' : m.kind === 'VIDEO' ? '🎬 Видео' : m.kind === 'FILE' ? '📎 ' + (m.fileName || 'Файл') : m.text;
+const msgPreview = (m) => m.kind === 'VOICE' ? '🎤 Голосовое сообщение' : m.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : m.kind === 'IMAGE' ? '📷 Фото' : m.kind === 'VIDEO' ? '🎬 Видео' : m.kind === 'FILE' ? '📎 ' + (m.fileName || 'Файл') : m.kind === 'CALL' ? '📞 Звонок' : m.text;
 
 // Новое сообщение (по сокету): своё с другого устройства, либо от собеседника
 function onIncomingMessage(m) {
@@ -3886,6 +3981,8 @@ function renderReelsOverlay() {
     : `<span style="color:#fff;font-weight:700;font-size:14px">${(p.username).charAt(0).toUpperCase()}</span>`;
   document.getElementById('reels-author-name').innerHTML = esc(p.name || p.username) + (authorData.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
   document.getElementById('reels-author-handle').textContent = '@' + p.username;
+  av.classList.toggle('mx-story-ring', !!p.hasStory); // активная история — цветной круг вокруг аватарки автора
+  av.onclick = p.hasStory ? (e) => { e.stopPropagation(); mxOpenStoriesOf(p.username); } : null;
   const followBtn = document.getElementById('reels-follow-btn');
   if (currentUser && p.username === currentUser.username) {
     followBtn.style.display = 'none';
@@ -4190,10 +4287,11 @@ function mxOpenUserAvatar() {
   document.getElementById('avatar-full-img').src = img.src;
   document.getElementById('avatar-fullscreen').classList.add('active');
 }
+// Нажатие на ник/аватарку в шапке открывает окно с медиа, ссылками, файлами, аудио и настройками чата.
+// В профиль можно перейти только нажав на аватарку внутри этого окна (см. mxOpenChatModal в mchat-features.js).
 function mxChatHeaderTap() {
-  if (!currentChatMeta) return;
-  if (currentChatMeta.type === 'DIRECT' && currentChatPeer) openUserProfile(currentChatPeer.username);
-  else if (currentChatMeta.type === 'GROUP' || currentChatMeta.type === 'CHANNEL') mxOpenChatInfo();
+  if (!currentChatMeta || !currentChatId) return;
+  mxOpenChatModal();
 }
 
 // ---------- информация о группе/канале: участники, добавление позже, уведомления, выход ----------
@@ -4237,11 +4335,11 @@ function mxRenderChatInfo() {
   const staff = ch.role === 'OWNER' || ch.role === 'ADMIN';
   const ROLE = { OWNER: ['Владелец', '#8b5cf6'], ADMIN: ['Админ', '#22c55e'] };
   const pill = r => ROLE[r] ? `<span style="font-size:11px;font-weight:700;color:#fff;background:${ROLE[r][1]};border-radius:8px;padding:2px 8px;flex-shrink:0">${ROLE[r][0]}</span>` : '';
-  const members = mxInfoMembers.map(m => `<div style="display:flex;align-items:center;gap:10px;padding:8px 2px">
+  const members = mxInfoMembers.map(m => `<div onclick="mxMemberMenu('${esc(m.id)}')" style="display:flex;align-items:center;gap:10px;padding:8px 2px;cursor:pointer">
       <div style="width:40px;height:40px;border-radius:50%;background:var(--surf2);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700">${m.avatar ? `<img src="${esc(m.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">` : esc((m.name || m.username).charAt(0).toUpperCase())}</div>
       <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.name || m.username)}</div><div style="font-size:12px;color:var(--text2)">@${esc(m.username)}</div></div>
       ${pill(m.role)}
-      ${staff && m.role !== 'OWNER' && m.id !== currentUser.id && (ch.role === 'OWNER' || m.role === 'MEMBER') ? `<button onclick="mxKickMember('${esc(m.id)}')" style="background:none;border:none;color:#f43f5e;font-size:12px;cursor:pointer">Удалить</button>` : ''}
+      ${staff && m.role !== 'OWNER' && m.id !== currentUser.id && (ch.role === 'OWNER' || m.role === 'MEMBER') ? `<button onclick="event.stopPropagation();mxKickMember('${esc(m.id)}')" style="background:none;border:none;color:#f43f5e;font-size:12px;cursor:pointer">Удалить</button>` : ''}
     </div>`).join('');
   const act = (ico, label, onclick, danger) => `<button onclick="${onclick}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px;border:none;border-radius:14px;background:var(--surf);color:${danger ? '#f43f5e' : 'var(--text)'};font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">${ico}<span>${label}</span></button>`;
   const third = isChannel
@@ -4308,43 +4406,9 @@ async function mxLoadInfoShared() {
 }
 function mxInfoVideoChat() { mxInfoClose(); mxStartCall(true); }
 
-// ---------- каналы: кнопка «Прокомментировать» под постом ----------
-function mxCommentBtnHtml(m) {
-  if (!currentChatMeta || currentChatMeta.type !== 'CHANNEL' || m.pending || m.kind === 'VOICE') return '';
-  return `<button onclick="event.stopPropagation();mxOpenComments('${esc(m.id)}')" style="display:flex;align-items:center;gap:6px;margin-top:6px;padding:6px 10px;border:none;border-radius:10px;background:rgba(255,255,255,.08);color:var(--accent);font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Прокомментировать</button>`;
-}
-async function mxOpenComments(msgId) {
-  document.querySelectorAll('#mx-cmt-modal').forEach(x => x.remove());
-  const m = document.createElement('div');
-  m.className = 'modal active'; m.id = 'mx-cmt-modal'; m.style.zIndex = '900'; m.style.alignItems = 'flex-end';
-  m.onclick = (e) => { if (e.target === m) m.remove(); };
-  m.innerHTML = `<div class="mx-modal-box" style="width:100%;max-width:520px;border-radius:24px 24px 0 0;max-height:80vh">
-    <h3>Комментарии</h3>
-    <div id="mx-cmt-list" style="flex:1;overflow-y:auto;min-height:120px"><div class="mx-hint" style="text-align:center;padding:20px">Загрузка…</div></div>
-    <div style="display:flex;gap:8px"><input class="mx-input" id="mx-cmt-input" placeholder="Написать комментарий..." maxlength="1000" autocomplete="off" onkeydown="if(event.key==='Enter')mxSendComment('${esc(msgId)}')"><button class="mx-btn primary" style="flex:none;padding:12px 16px" onclick="mxSendComment('${esc(msgId)}')">Отправить</button></div>
-  </div>`;
-  document.getElementById('app').appendChild(m);
-  try { mxRenderComments((mxCmtCache[msgId] = (await MchatAPI.comments(msgId)).comments)); }
-  catch (e) { m.remove(); showToast(MchatAPI.errorText(e)); }
-}
-function mxRenderComments(list) {
-  const box = document.getElementById('mx-cmt-list');
-  if (!box) return;
-  box.innerHTML = list.length ? list.map(c => `<div style="display:flex;gap:10px;padding:8px 0">
-      <div style="width:34px;height:34px;border-radius:50%;background:var(--surf2);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700">${c.user.avatar ? `<img src="${esc(c.user.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">` : esc((c.user.name || c.user.username).charAt(0).toUpperCase())}</div>
-      <div style="min-width:0"><div style="font-size:13px;font-weight:700">${esc(c.user.name || c.user.username)} <span style="font-weight:400;color:var(--text2);font-size:11px">${esc(fmtClock(c.createdAt))}</span></div><div style="font-size:14px;line-height:1.4;word-break:break-word">${esc(c.text)}</div></div>
-    </div>`).join('') : '<div class="mx-hint" style="text-align:center;padding:24px 0">Комментариев пока нет — будь первым</div>';
-  box.scrollTop = box.scrollHeight;
-}
-async function mxSendComment(msgId) {
-  const inp = document.getElementById('mx-cmt-input');
-  const text = inp && inp.value.trim();
-  if (!text) return;
-  inp.value = '';
-  try { const r = await MchatAPI.addComment(msgId, text); mxRenderComments((mxCmtCache[msgId] = (mxCmtCache[msgId] || []).concat(r.comment))); }
-  catch (e) { inp.value = text; showToast(MchatAPI.errorText(e)); }
-}
-const mxCmtCache = {};
+// ---------- каналы: комментарии отключены ----------
+// Под постами канала нельзя оставлять комментарии: подписчики могут только ставить реакции.
+function mxCommentBtnHtml() { return ''; }
 
 function mxSwitchHtml(on, onclick) {
   return `<div onclick="${onclick}" style="width:44px;height:26px;border-radius:13px;background:${on ? 'var(--accent)' : 'var(--surf2)'};position:relative;cursor:pointer;flex-shrink:0;transition:background .15s"><div style="position:absolute;top:3px;left:${on ? '21px' : '3px'};width:20px;height:20px;border-radius:50%;background:#fff;transition:left .15s"></div></div>`;
@@ -4352,8 +4416,8 @@ function mxSwitchHtml(on, onclick) {
 async function mxToggleMute(chatId) {
   const ch = chats.find(c => c.id === chatId);
   if (!ch) return;
-  const muted = !ch.muted;
-  try { await MchatAPI.muteChat(chatId, muted); ch.muted = muted; mxRenderChatInfo(); mxRefreshGlobalChannels(); }
+  if (!ch.muted) { mxMuteSheet(chatId); return; } // выключить уведомления: спросим на сколько (1 ч / 2 ч / 8 ч / навсегда)
+  try { await MchatAPI.muteChat(chatId, false); ch.muted = false; ch.mutedUntil = null; mxRenderChatInfo(); mxRefreshGlobalChannels(); }
   catch (e) { showToast(MchatAPI.errorText(e)); }
 }
 function mxCopyInvite() {
@@ -4698,7 +4762,8 @@ async function mxStartCall(withVideo) {
   if (mxCall || mxIncoming) { showToast('Ты уже в звонке'); return; }
   if (!window.isSecureContext) { showToast('Звонки работают только по https или на localhost'); return; }
   const ch = chats.find(c => c.id === currentChatId);
-  if (!ch || ch.type === 'CHANNEL') return;
+  if (!ch || ch.type === 'CHANNEL' || ch.type === 'SAVED') return;
+  if (ch.type === 'GROUP' && !ch.canModerate) { showToast(MchatAPI.errorText('group_call_admin_only')); return; } // групповые звонки — только админы
   const person = ch.type === 'DIRECT' ? Object.assign({ name: ch.name }, ch.peer || {}, { avatar: ch.avatar || (ch.peer && ch.peer.avatar) }) : { name: ch.name, avatar: ch.avatar };
   let r;
   try { r = await MchatAPI.startCall(currentChatId, !!withVideo); }
@@ -4842,8 +4907,8 @@ function mxChatMenu() {
   mxCloseFloating();
   const items = [
     mxCtxItem(MX_ICO.edit, 'Изменить чат', 'mxOpenChatCustomize()'),
-    mxCtxItem(MX_ICO.reply, currentChatMeta && currentChatMeta.type === 'DIRECT' ? 'Профиль' : (currentChatMeta && currentChatMeta.type === 'CHANNEL' ? 'Настройки канала' : 'Настройки группы'), 'mxCloseFloating();mxChatHeaderTap()')
-  ];
+    mxCtxItem(MX_ICO.reply, 'Медиа и настройки', 'mxCloseFloating();mxChatHeaderTap()')
+  ].concat(window.mxChatMenuExtra ? window.mxChatMenuExtra() : []);
   const scrim = document.createElement('div');
   scrim.className = 'mx-ctx-scrim';
   scrim.onclick = mxCloseFloating;
@@ -5086,18 +5151,20 @@ const MX_ICO = {
   edit: '<svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z"/></svg>',
   del: '<svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>',
 };
+const MX_SAVE_ICO = '<svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>';
 function mxOpenContextMenu(id, evt) {
   mxCloseFloating();
   if (!currentUser) return;
   const list = messages[currentChatId] || [];
   const msg = list.find(m => m.id === id);
-  if (!msg || msg.pending) return;
+  if (!msg || msg.pending || msg.kind === 'CALL') return;
   const mine = msg.outgoing;
   const canModerate = currentChatMeta && currentChatMeta.canModerate;
   const buttons = [];
   buttons.push(mxCtxItem(MX_ICO.reply, 'Ответить', `mxReplyTo('${esc(id)}')`));
   if (msg.kind === 'TEXT' && msg.text) buttons.push(mxCtxItem(MX_ICO.copy, 'Копировать', `mxCopyMessage('${esc(id)}')`));
   buttons.push(mxCtxItem(MX_ICO.fwd, 'Переслать', `mxForwardMessage('${esc(id)}')`));
+  if (currentChatMeta && currentChatMeta.type !== 'SAVED') buttons.push(mxCtxItem(MX_SAVE_ICO, 'В избранное', `mxSaveToFavorites('${esc(id)}')`));
   if (mine || canModerate) buttons.push(mxCtxItem(MX_ICO.pin, 'Закрепить', `mxPin('${esc(id)}')`));
   if (mine && msg.kind === 'TEXT') buttons.push(mxCtxItem(MX_ICO.edit, 'Изменить', `mxEditMessage('${esc(id)}')`));
   buttons.push(mxCtxItem(MX_ICO.del, mine ? 'Удалить у всех' : 'Удалить у меня', `mxDeleteMessage('${esc(id)}')`, true));

@@ -2,8 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
-  addComment, addMembers, createGroupOrChannel, listComments, listShared, getChatDTO, getOrCreateDirectChat, joinByInvite, joinPublicChannel, listChats, listContacts,
-  listMembers, listMessages, removeMember, searchPublicChannels, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
+  addMembers, createGroupOrChannel, listShared, getChatDTO, getOrCreateDirectChat, getOrCreateSavedChat, joinByInvite, joinPublicChannel, listChats, listContacts,
+  listMembers, listMessages, removeMember, searchPublicChannels, setChatAutoDelete, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
 } from '../services/chat';
 import { emitToChat, emitToUser, leaveUserFromChat } from '../realtime/hub';
 import { joinAllToChat, pinAndDispatch, readAndBroadcast, sendAndDispatch } from '../services/messaging';
@@ -15,7 +15,12 @@ chatsRouter.use(requireAuth);
 const id = z.string().min(1).max(40);
 
 chatsRouter.get('/', wrap(async (req, res) => {
-  res.json({ chats: await listChats(authOf(req).userId) });
+  const { userId } = authOf(req);
+  const list = await listChats(userId);
+  // «Избранное» могло появиться только что — подключаем сокеты пользователя к его комнате
+  const saved = list.find((c) => c.type === 'SAVED');
+  if (saved) joinAllToChat([userId], saved.id);
+  res.json({ chats: list });
 }));
 
 /** Контакты для выбора участников (друзья и собеседники личных чатов). */
@@ -39,12 +44,32 @@ chatsRouter.post('/:id/join', wrap(async (req, res) => {
   res.json({ chat: await getChatDTO(userId, chatId) });
 }));
 
-/** Переключатель «Уведомления Вкл/Выкл» для этого чата/канала (только для меня). */
+/**
+ * «Уведомления» чата (только для меня): включить, либо выключить на 1 час / 2 часа / 8 часов / навсегда.
+ * { muted: false } — включить; { muted: true, duration: '1h' | '2h' | '8h' | 'forever' } — выключить.
+ */
 chatsRouter.put('/:id/mute', wrap(async (req, res) => {
   const { userId } = authOf(req);
-  const { muted } = z.object({ muted: z.boolean() }).parse(req.body);
-  await setChatMuted(userId, String(req.params.id), muted);
-  res.json({ muted });
+  const b = z.object({ muted: z.boolean(), duration: z.enum(['1h', '2h', '8h', 'forever']).default('forever') }).parse(req.body);
+  res.json(await setChatMuted(userId, String(req.params.id), b.muted, b.duration));
+}));
+
+/** «Очистка чата через 24 часа» (исчезающие сообщения): включить / выключить. */
+chatsRouter.put('/:id/autodelete', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+  const chatId = String(req.params.id);
+  const r = await setChatAutoDelete(userId, chatId, enabled);
+  changed(chatId); // у всех участников обновится значок и настройка
+  res.json({ ...r, chat: await getChatDTO(userId, chatId) });
+}));
+
+/** «Избранное» — личный чат с самим собой (создаётся при первом обращении). */
+chatsRouter.post('/saved', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const chatId = await getOrCreateSavedChat(userId);
+  joinAllToChat([userId], chatId);
+  res.json({ chat: await getChatDTO(userId, chatId) });
 }));
 
 /** Закрепить чат в списке «Чаты» / открепить (только для меня). */
@@ -149,18 +174,11 @@ chatsRouter.patch('/:id', wrap(async (req, res) => {
 }));
 
 chatsRouter.get('/:id/shared', wrap(async (req, res) => {
-  const { tab } = z.object({ tab: z.enum(['media', 'links', 'music', 'voice']).default('media') }).parse(req.query);
+  const { tab } = z.object({ tab: z.enum(['media', 'links', 'music', 'voice', 'files', 'audio']).default('media') }).parse(req.query);
   res.json({ messages: await listShared(authOf(req).userId, String(req.params.id), tab) });
 }));
 
-/** Комментарии под постом канала: id — id сообщения. */
-chatsRouter.get('/comments/:id', wrap(async (req, res) => {
-  res.json({ comments: await listComments(authOf(req).userId, String(req.params.id)) });
-}));
-chatsRouter.post('/comments/:id', wrap(async (req, res) => {
-  const { text } = z.object({ text: z.string().max(1000) }).parse(req.body);
-  res.json({ comment: await addComment(authOf(req).userId, String(req.params.id), text) });
-}));
+// Комментарии под постами каналов отключены: в канале под постом можно ставить только реакции.
 
 chatsRouter.get('/:id/members', wrap(async (req, res) => {
   res.json({ members: await listMembers(authOf(req).userId, String(req.params.id)) });

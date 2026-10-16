@@ -1,8 +1,8 @@
 import { prisma } from '../db';
 import { emitToChat, emitToUser, isActive, joinUserToChat } from '../realtime/hub';
 import {
-  createMessage, deleteMessage, editMessage, forwardMessage, markRead, pinMessage, previewOf, setReaction, toMessageDTO,
-  type CreateInput, type MessageDTO,
+  createCallMessage, createMessage, deleteMessage, editMessage, forwardMessage, isMutedNow, markRead, pinMessage, previewOf, purgeAllChats, setReaction, toMessageDTO,
+  type CallCardDTO, type CreateInput, type MessageDTO,
 } from './chat';
 import { sendPushToUser } from './push';
 
@@ -40,7 +40,7 @@ async function notifyRecipients(senderId: string, chatId: string, dto: MessageDT
   const title = direct ? sender?.name ?? 'Mchat' : chat?.title ?? 'Mchat';
   const body = direct ? preview(dto) : `${sender?.name ?? ''}: ${preview(dto)}`;
   for (const m of others) {
-    if (m.muted) continue; // уведомления этого чата/канала выключены
+    if (isMutedNow(m)) continue; // уведомления этого чата/канала выключены (навсегда или на выбранное время)
     if (!m.user.notifyMessages) continue; // человек выключил уведомления о сообщениях
     if (isActive(m.userId)) continue; // смотрит в приложение — пуш не нужен
     await sendPushToUser(m.userId, { title, body, tag: `chat:${chatId}`, data: { kind: 'message', chatId } });
@@ -87,3 +87,18 @@ export async function readAndBroadcast(userId: string, chatId: string) {
 
 /** Подписывает живые сокеты всех участников на комнату нового чата. */
 export const joinAllToChat = (userIds: string[], chatId: string) => userIds.forEach((u) => joinUserToChat(u, chatId));
+
+/** Карточка завершённого звонка («Разговор длился 5 минут») появляется в переписке у всех участников чата. */
+export async function postCallCard(chatId: string, initiatorId: string, card: CallCardDTO) {
+  const message = await createCallMessage(chatId, initiatorId, card);
+  emitToChat(chatId, 'message:new', toMessageDTO(message));
+}
+
+/** Исчезающие сообщения: удаляем просроченные и сообщаем открытым чатам. Вызывается раз в минуту. */
+export async function purgeExpiredAndBroadcast() {
+  const done = await purgeAllChats();
+  for (const r of done) {
+    for (const id of r.ids) emitToChat(r.chatId, 'message:deleted', { id, chatId: r.chatId });
+    if (r.unpinned) emitToChat(r.chatId, 'chat:pinned', { chatId: r.chatId, message: null });
+  }
+}

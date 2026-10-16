@@ -13,18 +13,31 @@ import { sendPushToUser } from './push';
  *  friends   — подписки взаимные (статус «Друзья» выставляется автоматически)
  */
 export type FriendState = 'none' | 'following' | 'follower' | 'friends';
-export interface FriendInfo { status: FriendState; id: null }
+export interface FriendInfo { status: FriendState; id: null; blockedByMe?: boolean; blockedMe?: boolean }
 
 const stateOf = (iFollow: boolean, heFollows: boolean): FriendState =>
   iFollow && heFollows ? 'friends' : iFollow ? 'following' : heFollows ? 'follower' : 'none';
 
 export async function friendInfo(me: string, other: string): Promise<FriendInfo> {
-  const rows = await prisma.follow.findMany({
-    where: { OR: [{ followerId: me, followingId: other }, { followerId: other, followingId: me }] },
-    select: { followerId: true },
-  });
-  return { status: stateOf(rows.some((r) => r.followerId === me), rows.some((r) => r.followerId === other)), id: null };
+  const [rows, blocks] = await Promise.all([
+    prisma.follow.findMany({
+      where: { OR: [{ followerId: me, followingId: other }, { followerId: other, followingId: me }] },
+      select: { followerId: true },
+    }),
+    prisma.block.findMany({
+      where: { OR: [{ blockerId: me, blockedId: other }, { blockerId: other, blockedId: me }] },
+      select: { blockerId: true },
+    }),
+  ]);
+  return {
+    status: stateOf(rows.some((r) => r.followerId === me), rows.some((r) => r.followerId === other)), id: null,
+    blockedByMe: blocks.some((b) => b.blockerId === me), blockedMe: blocks.some((b) => b.blockerId === other),
+  };
 }
+
+/** Подписан ли `viewer` на `author` (истории и их индикатор зависят от этого). */
+export const isFollowing = async (viewer: string, author: string) =>
+  (await prisma.follow.count({ where: { followerId: viewer, followingId: author } })) > 0;
 
 /** id всех, с кем у пользователя взаимная подписка («друзья»). */
 export async function friendIds(userId: string): Promise<string[]> {
@@ -61,6 +74,10 @@ export async function follow(me: string, username: string): Promise<FriendInfo> 
   const other = await prisma.user.findUnique({ where: { username: normalizeUsername(username) }, select: { id: true } });
   if (!other) throw new HttpError(404, 'user_not_found');
   if (other.id === me) throw new HttpError(400, 'cannot_friend_self');
+  const blocked = await prisma.block.count({
+    where: { OR: [{ blockerId: me, blockedId: other.id }, { blockerId: other.id, blockedId: me }] },
+  });
+  if (blocked) throw new HttpError(403, 'blocked');
   await prisma.follow.upsert({
     where: { followerId_followingId: { followerId: me, followingId: other.id } },
     create: { followerId: me, followingId: other.id }, update: {},
@@ -98,4 +115,64 @@ export async function listFriends(me: string) {
     following: out.map((r) => ({ user: toPublic(r.following) })),
     followers: inc.map((r) => ({ user: toPublic(r.follower), followedBack: mine.has(r.followerId) })),
   };
+}
+
+// ───────────────────────── списки подписчиков / подписок ─────────────────────────
+
+/**
+ * Список «Подписчики» или «Подписки» пользователя (открывается по нажатию на счётчик в профиле).
+ * Приватность: если владелец включил «Скрыть подписки», другие не видят, на кого он подписан;
+ * и его самого нет в чужих списках подписчиков — иначе подписку можно было бы вычислить с другой стороны.
+ */
+export async function listFollowsOf(viewerId: string, username: string, kind: 'followers' | 'following') {
+  const u = await prisma.user.findUnique({ where: { username: normalizeUsername(username) }, select: { id: true, hideFollowing: true } });
+  if (!u) throw new HttpError(404, 'user_not_found');
+  const self = u.id === viewerId;
+  if (kind === 'following' && u.hideFollowing && !self) return { hidden: true, users: [] as ReturnType<typeof toPublic>[] };
+  const rows = kind === 'followers'
+    ? await prisma.follow.findMany({
+        where: { followingId: u.id, ...(self ? {} : { OR: [{ followerId: viewerId }, { follower: { hideFollowing: false } }] }) },
+        include: { follower: { select: publicUserSelect } }, orderBy: { createdAt: 'desc' }, take: 500,
+      })
+    : await prisma.follow.findMany({
+        where: { followerId: u.id }, include: { following: { select: publicUserSelect } }, orderBy: { createdAt: 'desc' }, take: 500,
+      });
+  const users = rows.map((r) => toPublic('follower' in r ? r.follower : r.following));
+  const mine = users.length
+    ? new Set((await prisma.follow.findMany({ where: { followerId: viewerId, followingId: { in: users.map((x) => x.id) } }, select: { followingId: true } })).map((f) => f.followingId))
+    : new Set<string>();
+  return { hidden: false, users: users.map((x) => ({ ...x, iFollow: mine.has(x.id), isMe: x.id === viewerId })) };
+}
+
+// ───────────────────────── чёрный список ─────────────────────────
+
+export async function blockUser(me: string, username: string): Promise<FriendInfo> {
+  const other = await prisma.user.findUnique({ where: { username: normalizeUsername(username) }, select: { id: true, role: true } });
+  if (!other) throw new HttpError(404, 'user_not_found');
+  if (other.id === me) throw new HttpError(400, 'cannot_block_self');
+  if (other.role === 'ADMIN') throw new HttpError(403, 'cannot_block_admin'); // техподдержку не блокируем
+  await prisma.$transaction([
+    prisma.block.upsert({ where: { blockerId_blockedId: { blockerId: me, blockedId: other.id } }, create: { blockerId: me, blockedId: other.id }, update: {} }),
+    // заблокированный больше не подписчик и не друг
+    prisma.follow.deleteMany({ where: { OR: [{ followerId: me, followingId: other.id }, { followerId: other.id, followingId: me }] } }),
+  ]);
+  await notifyOther(me, other.id);
+  emitToUser(other.id, 'chat:changed', {});
+  return friendInfo(me, other.id);
+}
+
+export async function unblockUser(me: string, username: string): Promise<FriendInfo> {
+  const other = await prisma.user.findUnique({ where: { username: normalizeUsername(username) }, select: { id: true } });
+  if (!other) throw new HttpError(404, 'user_not_found');
+  await prisma.block.deleteMany({ where: { blockerId: me, blockedId: other.id } });
+  await notifyOther(me, other.id);
+  emitToUser(other.id, 'chat:changed', {});
+  return friendInfo(me, other.id);
+}
+
+export async function listBlocked(me: string) {
+  const rows = await prisma.block.findMany({
+    where: { blockerId: me }, orderBy: { createdAt: 'desc' }, take: 500, include: { blocked: { select: publicUserSelect } },
+  });
+  return rows.map((r) => toPublic(r.blocked));
 }

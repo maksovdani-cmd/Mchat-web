@@ -16,6 +16,8 @@ enum ChatType {
   DIRECT
   GROUP
   CHANNEL
+  /// «Избранное»: личный чат пользователя с самим собой (заметки, пересланное, файлы)
+  SAVED
 }
 
 enum MemberRole {
@@ -31,6 +33,8 @@ enum MessageKind {
   IMAGE
   VIDEO
   FILE
+  /// служебная карточка завершённого звонка (JSON в text); создаётся только сервером
+  CALL
 }
 
 enum MediaKind {
@@ -69,6 +73,8 @@ model User {
   notifyMessages Boolean  @default(true)
   hideOnline     Boolean  @default(false)
   hideRead       Boolean  @default(false)
+  /// скрыть, на кого я подписан (другие не видят список «Подписки»)
+  hideFollowing  Boolean  @default(false)
 
   createdAt      DateTime @default(now())
   lastSeenAt     DateTime @default(now())
@@ -95,6 +101,14 @@ model User {
   verifyRequests VerifyRequest[]
   storyLikes     StoryLike[]
   storyComments  StoryComment[]
+  blocksMade     Block[]      @relation("Blocker")
+  blocksGot      Block[]      @relation("Blocked")
+  savedTracks    SavedTrack[]
+  callLogs       CallLogUser[]
+  callsStarted   CallLog[]
+  moments        Moment[]
+  momentViews    MomentView[]
+  momentComments MomentComment[]
 }
 
 /// Доверенное устройство. Пока устройство известно — код при входе не нужен.
@@ -162,6 +176,10 @@ model Chat {
   isPublic      Boolean      @default(false)
   /// закреплённое сообщение (одно на чат)
   pinnedMessageId String?
+  /// исчезающие сообщения: через сколько секунд удалять (null — выключено). Сейчас используется значение 86400 (24 часа)
+  autoDeleteSec Int?
+  /// действует только для сообщений, отправленных после этого момента
+  autoDeleteFrom DateTime?
   createdAt     DateTime     @default(now())
   lastMessageAt DateTime     @default(now())
 
@@ -183,6 +201,8 @@ model ChatMember {
   background String?
   /// уведомления этого чата выключены (переключатель «Вкл/Выкл» у канала)
   muted      Boolean  @default(false)
+  /// «глушить до»: null при muted=true — навсегда; иначе уведомления вернутся после этого времени
+  mutedUntil DateTime?
   /// чат закреплён вверху списка (только для этого участника); время закрепления — для порядка
   pinnedAt   DateTime?
 
@@ -243,6 +263,9 @@ model Media {
   posts       Post[]    @relation("PostMedia")
   postThumbs  Post[]    @relation("PostThumb")
   stories     Story[]
+  momentsMedia Moment[] @relation("MomentMedia")
+  momentsTrack Moment[] @relation("MomentTrack")
+  savedBy     SavedTrack[]
 
   @@index([ownerId, kind])
 }
@@ -442,4 +465,120 @@ model ChannelComment {
   createdAt DateTime @default(now())
 
   @@index([messageId, createdAt])
+}
+
+
+/// Чёрный список: blockerId заблокировал blockedId (личные сообщения, звонки и подписка между ними закрыты).
+model Block {
+  blockerId String
+  blocker   User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([blockerId, blockedId])
+  @@index([blockedId])
+}
+
+/// Трек из чужого профиля, который пользователь сохранил себе (можно слушать и ставить в свой профиль).
+model SavedTrack {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mediaId   String
+  media     Media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, mediaId])
+  @@index([userId, createdAt])
+}
+
+enum CallLogStatus {
+  /// разговор состоялся (есть длительность)
+  ENDED
+  /// никто не ответил / звонящий сбросил до ответа
+  MISSED
+  /// собеседник отклонил
+  DECLINED
+}
+
+/// История звонков. Живой звонок хранится в памяти сервера, а после завершения пишется сюда.
+model CallLog {
+  id          String        @id @default(cuid())
+  callId      String        @unique
+  chatId      String
+  initiatorId String?
+  initiator   User?         @relation(fields: [initiatorId], references: [id], onDelete: SetNull)
+  video       Boolean       @default(false)
+  isGroup     Boolean       @default(false)
+  title       String        @default("")
+  status      CallLogStatus
+  startedAt   DateTime
+  answeredAt  DateTime?
+  endedAt     DateTime
+  durationSec Int           @default(0)
+
+  users       CallLogUser[]
+
+  @@index([chatId, startedAt])
+}
+
+/// Кого касался звонок (звонящий и все приглашённые) и вошёл ли он в разговор.
+model CallLogUser {
+  callLogId   String
+  callLog     CallLog @relation(fields: [callLogId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joined      Boolean @default(false)
+  durationSec Int     @default(0)
+
+  @@id([callLogId, userId])
+  @@index([userId])
+}
+
+/// «Момент» — гибрид истории и стены: свежий контент подсвечивается 24 часа, дальше остаётся на стене как хроника.
+model Moment {
+  id              Int      @id @default(autoincrement())
+  authorId        String
+  author          User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  text            String   @default("")
+  mediaId         String?
+  media           Media?   @relation("MomentMedia", fields: [mediaId], references: [id], onDelete: SetNull)
+  /// 'image' | 'video'
+  mediaType       String?
+  /// трек дня (Media kind=TRACK) и его название на момент публикации
+  trackId         String?
+  track           Media?   @relation("MomentTrack", fields: [trackId], references: [id], onDelete: SetNull)
+  trackTitle      String?
+  commentsEnabled Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  views           MomentView[]
+  comments        MomentComment[]
+
+  @@index([authorId, createdAt])
+  @@index([createdAt])
+}
+
+/// Уникальный просмотр: один человек (включая автора) — одна запись.
+model MomentView {
+  momentId Int
+  moment   Moment   @relation(fields: [momentId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  viewedAt DateTime @default(now())
+
+  @@id([momentId, userId])
+  @@index([userId])
+}
+
+model MomentComment {
+  id        Int      @id @default(autoincrement())
+  momentId  Int
+  moment    Moment   @relation(fields: [momentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([momentId, createdAt])
 }

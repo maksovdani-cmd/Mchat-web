@@ -16,6 +16,7 @@
 <meta name="application-name" content="Mchat">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="mchat-features.css">
 </head>
 <body>
 <div class="phone" id="app">
@@ -231,19 +232,20 @@
       <div class="pinned-tracks-strip" id="pinned-tracks-strip" style="display:none"></div>
       <div class="pstats">
         <div class="pstat"><span class="psnum" id="posts-count">0</span><span class="pslbl">Посты</span></div>
-        <div class="pstat"><span class="psnum" id="followers-count">0</span><span class="pslbl">Подписчики</span></div>
-        <div class="pstat"><span class="psnum" id="following-count">0</span><span class="pslbl">Подписки</span></div>
+        <div class="pstat mx-clickable" onclick="mxOpenFollowList('me','followers')"><span class="psnum" id="followers-count">0</span><span class="pslbl">Подписчики</span></div>
+        <div class="pstat mx-clickable" onclick="mxOpenFollowList('me','following')"><span class="psnum" id="following-count">0</span><span class="pslbl">Подписки</span></div>
       </div>
       <div class="pbtns">
         <button class="pbtn" onclick="editProfile()">Редактировать</button>
         <button class="pbtn accent" onclick="openStoryCreator()">+ История</button>
+        <button class="pbtn" onclick="mxOpenMusicLibrary()" title="Моя музыка">♪ Музыка</button>
       </div>
       <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:2px">
         <button class="ptab active" id="ptab-posts" onclick="switchProfileTab('posts')" style="flex:1;padding:10px 4px;background:none;border:none;color:var(--text);font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid var(--accent);transition:all .15s;display:flex;align-items:center;justify-content:center;gap:4px"><svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
         <button class="ptab" id="ptab-likes" onclick="switchProfileTab('likes')" style="flex:1;padding:10px 4px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg></button>
         <button class="ptab" id="ptab-activity" onclick="switchProfileTab('activity')" style="flex:1;padding:10px 4px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg></button>
         <button class="ptab" id="ptab-archive" onclick="switchProfileTab('archive')" style="flex:1;padding:10px 4px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a1 1 0 001 1h14a1 1 0 001-1V8"/><path d="M10 12h4"/></svg></button>
-        <button class="ptab" id="ptab-tracks" onclick="switchProfileTab('tracks')" style="flex:1;padding:10px 4px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></button>
+        <button class="ptab" id="ptab-moment" onclick="switchProfileTab('moment')" title="Момент" style="flex:1;padding:10px 4px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:4px"><span class="mx-moment-ico" id="mx-moment-ico"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></span></button>
       </div>
       <div id="profile-tab-content">
         <div class="profile-grid" id="profile-grid"></div>
@@ -278,6 +280,21 @@
       <div class="sitem" onclick="openPrivacySettings()">
         <div class="sico" style="background:#10b98118"><svg fill="none" stroke="#10b981" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
         <div class="stxt" id="privacy-item">Конфиденциальность</div>
+        <svg class="chev" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+      <div class="sitem" onclick="mxOpenCallHistory()">
+        <div class="sico" style="background:#22c55e18"><svg fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.13.96.36 1.9.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0122 16.92z"/></svg></div>
+        <div class="stxt">История звонков</div>
+        <svg class="chev" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+      <div class="sitem" onclick="mxOpenMusicLibrary()">
+        <div class="sico" style="background:#a855f718"><svg fill="none" stroke="#a855f7" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
+        <div class="stxt">Моя музыка</div>
+        <svg class="chev" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+      <div class="sitem" onclick="mxOpenBlockedList()">
+        <div class="sico" style="background:#f43f5e18"><svg fill="none" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></div>
+        <div class="stxt">Чёрный список</div>
         <svg class="chev" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
       </div>
       <div class="sitem" onclick="openNotificationSettings()">
@@ -764,7 +781,7 @@
   <div style="flex:1;overflow-y:auto">
     <div id="up-banner" style="display:none;height:140px;background:var(--surf2) center/cover no-repeat;flex-shrink:0"></div>
     <div style="padding:20px 16px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">
-      <div id="up-avatar" onclick="mxOpenUserAvatar()" style="cursor:pointer;width:76px;height:76px;border-radius:50%;background:var(--surf2);overflow:hidden;display:flex;align-items:center;justify-content:center;margin-bottom:10px"><svg width="34" height="34" fill="none" stroke="var(--text2)" stroke-width="1.2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
+      <div id="up-avatar" onclick="mxUserAvatarTap()" style="cursor:pointer;width:76px;height:76px;border-radius:50%;background:var(--surf2);overflow:hidden;display:flex;align-items:center;justify-content:center;margin-bottom:10px"><svg width="34" height="34" fill="none" stroke="var(--text2)" stroke-width="1.2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
       <div id="up-name" style="font-family:var(--font);font-weight:800;font-size:18px;display:flex;align-items:center;gap:4px;justify-content:center">Пользователь</div>
       <div id="up-username" style="font-size:13px;color:var(--text2);margin-bottom:4px">@username</div>
       <div id="up-music" onclick="mxProfileMusicPlay()" style="display:none;cursor:pointer;align-items:center;gap:6px;font-size:13px;color:var(--accent);margin-bottom:6px;max-width:260px"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><span id="up-music-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span></div>
@@ -772,8 +789,8 @@
       <div id="up-bio" style="font-size:13px;color:var(--text);line-height:1.5;max-width:280px;margin-bottom:14px"></div>
       <div class="pstats" style="justify-content:center;gap:28px;margin-bottom:14px">
         <div class="pstat"><span class="psnum" id="up-posts-count">0</span><span class="pslbl">Посты</span></div>
-        <div class="pstat"><span class="psnum" id="up-followers-count">0</span><span class="pslbl">Подписчики</span></div>
-        <div class="pstat"><span class="psnum" id="up-following-count">0</span><span class="pslbl">Подписки</span></div>
+        <div class="pstat mx-clickable" onclick="mxOpenFollowList(upViewedUsername,'followers')"><span class="psnum" id="up-followers-count">0</span><span class="pslbl">Подписчики</span></div>
+        <div class="pstat mx-clickable" onclick="mxOpenFollowList(upViewedUsername,'following')"><span class="psnum" id="up-following-count">0</span><span class="pslbl">Подписки</span></div>
       </div>
       <div class="mx-up-actions">
       <button onclick="const _u=upViewedUsername;closeUserProfile();startChatWithUser(_u)" style="padding:9px 22px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px">
@@ -786,7 +803,7 @@
     <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-top:6px">
       <button class="ptab active" id="uptab-posts" onclick="switchUserProfileTab('posts')" style="flex:1;padding:12px 4px;background:none;border:none;color:var(--text);font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid var(--accent);display:flex;align-items:center;justify-content:center;gap:6px"><svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> Посты</button>
       <button class="ptab" id="uptab-reposts" onclick="switchUserProfileTab('reposts')" style="flex:1;padding:12px 4px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg> Репосты</button>
-      <button class="ptab" id="uptab-tracks" onclick="switchUserProfileTab('tracks')" style="flex:1;padding:12px 4px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> Репосты</button>
+      <button class="ptab" id="uptab-moment" onclick="switchUserProfileTab('moment')" style="flex:1;padding:12px 4px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;justify-content:center;gap:6px"><span class="mx-moment-ico" id="mx-up-moment-ico"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></span> Момент</button>
     </div>
     <div class="profile-grid" id="up-grid"></div>
   </div>
@@ -842,7 +859,7 @@
     </div>
     <div class="audio-modal-title" id="audio-modal-title">Название трека</div>
     <div class="audio-modal-artist" id="audio-modal-artist">@автор</div>
-    <div class="mx-audio-player" id="mx-audio-player" style="display:none">
+    <div class="mx-audio-player" id="mx-audio-player">
       <button class="ib" id="mx-audio-play" onclick="mxAudioToggle()" title="Слушать"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 20 12 7 20 7 4"/></svg></button>
       <div class="mx-prog" onclick="mxAudioSeek(event)"><div class="mx-prog-fill" id="mx-audio-fill"></div></div>
       <span id="mx-audio-time" class="mx-rec-time2">0:00</span>
@@ -868,5 +885,6 @@
 <script src="script.js"></script>
 <script src="masks.js"></script>
 <script src="mchat-ext.js"></script>
+<script src="mchat-features.js"></script>
 </body>
 </html>

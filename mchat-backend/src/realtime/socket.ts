@@ -8,6 +8,9 @@ import { resolveSessionToken, type AuthContext } from '../middleware/auth';
 import { Bucket } from '../middleware/security';
 import { dropUserFromCalls } from '../services/calls';
 import { MAX_TEXT } from '../services/chat';
+import {
+  MAX_MOMENT_COMMENT, MAX_MOMENT_TEXT, addMomentComment, createMoment, getMoment, listMomentComments, listMoments, momentRoom, recordView,
+} from '../services/moments';
 import { readAndBroadcast, sendAndDispatch } from '../services/messaging';
 import { broadcastPresence } from '../services/presence';
 import { COOKIE } from '../services/session';
@@ -25,10 +28,20 @@ const sendSchema = z.object({
   replyToId: id.optional(),
 });
 const chatIdSchema = z.object({ chatId: id });
+const momentId = z.object({ id: z.number().int().positive() });
+const momentCreateSchema = z.object({
+  text: z.string().max(MAX_MOMENT_TEXT).optional(),
+  mediaId: id.nullish(),
+  trackId: id.nullish(),
+  commentsEnabled: z.boolean().optional(),
+});
+const momentCommentSchema = z.object({ id: z.number().int().positive(), text: z.string().min(1).max(MAX_MOMENT_COMMENT) });
+const momentListSchema = z.object({ username: z.string().min(1).max(40), before: z.number().int().positive().optional() });
 const typingSchema = z.object({ chatId: id, isTyping: z.boolean() });
 
 const msgBucket = new Bucket(10_000, 20); // не больше 20 сообщений за 10 секунд
 const typingBucket = new Bucket(10_000, 30);
+const momentBucket = new Bucket(10_000, 20); // создание/комментарии «Момента»
 
 /**
  * Пауза перед «офлайн»: при обновлении страницы или кратком обрыве сети сокет закрывается
@@ -117,6 +130,27 @@ export function initSocket(server: http.Server) {
       if (!socket.rooms.has(`chat:${p.data.chatId}`)) return;
       socket.to(`chat:${p.data.chatId}`).emit('typing', { chatId: p.data.chatId, userId, isTyping: p.data.isTyping });
     });
+
+    // ---- «Момент»: те же операции, что и в REST, но по WebSocket (с подтверждением ack) ----
+    const momentHandler = <T>(schema: z.ZodType<T>, run: (p: T) => Promise<unknown>, limited = false) =>
+      async (raw: unknown, ack?: Ack) => {
+        const cb: Ack = typeof ack === 'function' ? ack : () => {};
+        try {
+          if (limited && !momentBucket.take(userId)) return cb({ ok: false, error: 'rate_limited' });
+          cb({ ok: true, ...(await run(schema.parse(raw)) as object) });
+        } catch (e) {
+          cb({ ok: false, error: errCode(e) });
+        }
+      };
+    socket.on('moment:create', momentHandler(momentCreateSchema, async (p) => ({ moment: await createMoment(userId, p) }), true));
+    socket.on('moment:list', momentHandler(momentListSchema, (p) => listMoments(userId, p.username, p.before)));
+    socket.on('moment:get', momentHandler(momentId, async (p) => ({ moment: await getMoment(userId, p.id) })));
+    socket.on('moment:view', momentHandler(momentId, (p) => recordView(userId, p.id)));
+    socket.on('moment:comments', momentHandler(momentId, (p) => listMomentComments(userId, p.id)));
+    socket.on('moment:comment', momentHandler(momentCommentSchema, async (p) => ({ comment: await addMomentComment(userId, p.id, p.text) }), true));
+    // подписка на живые обновления конкретного момента (просмотры, комментарии)
+    socket.on('moment:subscribe', momentHandler(momentId, async (p) => { await getMoment(userId, p.id); await socket.join(momentRoom(p.id)); return {}; }));
+    socket.on('moment:unsubscribe', momentHandler(momentId, async (p) => { await socket.leave(momentRoom(p.id)); return {}; }));
 
     socket.on('app:visibility', (visible: unknown) => setVisible(userId, socket.id, visible === true));
 

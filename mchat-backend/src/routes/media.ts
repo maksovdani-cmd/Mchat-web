@@ -100,3 +100,23 @@ mediaRouter.delete('/:id', wrap(async (req, res) => {
   await removeFile(m.file);
   res.json({ ok: true });
 }));
+
+/** Сохранить трек из чужого профиля к себе: его можно слушать и ставить в свой профиль. */
+mediaRouter.put('/:id/save', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const m = await prisma.media.findUnique({ where: { id: String(req.params.id) } });
+  if (!m || m.kind !== 'TRACK') throw new HttpError(404, 'media_not_found');
+  if (m.ownerId !== userId) {
+    await prisma.savedTrack.upsert({ where: { userId_mediaId: { userId, mediaId: m.id } }, create: { userId, mediaId: m.id }, update: {} });
+  }
+  res.json({ saved: true });
+}));
+
+/** Убрать сохранённый трек (если он стоял в профиле — убираем и оттуда). */
+mediaRouter.delete('/:id/save', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const mediaId = String(req.params.id);
+  await prisma.savedTrack.deleteMany({ where: { userId, mediaId } });
+  await prisma.user.updateMany({ where: { id: userId, musicTrack: mediaId }, data: { musicTrack: null } });
+  res.json({ saved: false });
+}));

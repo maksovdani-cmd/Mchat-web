@@ -4,7 +4,8 @@ import { prisma } from '../db';
 import { authOf, requireAuth } from '../middleware/auth';
 import { searchLimiter } from '../middleware/security';
 import { disconnectUser } from '../realtime/hub';
-import { followCounts, friendInfo } from '../services/friends';
+import { followCounts, friendInfo, isFollowing } from '../services/friends';
+import { hasActiveMoment } from '../services/moments';
 import { gcMedia, mediaUrl, toMediaDTO } from '../services/media';
 import { announcePresence, visiblePresence } from '../services/presence';
 import { publicUserSelect } from '../services/chat';
@@ -24,11 +25,21 @@ const toPublic = (u: { id: string; username: string; name: string; avatarUrl: st
   ...(u.bio !== undefined ? { bio: u.bio } : {}),
 });
 
-/** Трек из профиля: {id, title, url} или null (если трека больше нет). */
-const trackOf = async (ownerId: string, id: string | null) => {
+/**
+ * Трек из профиля: {id, title, url, artist} или null (если трека больше нет).
+ * Это может быть и свой трек, и трек из чужого профиля, который человек сохранил себе.
+ */
+const trackOf = async (id: string | null) => {
   if (!id) return null;
-  const m = await prisma.media.findFirst({ where: { id, ownerId, kind: 'TRACK' } });
-  return m ? { id: m.id, title: m.title || 'Без названия', url: mediaUrl(m.id) } : null;
+  const m = await prisma.media.findFirst({ where: { id, kind: 'TRACK' }, include: { owner: { select: { username: true } } } });
+  return m ? { id: m.id, title: m.title || 'Без названия', url: mediaUrl(m.id), artist: '@' + m.owner.username, durationSec: m.durationSec } : null;
+};
+/** Можно ли ставить этот трек себе в профиль: свой или сохранённый. */
+const canUseTrack = async (userId: string, id: string) => {
+  const m = await prisma.media.findFirst({ where: { id, kind: 'TRACK' }, select: { ownerId: true } });
+  if (!m) return false;
+  if (m.ownerId === userId) return true;
+  return (await prisma.savedTrack.count({ where: { userId, mediaId: id } })) > 0;
 };
 
 usersRouter.get(
@@ -41,9 +52,10 @@ usersRouter.get(
       email: u.email,
       banner: u.bannerUrl,
       ...(await followCounts(u.id)),
-      musicTrack: await trackOf(u.id, u.musicTrack),
+      musicTrack: await trackOf(u.musicTrack),
+      momentActive: await hasActiveMoment(u.id),
       role: u.role,
-      settings: { notifyMessages: u.notifyMessages, hideOnline: u.hideOnline, hideRead: u.hideRead },
+      settings: { notifyMessages: u.notifyMessages, hideOnline: u.hideOnline, hideRead: u.hideRead, hideFollowing: u.hideFollowing },
       deviceId: authOf(req).deviceId,
     });
   }),
@@ -56,6 +68,7 @@ const patchSchema = z
     notifyMessages: z.boolean(),
     hideOnline: z.boolean(),
     hideRead: z.boolean(),
+    hideFollowing: z.boolean(),
     avatarMediaId: z.string().min(1).max(40).nullable(),
     bannerMediaId: z.string().min(1).max(40).nullable(),
     musicTrack: z.string().min(1).max(40).nullable(),
@@ -80,7 +93,7 @@ usersRouter.patch(
       data[key] = id === null ? null : mediaUrl(id);
     }
     if (musicTrack !== undefined) {
-      if (musicTrack !== null && !(await trackOf(userId, musicTrack))) throw new HttpError(400, 'bad_media');
+      if (musicTrack !== null && !(await canUseTrack(userId, musicTrack))) throw new HttpError(400, 'bad_media');
       data.musicTrack = musicTrack;
     }
     const u = await prisma.user.update({ where: { id: userId }, data });
@@ -94,9 +107,9 @@ usersRouter.patch(
     res.json({
       ...toPublic(u),
       banner: u.bannerUrl,
-      musicTrack: await trackOf(u.id, u.musicTrack),
+      musicTrack: await trackOf(u.musicTrack),
       bio: u.bio,
-      settings: { notifyMessages: u.notifyMessages, hideOnline: u.hideOnline, hideRead: u.hideRead },
+      settings: { notifyMessages: u.notifyMessages, hideOnline: u.hideOnline, hideRead: u.hideRead, hideFollowing: u.hideFollowing },
     });
   }),
 );
@@ -106,7 +119,7 @@ usersRouter.delete(
   '/me',
   wrap(async (req, res) => {
     const { userId } = authOf(req);
-    await prisma.chat.deleteMany({ where: { type: 'DIRECT', members: { some: { userId } } } });
+    await prisma.chat.deleteMany({ where: { type: { in: ['DIRECT', 'SAVED'] }, members: { some: { userId } } } });
     await prisma.user.delete({ where: { id: userId } });
     disconnectUser(userId);
     dropCookie(res, COOKIE.session);
@@ -139,8 +152,12 @@ usersRouter.get(
   wrap(async (req, res) => {
     const u = await prisma.user.findUnique({ where: { username: normalizeUsername(String(req.params.username)) }, select: { id: true, username: true } });
     if (!u) throw new HttpError(404, 'user_not_found');
+    const me = authOf(req).userId;
     const tracks = await prisma.media.findMany({ where: { ownerId: u.id, kind: 'TRACK' }, orderBy: { createdAt: 'desc' }, take: 50 });
-    res.json({ tracks: tracks.map((t) => ({ ...toMediaDTO(t), artist: '@' + u.username })) });
+    const saved = tracks.length
+      ? new Set((await prisma.savedTrack.findMany({ where: { userId: me, mediaId: { in: tracks.map((t) => t.id) } }, select: { mediaId: true } })).map((x) => x.mediaId))
+      : new Set<string>();
+    res.json({ tracks: tracks.map((t) => ({ ...toMediaDTO(t), artist: '@' + u.username, saved: saved.has(t.id) || t.ownerId === me, mine: t.ownerId === me })) });
   }),
 );
 
@@ -150,16 +167,37 @@ usersRouter.get(
     const me = authOf(req).userId;
     const u = await prisma.user.findUnique({
       where: { username: normalizeUsername(String(req.params.username)) },
-      select: { ...publicUserSelect, bio: true, bannerUrl: true, musicTrack: true, hideOnline: true, lastSeenAt: true },
+      select: { ...publicUserSelect, bio: true, bannerUrl: true, musicTrack: true, hideOnline: true, hideFollowing: true, lastSeenAt: true },
     });
     if (!u) throw new HttpError(404, 'user_not_found');
-    const [friendship, tracks, counts, musicTrack] = await Promise.all([
+    const [friendship, tracks, counts, musicTrack, storyCount, followsAuthor, momentActive] = await Promise.all([
       u.id === me ? { status: 'self', id: null } : friendInfo(me, u.id),
       prisma.media.count({ where: { ownerId: u.id, kind: 'TRACK' } }),
       followCounts(u.id),
-      trackOf(u.id, u.musicTrack),
+      trackOf(u.musicTrack),
+      prisma.story.count({ where: { authorId: u.id, expiresAt: { gt: new Date() } } }),
+      u.id === me ? true : isFollowing(me, u.id),
+      hasActiveMoment(u.id),
     ]);
-    res.json({ ...toPublic(u), banner: u.bannerUrl, ...visiblePresence(u), friendship, tracksCount: tracks, ...counts, musicTrack });
+    res.json({
+      ...toPublic(u), banner: u.bannerUrl, ...visiblePresence(u), friendship, tracksCount: tracks, ...counts, musicTrack,
+      // активная история: кольцо видят все, а смотреть её могут только подписчики (и сам автор)
+      hasStory: storyCount > 0, storiesVisible: followsAuthor,
+      followingHidden: u.hideFollowing && u.id !== me,
+      momentActive,
+    });
+  }),
+);
+
+/** Сохранённые мной треки из чужих профилей. */
+usersRouter.get(
+  '/me/saved-tracks',
+  wrap(async (req, res) => {
+    const rows = await prisma.savedTrack.findMany({
+      where: { userId: authOf(req).userId }, orderBy: { createdAt: 'desc' }, take: 100,
+      include: { media: { include: { owner: { select: { username: true } } } } },
+    });
+    res.json({ tracks: rows.map((r) => ({ ...toMediaDTO(r.media), artist: '@' + r.media.owner.username, saved: true })) });
   }),
 );
 

@@ -12,8 +12,10 @@ import { authRouter } from './routes/auth';
 import { chatsRouter } from './routes/chats';
 import { friendsRouter } from './routes/friends';
 import { mediaRouter } from './routes/media';
+import { momentsRouter } from './routes/moments';
 import { messagesRouter } from './routes/messages';
 import { postsRouter, storiesRouter } from './routes/posts';
+import { purgeExpiredAndBroadcast } from './services/messaging';
 import { purgeExpiredStories } from './services/posts';
 import { verificationRouter } from './routes/verification';
 import { callsRouter } from './routes/calls';
@@ -108,6 +110,7 @@ app.use('/api/friends', friendsRouter);
 app.use('/api/media', mediaRouter);
 app.use('/api/posts', postsRouter);
 app.use('/api/stories', storiesRouter);
+app.use('/api/moments', momentsRouter);
 app.use('/api/verification', verificationRouter);
 app.use('/api/calls', callsRouter);
 app.use('/api/support', supportRouter);
@@ -153,6 +156,7 @@ const io = initSocket(server);
 const expireNow = () => expireVerifications().catch((e) => console.error('expire verifications', e));
 expireNow();
 setInterval(expireNow, 5 * 60 * 1000).unref(); // срок галочки вышел — она исчезает (проверка раз в 5 минут)
+setInterval(() => purgeExpiredAndBroadcast().catch((e) => console.error('purge disappearing messages', e)), 60 * 1000).unref(); // «очистка чата через 24 часа»
 setInterval(() => purgeExpiredStories().catch((e) => console.error('purge stories', e)), 60 * 60 * 1000).unref();
 
 // Чтобы бесплатный Render не засыпал: раз в 10 минут сервер сам стучится на свой /ping (только в проде)

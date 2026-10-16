@@ -394,6 +394,8 @@
     // закреплённые — сверху (в порядке закрепления), остальные — как были (по свежести)
     const pinned = list.filter((ch) => ch.pinnedChat).sort((a, b) => String(a.pinnedChatAt).localeCompare(String(b.pinnedChatAt)));
     list = pinned.concat(list.filter((ch) => !ch.pinnedChat));
+    // «Избранное» всегда первым в списке (если нет поиска, который его не находит)
+    list = list.filter((ch) => ch.type === 'SAVED').concat(list.filter((ch) => ch.type !== 'SAVED'));
     c.innerHTML = list.map((ch) => `
       <div class="chat-item${ch.pinnedChat ? ' mx-pinned-chat' : ''}" data-chat-id="${esc(ch.id)}" onclick="openChat('${esc(ch.id)}')">
         <div class="chat-avatar">${chatAvatarHtml(ch)}</div>

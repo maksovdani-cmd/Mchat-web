@@ -72,8 +72,14 @@ export async function canAccessMedia(userId: string, m: Pick<Media, 'id' | 'owne
       where: { privacy: 'public', OR: [{ mediaId: m.id }, { thumbId: m.id }] }, select: { id: true },
     });
     if (post) return true;
-    const story = await prisma.story.findFirst({ where: { mediaId: m.id, expiresAt: { gt: new Date() } }, select: { id: true } });
+    // история: медиа видят только подписчики автора (а сам автор — как владелец файла)
+    const story = await prisma.story.findFirst({
+      where: { mediaId: m.id, expiresAt: { gt: new Date() }, author: { followers: { some: { followerId: userId } } } }, select: { id: true },
+    });
     if (story) return true;
+    // «Момент»: фото/видео момента видны всем вошедшим (стена профиля)
+    const moment = await prisma.moment.findFirst({ where: { mediaId: m.id }, select: { id: true } });
+    if (moment) return true;
   }
   const ref = await prisma.message.findFirst({
     where: { mediaId: m.id, deletedAt: null, chat: { members: { some: { userId } } } },
@@ -85,14 +91,15 @@ export async function canAccessMedia(userId: string, m: Pick<Media, 'id' | 'owne
 /** Файл ещё нужен, если на него ссылается сообщение, пост, история или профиль. */
 async function isMediaReferenced(mediaId: string): Promise<boolean> {
   const url = mediaUrl(mediaId);
-  const [msgs, posts, stories, profiles, chats] = await Promise.all([
+  const [msgs, posts, stories, profiles, chats, moments] = await Promise.all([
     prisma.message.count({ where: { mediaId, deletedAt: null } }),
     prisma.post.count({ where: { OR: [{ mediaId }, { thumbId: mediaId }] } }),
     prisma.story.count({ where: { mediaId } }),
     prisma.user.count({ where: { OR: [{ avatarUrl: url }, { bannerUrl: url }] } }),
     prisma.chat.count({ where: { avatarMediaId: mediaId } }),
+    prisma.moment.count({ where: { mediaId } }),
   ]);
-  return msgs + posts + stories + profiles + chats > 0;
+  return msgs + posts + stories + profiles + chats + moments > 0;
 }
 
 /** Удаляет файл, если на него больше ничто не ссылается (треки профиля не трогаем). */

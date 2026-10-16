@@ -3,13 +3,13 @@
  *  2) Web Push: сообщения и ВХОДЯЩИЕ ЗВОНКИ (долгая вибрация, кнопки «Ответить/Отклонить», уведомление не исчезает само). */
 'use strict';
 
-const VERSION = 'v3';
+const VERSION = 'v4';
 const STATIC_CACHE = 'mchat-static-' + VERSION;
 const RUNTIME_CACHE = 'mchat-runtime-' + VERSION;
 const MP_CACHE = 'mchat-mediapipe-1'; // wasm и модель масок — тяжёлые, меняются редко
 
 const PRECACHE = [
-  '/', '/style.css', '/script.js', '/mchat-api.js', '/i18n.js', '/mchat-ext.js', '/masks.js',
+  '/', '/style.css', '/script.js', '/mchat-api.js', '/i18n.js', '/mchat-ext.js', '/mchat-features.js', '/mchat-features.css', '/masks.js',
   '/manifest.webmanifest',
   '/img/mchat.jpg', '/img/icon-96.png', '/img/icon-192.png', '/img/icon-512.png', '/img/apple-touch-icon.png',
   '/sounds/ringtone.wav',

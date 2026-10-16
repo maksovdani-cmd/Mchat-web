@@ -88,6 +88,21 @@
     forbidden_media: 'Нельзя использовать чужой файл',
     push_unsupported: 'Этот браузер не поддерживает push-уведомления',
     push_denied: 'Разреши уведомления в настройках браузера',
+    dm_follow_required: 'Писать можно только взаимным подписчикам. Подпишись на человека, и он сможет ответить',
+    blocked: 'Пользователь ограничил с вами общение',
+    blocked_by_me: 'Вы заблокировали этого пользователя. Разблокируйте его, чтобы писать',
+    not_forwardable: 'Это сообщение нельзя переслать',
+    cannot_block_self: 'Нельзя заблокировать самого себя',
+    cannot_block_admin: 'Техподдержку заблокировать нельзя',
+    group_call_admin_only: 'Групповой звонок могут начать только владелец и админы группы',
+    no_calls_in_saved: 'В «Избранном» звонки недоступны',
+    stories_followers_only: 'Истории доступны только подписчикам',
+    empty_moment: 'Добавь фото или напиши заметку',
+    moment_limit: 'Сегодня уже опубликовано максимум моментов',
+    moment_not_found: 'Момент не найден',
+    comments_disabled: 'Автор отключил комментарии',
+    empty_comment: 'Комментарий пустой',
+    comment_not_found: 'Комментарий не найден',
     // ошибки, которые сервер возвращает после входа через Google (?auth_error=...)
     nick_required: 'Введи ник для регистрации',
     nick_taken: 'Этот ник уже занят — выбери другой',
@@ -126,6 +141,22 @@
   };
   let socket = null;
   let everConnected = false;
+  // подписки на любые события сокета; переживают переподключение и можно ставить до connect()
+  const extraListeners = [];
+  function onSocket(event, fn) {
+    extraListeners.push([event, fn]);
+    if (socket) socket.on(event, fn);
+  }
+  // emit с подтверждением: резолвится ответом сервера ({ ok: true, ... }) или отклоняется { code }
+  function emitSocket(event, payload) {
+    return new Promise((resolve, reject) => {
+      if (!socket || !socket.connected) return reject({ code: 'offline', status: 0 });
+      socket.timeout(10000).emit(event, payload || {}, (err, res) => {
+        if (err) return reject({ code: 'timeout', status: 0 });
+        if (res && res.ok) resolve(res); else reject({ code: (res && res.error) || 'server_error', status: 400 });
+      });
+    });
+  }
 
   function connect() {
     if (socket) return;
@@ -163,6 +194,7 @@
     socket.on('call:handled', (p) => handlers.onCallHandled && handlers.onCallHandled(p));
     socket.on('chat:removed', (p) => handlers.onChatRemoved && handlers.onChatRemoved(p));
     socket.on('friend:update', (p) => handlers.onFriendUpdate && handlers.onFriendUpdate(p));
+    extraListeners.forEach((l) => socket.on(l[0], l[1]));
     socket.on('auth:login-code', (d) => handlers.onLoginCode && handlers.onLoginCode(d));
     socket.on('auth:new-device', (d) => handlers.onNewDevice && handlers.onNewDevice(d));
   }
@@ -340,7 +372,10 @@
     adminGrantVerification: (username, days) => api('/verification/grant', { method: 'POST', body: { username: username, days: days } }),
     adminFindUsers: (q) => api('/verification/users?q=' + encodeURIComponent(q)),
     joinChannel: (id) => api('/chats/' + encodeURIComponent(id) + '/join', { method: 'POST', body: {} }),
-    muteChat: (id, muted) => api('/chats/' + encodeURIComponent(id) + '/mute', { method: 'PUT', body: { muted: !!muted } }),
+    // muted=false — включить; muted=true + duration ('1h' | '2h' | '8h' | 'forever') — выключить на время / навсегда
+    muteChat: (id, muted, duration) => api('/chats/' + encodeURIComponent(id) + '/mute', { method: 'PUT', body: { muted: !!muted, duration: duration || 'forever' } }),
+    setAutoDelete: (id, enabled) => api('/chats/' + encodeURIComponent(id) + '/autodelete', { method: 'PUT', body: { enabled: !!enabled } }),
+    openSavedChat: () => api('/chats/saved', { method: 'POST', body: {} }),
     createGroup: (b) => api('/chats/group', { method: 'POST', body: b }),
     joinChat: (code) => api('/chats/join', { method: 'POST', body: { code: code } }),
 
@@ -377,14 +412,37 @@
     follow: (username) => api('/friends/follow', { method: 'POST', body: { username: username } }),
     unfollow: (username) => api('/friends/follow/' + encodeURIComponent(username), { method: 'DELETE' }),
     chatShared: (id, tab) => api('/chats/' + encodeURIComponent(id) + '/shared?tab=' + encodeURIComponent(tab)),
-    comments: (msgId) => api('/chats/comments/' + encodeURIComponent(msgId)),
-    addComment: (msgId, text) => api('/chats/comments/' + encodeURIComponent(msgId), { method: 'POST', body: { text: text } }),
+    // списки подписчиков / подписок и чёрный список
+    followsOf: (username, kind) => api('/friends/of/' + encodeURIComponent(username) + '/' + (kind === 'following' ? 'following' : 'followers')),
+    blockedUsers: () => api('/friends/blocked'),
+    blockUser: (username) => api('/friends/block', { method: 'POST', body: { username: username } }),
+    unblockUser: (username) => api('/friends/block/' + encodeURIComponent(username), { method: 'DELETE' }),
+    // история звонков
+    callHistory: () => api('/calls/history'),
 
     // файлы и треки («нота»)
     uploadMedia: uploadMedia,
     deleteMedia: (id) => api('/media/' + encodeURIComponent(id), { method: 'DELETE' }),
     myTracks: () => api('/me/tracks'),
     userTracks: (username) => api('/users/' + encodeURIComponent(username) + '/tracks'),
+    savedTracks: () => api('/me/saved-tracks'),
+    saveTrack: (id) => api('/media/' + encodeURIComponent(id) + '/save', { method: 'PUT', body: {} }),
+    unsaveTrack: (id) => api('/media/' + encodeURIComponent(id) + '/save', { method: 'DELETE' }),
+
+    // ── «Момент» (REST) ──
+    listMoments: (username, before) => api('/moments?username=' + encodeURIComponent(username) + (before ? '&before=' + before : '')),
+    getMoment: (id) => api('/moments/' + id),
+    createMoment: (body) => api('/moments', { method: 'POST', body: body }),
+    deleteMoment: (id) => api('/moments/' + id, { method: 'DELETE' }),
+    setMomentComments: (id, enabled) => api('/moments/' + id, { method: 'PATCH', body: { commentsEnabled: !!enabled } }),
+    viewMoment: (id) => api('/moments/' + id + '/view', { method: 'POST', body: {} }),
+    momentComments: (id) => api('/moments/' + id + '/comments'),
+    addMomentComment: (id, text) => api('/moments/' + id + '/comments', { method: 'POST', body: { text: text } }),
+    deleteMomentComment: (id, commentId) => api('/moments/' + id + '/comments/' + commentId, { method: 'DELETE' }),
+
+    // ── произвольные события сокета (WebSocket-часть «Момента») ──
+    on: onSocket,
+    emit: emitSocket,
 
     // realtime
     connect: connect,
