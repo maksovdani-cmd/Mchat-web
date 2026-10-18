@@ -4,6 +4,10 @@ import { prisma } from '../db';
 import { HttpError } from '../utils/errors';
 
 webpush.setVapidDetails(config.VAPID_SUBJECT, config.VAPID_PUBLIC_KEY, config.VAPID_PRIVATE_KEY);
+// Apple (iOS/macOS Safari) отклоняет пуши с «заглушечным» VAPID_SUBJECT (BadJwtToken/403) — нужен настоящий mailto: или https:
+if (/example\.(com|org)|localhost/i.test(config.VAPID_SUBJECT)) {
+  console.warn('[push] VAPID_SUBJECT выглядит как заглушка (' + config.VAPID_SUBJECT + '). На iPhone/iPad пуши не придут, пока не укажешь свой настоящий mailto:почта@домен или https://домен.');
+}
 
 export interface PushPayload {
   title: string;
@@ -12,6 +16,8 @@ export interface PushPayload {
   data?: Record<string, unknown>;
   /** сколько секунд push-сервис хранит уведомление, если устройство офлайн (звонок — меньше минуты, иначе он «позвонит» вчерашним днём) */
   ttl?: number;
+  /** срочность доставки: звонки и сообщения — high (доходят в режиме сна Android/iOS), остальное можно отложить */
+  urgency?: 'very-low' | 'low' | 'normal' | 'high';
 }
 
 /**
@@ -57,7 +63,7 @@ export async function hasPushChannel(userId: string): Promise<boolean> {
 }
 
 export async function sendPushToUser(userId: string, input: PushPayload): Promise<number> {
-  const { ttl, ...payload } = input;
+  const { ttl, urgency, ...payload } = input;
   const subs = await prisma.pushSubscription.findMany({ where: { userId } });
   let sent = 0;
   await Promise.all(
@@ -66,7 +72,7 @@ export async function sendPushToUser(userId: string, input: PushPayload): Promis
         await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
           JSON.stringify(payload),
-          { TTL: ttl ?? 60 * 60 * 24, urgency: 'high' },
+          { TTL: ttl ?? 60 * 60 * 24, urgency: urgency ?? 'high' },
         );
         sent++;
       } catch (e) {
