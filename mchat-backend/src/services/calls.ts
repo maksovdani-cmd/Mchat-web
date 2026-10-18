@@ -18,6 +18,7 @@ interface Call {
   roomId: string;        // комната ZEGOCLOUD (создаётся сама при первом входе, REST-вызовов не нужно)
   joined: Set<string>;   // кто сейчас в комнате
   invited: Set<string>;  // кого звонят и кто ещё не ответил
+  pushed: Set<string>;   // кому ушёл push «входящий звонок» (им же отправим «звонок окончен», чтобы уведомление не висело)
   allowed: Set<string>;  // кому можно получить токен
   timer: NodeJS.Timeout | null;
   startedAt: number;                       // когда начали звонить (для истории звонков)
@@ -132,6 +133,30 @@ function finish(call: Call, reason: string) {
   // комната ZEGOCLOUD исчезает сама, когда из неё выходят все; токены привязаны к roomId и скоро истекут
   const everyone = new Set([...call.joined, ...call.invited]);
   for (const uid of everyone) emitToUser(uid, 'call:ended', { callId: call.id, reason });
+  notifyCallEnded(call, reason);
+}
+
+/**
+ * Приложение закрыто — сокета нет, и «call:ended» не дойдёт. Поэтому тем, кому звонили пушем, шлём второй push:
+ * уведомление «Входящий звонок» заменяется (тот же tag) на «Пропущенный звонок» либо просто закрывается.
+ */
+function notifyCallEnded(call: Call, reason: string) {
+  const targets = [...call.pushed].filter((uid) => !call.presence.has(uid)); // те, кто так и не ответил
+  if (!targets.length) return;
+  void (async () => {
+    const caller = await prisma.user.findUnique({ where: { id: call.initiatorId }, select: { name: true, username: true } }).catch(() => null);
+    const who = caller ? caller.name || caller.username : '';
+    for (const uid of targets) {
+      const missed = reason === 'missed' && !call.answeredAt;
+      sendPushToUser(uid, {
+        title: missed ? 'Пропущенный звонок' : 'Звонок завершён',
+        body: missed ? `${call.isGroup && call.title ? call.title + ' · ' : ''}${who}` : '',
+        tag: 'call-' + call.id,
+        data: { kind: 'call-end', callId: call.id, chatId: call.chatId, reason, missed },
+        ttl: 120, urgency: 'high',
+      }).catch(() => {});
+    }
+  })();
 }
 
 async function ring(call: Call, uids: string[]) {
@@ -139,13 +164,13 @@ async function ring(call: Call, uids: string[]) {
     where: { id: call.initiatorId }, select: { id: true, username: true, name: true, avatarUrl: true },
   });
   for (const uid of uids) {
-    call.invited.add(uid); call.allowed.add(uid);
+    call.invited.add(uid); call.allowed.add(uid); call.pushed.add(uid);
     emitToUser(uid, 'call:incoming', {
       callId: call.id, chatId: call.chatId, video: call.video, isGroup: call.isGroup, title: call.title, from: userBrief(caller),
     });
     sendPushToUser(uid, {
       title: call.video ? 'Входящий видеозвонок' : 'Входящий звонок', body: `${call.isGroup && call.title ? call.title + ' · ' : ''}${caller.name || caller.username}`,
-      tag: 'call-' + call.id, data: { kind: 'call', chatId: call.chatId, callId: call.id, video: call.video }, ttl: 45,
+      tag: 'call-' + call.id, data: { kind: 'call', chatId: call.chatId, callId: call.id, video: call.video }, ttl: 45, urgency: 'high',
     }).catch(() => {});
   }
   if (call.timer) clearTimeout(call.timer);
@@ -180,7 +205,7 @@ export async function startCall(userId: string, chatId: string, video: boolean) 
   const call: Call = {
     id, chatId, isGroup: m.chat.type === 'GROUP', title: m.chat.title ?? '', video,
     roomId: 'call_' + id.replace(/-/g, ''),
-    initiatorId: userId, joined: new Set([userId]), invited: new Set(), allowed: new Set([userId]), timer: null,
+    initiatorId: userId, joined: new Set([userId]), invited: new Set(), pushed: new Set(), allowed: new Set([userId]), timer: null,
     startedAt: Date.now(), answeredAt: null, presence: new Map([[userId, { from: Date.now(), to: null }]]),
   };
   calls.set(call.id, call);
@@ -197,6 +222,10 @@ export async function acceptCall(userId: string, callId: string) {
   if (!call.answeredAt && userId !== call.initiatorId) call.answeredAt = Date.now(); // разговор начался
   // остальные устройства этого пользователя перестают звонить
   emitToUser(userId, 'call:handled', { callId });
+  // на остальных устройствах (в том числе закрытых) уведомление о звонке должно исчезнуть
+  if (call.pushed.has(userId)) {
+    sendPushToUser(userId, { title: 'Mchat', body: '', tag: 'call-' + call.id, data: { kind: 'call-end', callId, chatId: call.chatId, reason: 'handled', missed: false }, ttl: 60, urgency: 'high' }).catch(() => {});
+  }
   return { callId, video: call.video, isGroup: call.isGroup, chatId: call.chatId, ...(await tokenFor(call, userId)) };
 }
 

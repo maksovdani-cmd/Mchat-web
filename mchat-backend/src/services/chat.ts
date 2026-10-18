@@ -1,6 +1,7 @@
 import { Prisma, type MemberRole, type MessageKind } from '@prisma/client';
 import { prisma } from '../db';
 import { friendIds } from './friends';
+import { isForbidden } from '../utils/moderation';
 import { HttpError } from '../utils/errors';
 import { randomToken } from '../utils/crypto';
 import { normalizeUsername } from '../utils/validate';
@@ -238,7 +239,10 @@ export async function createGroupOrChannel(
   usernames: string[],
   isPublic = false,
 ) {
-  const names = [...new Set(usernames.map(normalizeUsername))].slice(0, MAX_GROUP_INITIAL_MEMBERS);
+  // нецензурные и оскорбительные названия/описания (в том числе внутри слова) не пропускаем
+  if (isForbidden(title) || (description && isForbidden(description))) throw new HttpError(400, 'name_forbidden');
+  // В канал людей не «добавляют»: на канал подписываются сами (поиск в «Чатах» или ссылка). Поэтому участников при создании канала нет.
+  const names = type === 'CHANNEL' ? [] : [...new Set(usernames.map(normalizeUsername))].slice(0, MAX_GROUP_INITIAL_MEMBERS);
   const users = names.length ? await prisma.user.findMany({ where: { username: { in: names } }, select: { id: true } }) : [];
   const memberIds = users.map((u) => u.id).filter((id) => id !== userId);
   const chat = await prisma.chat.create({
@@ -566,6 +570,7 @@ export async function updateChatInfo(
   if (!isGroupType(m.chat.type)) throw new HttpError(400, 'not_a_group');
   if (!isStaff(m.role)) throw new HttpError(403, 'forbidden');
   const data: Prisma.ChatUpdateInput = {};
+  if ((patch.title && isForbidden(patch.title)) || (patch.description && isForbidden(patch.description))) throw new HttpError(400, 'name_forbidden');
   if (patch.title !== undefined) data.title = patch.title;
   if (patch.description !== undefined) data.description = patch.description || null;
   if (patch.avatarMediaId !== undefined) {
@@ -599,6 +604,7 @@ export async function listMembers(userId: string, chatId: string) {
 export async function addMembers(userId: string, chatId: string, userIds: string[]) {
   const m = await assertMember(chatId, userId);
   if (!isGroupType(m.chat.type)) throw new HttpError(400, 'not_a_group');
+  if (m.chat.type === 'CHANNEL') throw new HttpError(400, 'not_supported_in_channel'); // на канал подписываются сами
   if (!isStaff(m.role)) throw new HttpError(403, 'forbidden');
   const ids = [...new Set(userIds)].filter((u) => u !== userId);
   if (!ids.length) return [];
@@ -630,6 +636,7 @@ export async function removeMember(userId: string, chatId: string, targetId: str
 export async function setMemberRole(userId: string, chatId: string, targetId: string, role: 'ADMIN' | 'MEMBER') {
   const m = await assertMember(chatId, userId);
   if (!isGroupType(m.chat.type)) throw new HttpError(400, 'not_a_group');
+  if (m.chat.type === 'CHANNEL') throw new HttpError(400, 'not_supported_in_channel'); // в канале нет админов — только владелец
   if (m.role !== 'OWNER') throw new HttpError(403, 'forbidden');
   if (targetId === userId) throw new HttpError(400, 'cannot_change_owner');
   const target = await prisma.chatMember.findUnique({ where: { chatId_userId: { chatId, userId: targetId } } });
@@ -665,16 +672,17 @@ export async function listContacts(userId: string) {
  * Слова запроса ищутся независимо друг от друга, поэтому «новости мира» найдёт «Мир: новости».
  */
 export async function searchPublicChannels(userId: string, rawQuery: string) {
-  const q = rawQuery.replace(/^[@#\s]+/, '').trim();
+  const q = rawQuery.replace(/^[@#\s]+/, '').trim().slice(0, 60);
   if (!q) return [];
+  // поиск строго по НАЗВАНИЮ канала; слова запроса ищутся независимо («новости мира» найдёт «Мир: новости»)
   const words = [...new Set(q.split(/\s+/).filter(Boolean))].slice(0, 5);
-  const textMatch = (w: string) => ({ OR: [{ title: { contains: w, mode: 'insensitive' as const } }, { description: { contains: w, mode: 'insensitive' as const } }] });
+  const titleMatch = (w: string) => ({ title: { contains: w, mode: 'insensitive' as const } });
   const rows = await prisma.chat.findMany({
     where: {
       type: 'CHANNEL',
       AND: [
         { OR: [{ isPublic: true }, { members: { some: { userId } } }] },
-        { OR: [{ AND: words.map(textMatch) }, textMatch(q)] },
+        { OR: [{ AND: words.map(titleMatch) }, titleMatch(q)] },
       ],
     },
     orderBy: [{ members: { _count: 'desc' } }, { lastMessageAt: 'desc' }],
@@ -691,7 +699,36 @@ export async function searchPublicChannels(userId: string, rawQuery: string) {
   }));
 }
 
-/** Кнопка «Присоединиться» у публичного канала. */
+/**
+ * Просмотр публичного канала БЕЗ подписки (экран канала с кнопкой «Подписаться»): карточка канала и последние посты.
+ * Закрытый канал так не открыть — только по ссылке-приглашению.
+ */
+export async function getChannelPreview(userId: string, chatId: string, limit = 40) {
+  const chat = await prisma.chat.findUnique({
+    where: { id: chatId },
+    include: { _count: { select: { members: true } }, members: { where: { userId }, select: { role: true, muted: true, mutedUntil: true } } },
+  });
+  if (!chat || chat.type !== 'CHANNEL') throw new HttpError(404, 'chat_not_found');
+  const mine = chat.members[0] ?? null;
+  if (!chat.isPublic && !mine) throw new HttpError(404, 'chat_not_found');
+  const rows = await prisma.message.findMany({
+    where: { chatId, deletedAt: null, hides: { none: { userId } } },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: limit,
+    include: messageInclude,
+  });
+  return {
+    channel: {
+      id: chat.id, type: 'CHANNEL' as const, name: chat.title ?? 'Канал', description: chat.description,
+      avatar: chat.avatarMediaId ? mediaUrl(chat.avatarMediaId) : null,
+      memberCount: chat._count.members, isPublic: chat.isPublic,
+      joined: !!mine, muted: mine ? isMutedNow(mine) : false,
+    },
+    messages: rows.reverse().map(toMessageDTO),
+  };
+}
+
+/** Кнопка «Подписаться» у публичного канала. */
 export async function joinPublicChannel(userId: string, chatId: string) {
   const chat = await prisma.chat.findUnique({ where: { id: chatId }, select: { type: true, isPublic: true, _count: { select: { members: true } } } });
   if (!chat || chat.type !== 'CHANNEL' || !chat.isPublic) throw new HttpError(404, 'chat_not_found');

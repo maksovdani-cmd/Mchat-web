@@ -6,7 +6,7 @@ import helmet from 'helmet';
 import { ZodError } from 'zod';
 import { config } from './config';
 import { prisma } from './db';
-import { apiLimiter, originGuard } from './middleware/security';
+import { apiLimiter, noStore, originGuard } from './middleware/security';
 import { initSocket } from './realtime/socket';
 import { authRouter } from './routes/auth';
 import { chatsRouter } from './routes/chats';
@@ -83,6 +83,13 @@ app.use(
   }),
 );
 
+// Браузерные возможности отдаём только своей странице: камера/микрофон (звонки, кружки), показ экрана; остальное закрыто
+app.use((_req, res, next) => {
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=(), usb=(), interest-cohort=()');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+});
+
 app.use(cookieParser());
 app.use(express.json({ limit: '64kb' }));
 
@@ -101,7 +108,7 @@ app.get('/healthz', async (_req, res) => {
 });
 
 // ── API ──
-app.use('/api', apiLimiter, originGuard);
+app.use('/api', noStore, apiLimiter, originGuard);
 app.use('/api/auth', authRouter);
 app.use('/api/push', pushRouter);
 app.use('/api/chats', chatsRouter);
@@ -121,7 +128,7 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
 app.use(
   express.static(path.join(__dirname, '..', 'public'), {
     setHeaders(res, filePath) {
-      if (/(sw\.js|index\.html|manifest\.webmanifest|mchat-api\.js|mchat-ext\.js|i18n\.js|masks\.js)$/.test(filePath)) {
+      if (/(sw\.js|index\.html|manifest\.webmanifest|mchat-api\.js|mchat-ext\.js|mchat-fixes\.js|mchat-fixes\.css|mchat-features\.js|mchat-features\.css|i18n\.js|masks\.js|script\.js|style\.css)$/.test(filePath)) {
         res.setHeader('Cache-Control', 'no-cache');
       }
       if (filePath.endsWith('sw.js')) res.setHeader('Service-Worker-Allowed', '/');

@@ -7,6 +7,7 @@ import {
 import { Readable } from 'node:stream';
 import { config } from '../config';
 import { HttpError } from '../utils/errors';
+import { sniffMatchesMime } from '../utils/sniff';
 
 /**
  * Хранилище файлов. Два режима:
@@ -49,7 +50,9 @@ export async function saveUpload(req: Request, file: string, mime: string, maxBy
       req.on('aborted', () => reject(new Error('aborted')));
     });
     if (size === 0) throw new HttpError(400, 'empty_file');
-    await s3!.send(new PutObjectCommand({ Bucket: config.S3_BUCKET, Key: file, Body: Buffer.concat(chunks), ContentType: mime, CacheControl: 'public, max-age=31536000, immutable' }));
+    const body = Buffer.concat(chunks);
+    if (!sniffMatchesMime(mime, body.subarray(0, 16))) throw new HttpError(415, 'unsupported_type'); // содержимое не соответствует заявленному типу
+    await s3!.send(new PutObjectCommand({ Bucket: config.S3_BUCKET, Key: file, Body: body, ContentType: mime, CacheControl: 'public, max-age=31536000, immutable' }));
     return size;
   }
   const full = diskPath(file);
@@ -68,6 +71,13 @@ export async function saveUpload(req: Request, file: string, mime: string, maxBy
       req.pipe(ws);
     });
     if (size === 0) throw new HttpError(400, 'empty_file');
+    // проверяем настоящее начало файла (магические байты), а не только заявленный тип
+    const fh = await fs.promises.open(full, 'r');
+    try {
+      const head = Buffer.alloc(16);
+      const { bytesRead } = await fh.read(head, 0, 16, 0);
+      if (!sniffMatchesMime(mime, head.subarray(0, bytesRead))) throw new HttpError(415, 'unsupported_type');
+    } finally { await fh.close(); }
   } catch (e) {
     fs.promises.unlink(full).catch(() => {});
     throw e;

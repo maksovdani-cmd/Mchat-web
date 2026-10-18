@@ -11,7 +11,7 @@ import { announcePresence, visiblePresence } from '../services/presence';
 import { publicUserSelect } from '../services/chat';
 import { COOKIE, dropCookie, revokeDevice } from '../services/session';
 import { HttpError, wrap } from '../utils/errors';
-import { cleanQuery, normalizeUsername } from '../utils/validate';
+import { cleanQuery, displayNameAllowed, normalizeUsername } from '../utils/validate';
 
 export const usersRouter = Router();
 usersRouter.use(requireAuth);
@@ -80,7 +80,13 @@ usersRouter.patch(
   '/me',
   wrap(async (req, res) => {
     const userId = authOf(req).userId;
+    // @username — неизменяемый идентификатор: менять его через API нельзя ни при каких условиях
+    if (req.body && typeof req.body === 'object' && ('username' in req.body || 'email' in req.body || 'role' in req.body || 'verified' in req.body)) {
+      throw new HttpError(400, 'username_immutable');
+    }
     const { avatarMediaId, bannerMediaId, musicTrack, ...rest } = patchSchema.parse(req.body);
+    // Display Name можно менять и повторять, но нецензурное и оскорбительное (в том числе внутри слова) — нельзя
+    if (rest.name !== undefined && !displayNameAllowed(rest.name)) throw new HttpError(400, 'name_forbidden');
     const data: Record<string, unknown> = { ...rest };
     const before = await prisma.user.findUnique({ where: { id: userId }, select: { hideOnline: true, avatarUrl: true, bannerUrl: true } });
     // аватар/обложка: только своя картинка; null — убрать

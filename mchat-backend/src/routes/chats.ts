@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
-  addMembers, createGroupOrChannel, listShared, getChatDTO, getOrCreateDirectChat, getOrCreateSavedChat, joinByInvite, joinPublicChannel, listChats, listContacts,
+  addMembers, createGroupOrChannel, getChannelPreview, listShared, getChatDTO, getOrCreateDirectChat, getOrCreateSavedChat, joinByInvite, joinPublicChannel, listChats, listContacts,
   listMembers, listMessages, removeMember, searchPublicChannels, setChatAutoDelete, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
 } from '../services/chat';
 import { emitToChat, emitToUser, leaveUserFromChat } from '../realtime/hub';
@@ -34,7 +34,12 @@ chatsRouter.get('/search', wrap(async (req, res) => {
   res.json({ channels: await searchPublicChannels(authOf(req).userId, q) });
 }));
 
-/** Кнопка «Присоединиться» у найденного публичного канала. */
+/** Экран публичного канала до подписки: карточка и последние посты (без членства в канале). */
+chatsRouter.get('/:id/preview', wrap(async (req, res) => {
+  res.json(await getChannelPreview(authOf(req).userId, String(req.params.id)));
+}));
+
+/** Кнопка «Подписаться» у публичного канала. */
 chatsRouter.post('/:id/join', wrap(async (req, res) => {
   const { userId } = authOf(req);
   const chatId = String(req.params.id);

@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { config } from '../config';
 import { prisma } from '../db';
 import { authOf, requireAuth } from '../middleware/auth';
-import { authLimiter, codeLimiter } from '../middleware/security';
+import { authLimiter, codeLimiter, usernameLimiter } from '../middleware/security';
 import { emitToUser, isConnected } from '../realtime/hub';
 import { sendLoginCodeEmail } from '../services/mailer';
 import { sendPushToUser } from '../services/push';
@@ -16,7 +16,7 @@ import {
 import { generateCode, hashCode, randomToken, safeEqualHex, sha256Buf, signJwt, verifyJwt } from '../utils/crypto';
 import { clientIp, deviceLabel } from '../utils/device';
 import { HttpError, wrap } from '../utils/errors';
-import { validateUsername } from '../utils/validate';
+import { safeDisplayName, validateUsername } from '../utils/validate';
 
 export const authRouter = Router();
 
@@ -55,6 +55,19 @@ function exchangeCode(state: string, code: string, verifier: string): Promise<To
   p.catch(() => { if (exchanges.get(state)?.p === p) exchanges.delete(state); });
   return p;
 }
+
+// ─────────────────────────────────────────────────────────────
+// 0. Проверка ника «на лету» (экран входа): формат, чёрный список, занят ли.
+//    GET /api/auth/check-username?u=nick   →  { ok, reason? }
+//    Окончательная проверка всё равно делается при регистрации; это только подсказка пользователю.
+// ─────────────────────────────────────────────────────────────
+authRouter.get('/check-username', usernameLimiter, wrap(async (req, res) => {
+  const raw = typeof req.query.u === 'string' ? req.query.u.slice(0, 40) : '';
+  const v = validateUsername(raw);
+  if (!v.ok) return void res.json({ ok: false, reason: `nick_${v.reason}` });
+  const taken = await prisma.user.findUnique({ where: { username: v.value }, select: { id: true } });
+  res.json(taken ? { ok: false, reason: 'nick_taken' } : { ok: true });
+}));
 
 // ─────────────────────────────────────────────────────────────
 // 1. Старт: браузер уходит в Google
@@ -150,6 +163,9 @@ authRouter.get(
     // ── РЕГИСТРАЦИЯ: ник + Google, без кода ──
     if (!existing) {
       if (!saved.u) return fail(res, 'nick_required');
+      // повторная проверка на сервере в момент создания (чёрный список мог обновиться, cookie мог жить до 10 минут)
+      const recheck = validateUsername(saved.u);
+      if (!recheck.ok) return fail(res, `nick_${recheck.reason}`);
       let user;
       try {
         user = await prisma.user.create({
@@ -157,7 +173,7 @@ authRouter.get(
             googleId: payload.sub,
             email,
             username: saved.u,
-            name: ((payload.name || '').replace(/[<>]/g, '').trim() || saved.u).slice(0, 40),
+            name: safeDisplayName(payload.name, saved.u),
             avatarUrl: payload.picture ?? null,
             role: wantsAdmin ? 'ADMIN' : 'USER',
           },
