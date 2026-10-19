@@ -674,21 +674,21 @@ export async function listContacts(userId: string) {
 export async function searchPublicChannels(userId: string, rawQuery: string) {
   const q = rawQuery.replace(/^[@#\s]+/, '').trim().slice(0, 60);
   if (!q) return [];
-  // поиск строго по НАЗВАНИЮ канала; слова запроса ищутся независимо («новости мира» найдёт «Мир: новости»)
-  const words = [...new Set(q.split(/\s+/).filter(Boolean))].slice(0, 5);
-  const titleMatch = (w: string) => ({ title: { contains: w, mode: 'insensitive' as const } });
-  const rows = await prisma.chat.findMany({
-    where: {
-      type: 'CHANNEL',
-      AND: [
-        { OR: [{ isPublic: true }, { members: { some: { userId } } }] },
-        { OR: [{ AND: words.map(titleMatch) }, titleMatch(q)] },
-      ],
-    },
+  // Поиск строго по НАЗВАНИЮ канала. Сравнение регистра делаем здесь, а не в БД: ILIKE в PostgreSQL с локалью C/POSIX
+  // не понимает кириллицу («новости» не находило «Новости»). Заодно «ё» = «е».
+  const norm = (t: string) => t.toLocaleLowerCase('ru').replace(/ё/g, 'е');
+  const needles = [...new Set(q.split(/\s+/).filter(Boolean))].slice(0, 5).map(norm);
+  const all = await prisma.chat.findMany({
+    where: { type: 'CHANNEL', OR: [{ isPublic: true }, { members: { some: { userId } } }] },
     orderBy: [{ members: { _count: 'desc' } }, { lastMessageAt: 'desc' }],
-    take: 30,
+    take: 3000,
     include: { _count: { select: { members: true } }, members: { where: { userId }, select: { muted: true, mutedUntil: true } } },
   });
+  const whole = norm(q);
+  const rows = all
+    .filter((c) => { const t = norm(c.title ?? ''); return needles.every((n) => t.includes(n)); })
+    .sort((x, y) => Number(norm(y.title ?? '').startsWith(whole)) - Number(norm(x.title ?? '').startsWith(whole))) // начинающиеся с запроса — выше
+    .slice(0, 30);
   return rows.map((c) => ({
     id: c.id, name: c.title ?? 'Канал', description: c.description,
     avatar: c.avatarMediaId ? mediaUrl(c.avatarMediaId) : null,

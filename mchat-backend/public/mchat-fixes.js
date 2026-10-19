@@ -475,12 +475,43 @@
     } catch (e) { toast(MchatAPI.errorText(e)); }
   };
 
-  /** Результаты поиска каналов в разделе «Чаты»: нажатие открывает канал (подписка — кнопкой внизу экрана канала). */
+  /** Поиск каналов в строке поиска раздела «Чаты»: ищет ТОЛЬКО каналы по названию, независимо от поиска по своим чатам. */
+  let chanSearchState = '';   // '' | 'loading' | 'empty' | 'error'
+  window.mxSearchGlobalChannels = function (q) {
+    clearTimeout(mxGlobalTimer);
+    const term = (q || '').trim().replace(/^[@#]+/, '');
+    if (!term) { mxGlobalResults = []; chanSearchState = ''; mxRefreshGlobalChannels(); return; }
+    mxGlobalTimer = setTimeout(async () => {
+      const seq = ++mxGlobalSeq;
+      try {
+        const r = await MchatAPI.searchChannels(term);
+        if (seq !== mxGlobalSeq) return;
+        mxGlobalResults = r.channels || [];
+        chanSearchState = mxGlobalResults.length ? '' : 'empty';
+      } catch (e) {
+        if (seq !== mxGlobalSeq) return;
+        mxGlobalResults = []; chanSearchState = 'error';
+        console.warn('channel search failed', e);
+      }
+      mxRefreshGlobalChannels();
+    }, 250);
+  };
+
+  /** Результаты поиска каналов: нажатие открывает канал (подписка — кнопкой внизу экрана канала). */
   window.mxRefreshGlobalChannels = function () {
     const list = $('chats-list'); if (!list) return;
     const box = mxGlobalBox();
-    if (!mxGlobalResults.length) { box.innerHTML = ''; return; }
-    box.innerHTML = '<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;padding:14px 16px 6px">Каналы</div>' + mxGlobalResults.map((c) => {
+    const head = '<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;padding:14px 16px 6px">Каналы</div>';
+    const note = (t) => `<div style="padding:6px 16px 14px;font-size:13px;color:var(--text2)">${t}</div>`;
+    if (!mxGlobalResults.length) {
+      box.innerHTML = chanSearchState === 'empty' ? head + note('Каналов с таким названием не найдено')
+        : chanSearchState === 'error' ? head + note('Не удалось выполнить поиск каналов. Проверьте соединение') : '';
+      return;
+    }
+    // «Не найдено» относится к личным чатам и группам — когда каналы найдены, оно только путает
+    const first = list.firstElementChild;
+    if (first && first !== box && !first.classList.contains('chat-item')) first.remove();
+    box.innerHTML = head + mxGlobalResults.map((c) => {
       const joined = c.joined || chats.some((x) => x.id === c.id && !x.preview);
       const av = c.avatar ? `<img src="${esc(c.avatar)}" style="width:100%;height:100%;object-fit:cover">` : esc((c.name || '?').charAt(0).toUpperCase());
       return `<div class="chat-item" onclick="mxOpenChannelPreview('${esc(c.id)}')">
