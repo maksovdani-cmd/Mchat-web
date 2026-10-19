@@ -165,7 +165,7 @@ function openUserProfile(username) {
   document.getElementById('up-username').textContent = '@' + username;
   document.getElementById('up-bio').textContent = data.bio || '';
   document.getElementById('up-avatar').innerHTML = data.avatar
-    ? `<img src="${data.avatar}" style="width:100%;height:100%;object-fit:cover">`
+    ? `<img src="${esc(data.avatar)}" style="width:100%;height:100%;object-fit:cover">`
     : `<svg width="34" height="34" fill="none" stroke="var(--text2)" stroke-width="1.2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
   postsByUser[username] = []; repostsByUser[username] = [];
   document.getElementById('up-posts-count').textContent = '0';
@@ -242,10 +242,10 @@ function renderUserProfileGrid() {
 function foreignGridItemHtml(p, ownerUsername) {
   const onclick = `onclick='openForeignPostByRef(${JSON.stringify({id:p.id, username:p.username||ownerUsername}).replace(/'/g,"&#39;")})'`;
   if (p.mediaType === 'image' && p.mediaUrl) {
-    return `<div class="grid-item" ${onclick}><img src="${p.mediaUrl}" style="width:100%;height:100%;object-fit:cover"></div>`;
+    return `<div class="grid-item" ${onclick}><img src="${esc(p.mediaUrl)}" style="width:100%;height:100%;object-fit:cover"></div>`;
   } else if (p.mediaType === 'video' && p.mediaUrl) {
     const thumb = p.thumbnail || '';
-    return `<div class="grid-item" ${onclick} style="position:relative;background:var(--surf2)">${thumb?`<img src="${thumb}" style="width:100%;height:100%;object-fit:cover">`:''}<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none"><div style="width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center"><svg width="12" height="12" fill="#fff" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg></div></div></div>`;
+    return `<div class="grid-item" ${onclick} style="position:relative;background:var(--surf2)">${thumb?`<img src="${esc(thumb)}" style="width:100%;height:100%;object-fit:cover">`:''}<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none"><div style="width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center"><svg width="12" height="12" fill="#fff" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg></div></div></div>`;
   }
   return `<div class="grid-item" ${onclick} style="background:var(--surf2);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px"><svg width="20" height="20" fill="none" stroke="var(--text2)" stroke-width="1.4" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><div style="font-size:9px;color:var(--text2);text-align:center;padding:0 4px;overflow:hidden;max-height:24px">${p.text?p.text.slice(0,20):''}</div></div>`;
 }
@@ -263,7 +263,7 @@ async function openForeignPostByRef(ref) {
 function openForeignPostViewer(p, ownerUsername) {
   const authorData = loadUserData(p.username || ownerUsername);
   document.getElementById('fpv-av').innerHTML = authorData.avatar
-    ? `<img src="${authorData.avatar}" style="width:100%;height:100%;object-fit:cover">`
+    ? `<img src="${esc(authorData.avatar)}" style="width:100%;height:100%;object-fit:cover">`
     : `<svg width="18" height="18" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
   document.getElementById('fpv-name').innerHTML = esc(p.name || authorData.name) + (authorData.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
   document.getElementById('fpv-time').textContent = p.time || '';
@@ -339,7 +339,7 @@ async function runSearch() {
     html += `<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;padding:4px 2px;margin-top:4px">Посты</div>`;
     html += matchedPosts.slice(0,5).map(p=>`
       <div onclick="this.closest('.modal').remove();${p.username===currentUser?.username?`openPostViewer(${p.id})`:`openForeignPostByRef({id:${p.id},username:'${p.username}'})`}" style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surf);border-radius:12px;cursor:pointer">
-        <div style="width:42px;height:42px;border-radius:10px;background:var(--surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">${p.thumbnail?`<img src="${p.thumbnail}" style="width:100%;height:100%;object-fit:cover">`:p.mediaType==='image'&&p.mediaUrl?`<img src="${p.mediaUrl}" style="width:100%;height:100%;object-fit:cover">`:`<svg width="16" height="16" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`}</div>
+        <div style="width:42px;height:42px;border-radius:10px;background:var(--surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">${p.thumbnail?`<img src="${esc(p.thumbnail)}" style="width:100%;height:100%;object-fit:cover">`:p.mediaType==='image'&&p.mediaUrl?`<img src="${esc(p.mediaUrl)}" style="width:100%;height:100%;object-fit:cover">`:`<svg width="16" height="16" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`}</div>
         <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">${esc(p.name)}</div><div style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.text||'Без описания')}</div></div>
       </div>`).join('');
   }
@@ -515,7 +515,9 @@ async function bootSession() {
   const authErr = params.get('auth_error');
   const wantsCode = params.get('auth') === 'code';
   const openChatId = params.get('chat');
-  if (authErr || wantsCode || openChatId) history.replaceState(null, '', '/'); // чистим адресную строку
+  // «Ответить» на звонок из push-уведомления при закрытом приложении: /?call=ID&chat=ID&video=1&title=Имя
+  const pushCall = params.get('call') ? { callId: params.get('call'), chatId: params.get('chat') || '', video: params.get('video') === '1', title: params.get('title') || '' } : null;
+  if (authErr || wantsCode || openChatId || pushCall) history.replaceState(null, '', '/'); // чистим адресную строку
 
   // Возврат из Google на НОВОМ устройстве → нужен код
   if (wantsCode) { showCodeScreen(); return; }
@@ -535,7 +537,8 @@ async function bootSession() {
   try {
     const me = await MchatAPI.me();
     await onLoggedIn(me);
-    if (openChatId) openChatById(openChatId);
+    if (pushCall && window.mxAnswerCallFromPush) window.mxAnswerCallFromPush(pushCall);
+    else if (openChatId) openChatById(openChatId);
   } catch (e) {
     if (e && e.status === 401) {
       resetSessionState();
@@ -808,14 +811,14 @@ function updateProfileUI() {
   document.getElementById('following-count').textContent = currentUser.following||0;
   mxRenderOwnMusic();
   if (currentUser.avatar) {
-    document.getElementById('avatar-container').innerHTML = `<img src="${currentUser.avatar}" style="width:100%;height:100%;object-fit:cover">`;
+    document.getElementById('avatar-container').innerHTML = `<img src="${esc(currentUser.avatar)}" style="width:100%;height:100%;object-fit:cover">`;
   } else {
     document.getElementById('avatar-container').innerHTML = `<svg width="36" height="36" fill="none" stroke="var(--text2)" stroke-width="1.2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
   }
   const composerAv = document.getElementById('composer-avatar');
   if (composerAv) {
     composerAv.innerHTML = currentUser.avatar
-      ? `<img src="${currentUser.avatar}" style="width:100%;height:100%;object-fit:cover">`
+      ? `<img src="${esc(currentUser.avatar)}" style="width:100%;height:100%;object-fit:cover">`
       : `<svg width="20" height="20" fill="none" stroke="var(--text2)" stroke-width="1.4" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
   }
   const composerUsername = document.getElementById('composer-username');
@@ -895,7 +898,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 function editProfile() {
   const m = document.getElementById('modal-avatar');
-  if (currentUser.avatar) m.innerHTML = `<img src="${currentUser.avatar}" style="width:100%;height:100%;object-fit:cover">`;
+  if (currentUser.avatar) m.innerHTML = `<img src="${esc(currentUser.avatar)}" style="width:100%;height:100%;object-fit:cover">`;
   else m.innerHTML = `<svg width="24" height="24" fill="none" stroke="var(--text2)" stroke-width="1.4" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
   document.getElementById('edit-name').value = currentUser.name||'';
   document.getElementById('edit-username').value = currentUser.username||'';
@@ -947,7 +950,7 @@ function setupAvatarCropper(imageUrl) {
     </div>
     <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
       <div id="avatar-cropper-container" style="width:100%;aspect-ratio:1;border-radius:18px;overflow:hidden;background:var(--surf2);position:relative;display:flex;align-items:center;justify-content:center;touch-action:none">
-        <img id="avatar-cropper-img" src="${imageUrl}" style="width:150%;height:150%;object-fit:cover;position:absolute;cursor:grab;user-select:none">
+        <img id="avatar-cropper-img" src="${esc(imageUrl)}" style="width:150%;height:150%;object-fit:cover;position:absolute;cursor:grab;user-select:none">
         <div style="position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle closest-side at center,transparent 98%,rgba(0,0,0,.6) 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)"></div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
@@ -1113,8 +1116,8 @@ function applyAvatarCrop() {
     const modal = document.querySelector('.modal.active');
     if (modal) modal.remove();
     
-    document.getElementById('modal-avatar').innerHTML = `<img src="${croppedUrl}" style="width:100%;height:100%;object-fit:cover">`;
-    document.getElementById('avatar-container').innerHTML = `<img src="${croppedUrl}" style="width:100%;height:100%;object-fit:cover">`;
+    document.getElementById('modal-avatar').innerHTML = `<img src="${esc(croppedUrl)}" style="width:100%;height:100%;object-fit:cover">`;
+    document.getElementById('avatar-container').innerHTML = `<img src="${esc(croppedUrl)}" style="width:100%;height:100%;object-fit:cover">`;
     updateProfileUI();
     showToast('Аватар обновлён');
   };
@@ -1129,15 +1132,20 @@ function avatarChosen(e) {
   reader.readAsDataURL(file);
 }
 
-function saveProfile() {
+async function saveProfile() {
   const name = document.getElementById('edit-name').value.trim().slice(0, 40);
   const bio  = document.getElementById('edit-bio').value.trim().slice(0, 160);
   if (/[<>]/.test(name)) { showToast('В имени нельзя использовать < и >'); return; }
+  // @username неизменяем и уникален; отображаемое имя можно менять и повторять (не чаще раза в 7 дней)
   const canChange = !currentUser.nameChangedAt || (Date.now()-currentUser.nameChangedAt > 7*24*60*60*1000);
-  if (name && canChange) { currentUser.name = name; currentUser.nameChangedAt = Date.now(); }
-  if (bio !== undefined) currentUser.bio = bio;
+  const renaming = !!name && canChange && name !== currentUser.name;
+  try {
+    // Сначала сервер: он проверяет чёрный список. Если имя отклонено — локально ничего не меняем и окно не закрываем.
+    await MchatAPI.updateMe({ name: renaming ? name : (currentUser.name || currentUser.username), bio: bio });
+  } catch (e) { showToast(MchatAPI.errorText(e)); return; }
+  if (renaming) { currentUser.name = name; currentUser.nameChangedAt = Date.now(); }
+  currentUser.bio = bio;
   saveUser(); updateProfileUI(); closeModal();
-  MchatAPI.updateMe({ name: currentUser.name || currentUser.username, bio: currentUser.bio || '' }).catch(e => showToast(MchatAPI.errorText(e)));
 }
 
 function closeModal() { document.getElementById('edit-modal').classList.remove('active'); }
@@ -1150,13 +1158,13 @@ function renderProfileGrid() {
   let html = '';
   myPosts.forEach(p => {
     if (p.mediaType === 'image' && p.mediaUrl) {
-      html += `<div class="grid-item" onclick="openPostViewer(${p.id})"><img src="${p.mediaUrl}"></div>`;
+      html += `<div class="grid-item" onclick="openPostViewer(${p.id})"><img src="${esc(p.mediaUrl)}"></div>`;
     } else if (p.mediaType === 'video' && p.mediaUrl) {
       const thumb = p.thumbnail || '';
       if (thumb) {
-        html += `<div class="grid-item" onclick="openPostViewer(${p.id})" style="position:relative"><img src="${thumb}" style="width:100%;height:100%;object-fit:cover"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><div style="width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center"><svg width="12" height="12" fill="#fff" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg></div></div></div>`;
+        html += `<div class="grid-item" onclick="openPostViewer(${p.id})" style="position:relative"><img src="${esc(thumb)}" style="width:100%;height:100%;object-fit:cover"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><div style="width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center"><svg width="12" height="12" fill="#fff" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg></div></div></div>`;
       } else {
-        html += `<div class="grid-item" onclick="openPostViewer(${p.id})" style="position:relative;background:var(--surf2)" id="grid-vid-${p.id}"><video src="${p.mediaUrl}" style="width:100%;height:100%;object-fit:cover" muted playsinline preload="metadata" onloadeddata="captureGridThumb(this,${p.id})"></video><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none"><div style="width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center"><svg width="12" height="12" fill="#fff" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg></div></div></div>`;
+        html += `<div class="grid-item" onclick="openPostViewer(${p.id})" style="position:relative;background:var(--surf2)" id="grid-vid-${p.id}"><video src="${esc(p.mediaUrl)}" style="width:100%;height:100%;object-fit:cover" muted playsinline preload="metadata" onloadeddata="captureGridThumb(this,${p.id})"></video><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none"><div style="width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center"><svg width="12" height="12" fill="#fff" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg></div></div></div>`;
       }
     } else {
       html += `<div class="grid-item" onclick="openPostViewer(${p.id})" style="background:var(--surf2);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px"><svg width="20" height="20" fill="none" stroke="var(--text2)" stroke-width="1.4" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><div style="font-size:9px;color:var(--text2);text-align:center;padding:0 4px;overflow:hidden;max-height:24px">${p.text?p.text.slice(0,20):''}</div></div>`;
@@ -1178,7 +1186,7 @@ function renderStories() {
     html += `<div class="si" onclick="viewStoryAt(0)" style="position:relative">
       <div class="sring has-story" style="position:relative">
         <div class="sinner">
-          ${currentUser&&currentUser.avatar ? `<img src="${currentUser.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : `<svg width="24" height="24" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`}
+          ${currentUser&&currentUser.avatar ? `<img src="${esc(currentUser.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : `<svg width="24" height="24" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`}
         </div>
         <div style="position:absolute;bottom:2px;left:50%;transform:translateX(-50%);display:flex;gap:2px">
           ${myStories.map((_, i) => `<div style="width:4px;height:2px;border-radius:1px;background:${i === 0 ? '#fff' : 'rgba(255,255,255,.4)'}"></div>`).join('')}
@@ -1189,7 +1197,7 @@ function renderStories() {
     html += `<div class="si" onclick="openStoryCreator()">
       <div class="sring you" style="position:relative">
         <div class="sinner">
-          ${currentUser&&currentUser.avatar ? `<img src="${currentUser.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : `<svg width="24" height="24" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`}
+          ${currentUser&&currentUser.avatar ? `<img src="${esc(currentUser.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : `<svg width="24" height="24" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`}
           <div class="sadd"><svg width="10" height="10" fill="none" stroke="#fff" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></div>
         </div>
       </div>
@@ -1199,7 +1207,7 @@ function renderStories() {
     html += `<div class="si" onclick="openStoryCreator()">
       <div class="sring you" style="position:relative">
         <div class="sinner">
-          ${currentUser&&currentUser.avatar ? `<img src="${currentUser.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : `<svg width="24" height="24" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`}
+          ${currentUser&&currentUser.avatar ? `<img src="${esc(currentUser.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : `<svg width="24" height="24" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`}
           <div class="sadd"><svg width="10" height="10" fill="none" stroke="#fff" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></div>
         </div>
       </div>
@@ -2150,9 +2158,9 @@ function renderProfileTabContent() {
     let html = '<div class="profile-grid">';
     liked.forEach(p => {
       if (p.mediaType === 'image' && p.mediaUrl) {
-        html += `<div class="grid-item" onclick="openPostViewer(${p.id})"><img src="${p.mediaUrl}"></div>`;
+        html += `<div class="grid-item" onclick="openPostViewer(${p.id})"><img src="${esc(p.mediaUrl)}"></div>`;
       } else if (p.mediaType === 'video' && p.thumbnail) {
-        html += `<div class="grid-item" onclick="openPostViewer(${p.id})" style="position:relative"><img src="${p.thumbnail}" style="width:100%;height:100%;object-fit:cover"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><div style="width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center"><svg width="12" height="12" fill="#fff" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg></div></div></div>`;
+        html += `<div class="grid-item" onclick="openPostViewer(${p.id})" style="position:relative"><img src="${esc(p.thumbnail)}" style="width:100%;height:100%;object-fit:cover"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><div style="width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center"><svg width="12" height="12" fill="#fff" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg></div></div></div>`;
       } else {
         html += `<div class="grid-item" onclick="openPostViewer(${p.id})" style="background:var(--surf2);display:flex;align-items:center;justify-content:center"><svg width="20" height="20" fill="#f43f5e" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg></div>`;
       }
@@ -2185,9 +2193,9 @@ function renderProfileTabContent() {
         // Превью медиа
         let mediaPrev = '';
         if (r.mediaType === 'image' && r.mediaUrl) {
-          mediaPrev = `<div style="width:48px;height:48px;border-radius:8px;overflow:hidden;flex-shrink:0"><img src="${r.mediaUrl}" style="width:100%;height:100%;object-fit:cover"></div>`;
+          mediaPrev = `<div style="width:48px;height:48px;border-radius:8px;overflow:hidden;flex-shrink:0"><img src="${esc(r.mediaUrl)}" style="width:100%;height:100%;object-fit:cover"></div>`;
         } else if (r.mediaType === 'video' && r.thumbnail) {
-          mediaPrev = `<div style="width:48px;height:48px;border-radius:8px;overflow:hidden;flex-shrink:0;position:relative"><img src="${r.thumbnail}" style="width:100%;height:100%;object-fit:cover"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><div style="width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center"><svg width="8" height="8" fill="#fff" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg></div></div></div>`;
+          mediaPrev = `<div style="width:48px;height:48px;border-radius:8px;overflow:hidden;flex-shrink:0;position:relative"><img src="${esc(r.thumbnail)}" style="width:100%;height:100%;object-fit:cover"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><div style="width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center"><svg width="8" height="8" fill="#fff" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg></div></div></div>`;
         } else if (r.mediaType === 'video' && r.mediaUrl) {
           mediaPrev = `<div style="width:48px;height:48px;border-radius:8px;background:var(--surf2);flex-shrink:0;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div>`;
         }
@@ -2228,7 +2236,7 @@ function renderProfileTabContent() {
     let html = '<div class="profile-grid">';
     archived.forEach(p => {
       if (p.mediaType === 'image' && p.mediaUrl) {
-        html += `<div class="grid-item" onclick="openPostViewer(${p.id})" style="opacity:.7"><img src="${p.mediaUrl}"></div>`;
+        html += `<div class="grid-item" onclick="openPostViewer(${p.id})" style="opacity:.7"><img src="${esc(p.mediaUrl)}"></div>`;
       } else {
         html += `<div class="grid-item" onclick="openPostViewer(${p.id})" style="background:var(--surf2);display:flex;align-items:center;justify-content:center;opacity:.7"><svg width="20" height="20" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>`;
       }
@@ -2348,14 +2356,14 @@ function renderFeed() {
     if (post.privacy === 'private' && post.username !== currentUser?.username) return;
     // Скрываем старые дубликаты-репосты (isRepost=true) — они больше не нужны
     if (post.isRepost) return;
-    const av = post.avatar ? `<img src="${post.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : `<svg width="18" height="18" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
+    const av = post.avatar ? `<img src="${esc(post.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : `<svg width="18" height="18" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
     // Показываем метку репоста если текущий пользователь репостнул этот пост
     const repostedByMe = post.repostedBy && post.repostedBy.includes(currentUser?.username);
     const repostBadge = repostedByMe ? `<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);padding:4px 16px 0"><svg width="13" height="13" fill="none" stroke="var(--accent)" stroke-width="2" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg> <span style="color:var(--accent)">Ты репостнул</span></div>` : '';
     const media = post.mediaType==='image'&&post.mediaUrl
-      ? `<div class="post-img-wrap" style="position:relative" onclick="handlePostMediaClick(${post.id},event)"><img src="${post.mediaUrl}" style="width:100%;height:100%;object-fit:cover"></div>`
+      ? `<div class="post-img-wrap" style="position:relative" onclick="handlePostMediaClick(${post.id},event)"><img src="${esc(post.mediaUrl)}" style="width:100%;height:100%;object-fit:cover"></div>`
       : post.mediaType==='video'&&post.mediaUrl
-      ? `<div class="post-img-wrap" style="position:relative" onclick="handlePostMediaClick(${post.id},event)"><video src="${post.mediaUrl}" style="width:100%;height:100%;object-fit:cover" muted playsinline loop autoplay></video><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:44px;height:44px;border-radius:50%;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;pointer-events:none"><svg width="18" height="18" fill="#fff" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg></div></div>`
+      ? `<div class="post-img-wrap" style="position:relative" onclick="handlePostMediaClick(${post.id},event)"><video src="${esc(post.mediaUrl)}" style="width:100%;height:100%;object-fit:cover" muted playsinline loop autoplay></video><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:44px;height:44px;border-radius:50%;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;pointer-events:none"><svg width="18" height="18" fill="#fff" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg></div></div>`
       : '';
     const cmtCount = Array.isArray(post.comments)?post.comments.length:post.comments||0;
     html += `<div class="post-item">
@@ -2876,7 +2884,7 @@ function openPhotoPostViewer(id) {
   pvCurrentId = id;
   const p = posts.find(x=>x.id===id);
   if (!p) return;
-  const av = p.avatar ? `<img src="${p.avatar}" style="width:100%;height:100%;object-fit:cover">` : `<svg width="18" height="18" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
+  const av = p.avatar ? `<img src="${esc(p.avatar)}" style="width:100%;height:100%;object-fit:cover">` : `<svg width="18" height="18" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
   document.getElementById('pv-av').innerHTML = av;
   document.getElementById('pv-name').textContent = p.name;
   document.getElementById('pv-time').textContent = p.time;
@@ -3085,7 +3093,7 @@ function renderChats(q='') {
 function _renderChatsInner(q='') {
   const c = document.getElementById('chats-list');
   if (!c) return;
-  const filtered = chats.filter(ch => (ch.name || '').toLowerCase().includes(q));
+  const filtered = chats.filter(ch => !ch.preview && (ch.name || '').toLowerCase().includes(q));
   if (filtered.length===0) { c.innerHTML=`<div style="text-align:center;padding:40px 20px;color:var(--text2)">${q?'Не найдено':'Нет чатов'}</div>`; return; }
   c.innerHTML = filtered.map(ch=>`
     <div class="chat-item" onclick="openChat('${esc(ch.id)}')">
@@ -3977,7 +3985,7 @@ function renderReelsOverlay() {
   const authorData = loadUserData(p.username);
   const av = document.getElementById('reels-author-av');
   av.innerHTML = authorData.avatar
-    ? `<img src="${authorData.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+    ? `<img src="${esc(authorData.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
     : `<span style="color:#fff;font-weight:700;font-size:14px">${(p.username).charAt(0).toUpperCase()}</span>`;
   document.getElementById('reels-author-name').innerHTML = esc(p.name || p.username) + (authorData.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
   document.getElementById('reels-author-handle').textContent = '@' + p.username;
@@ -4002,7 +4010,7 @@ function renderReelsOverlay() {
     currentReelsAudioId = audioId;
     const disc = document.getElementById('reels-audio-disc');
     if (audio.avatar) {
-      disc.innerHTML = `<img src="${audio.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`;
+      disc.innerHTML = `<img src="${esc(audio.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`;
     } else {
       disc.innerHTML = `<span style="color:#fff;font-weight:700;font-size:16px">${audio.originalUploader.charAt(0).toUpperCase()}</span>`;
     }
@@ -4019,7 +4027,7 @@ function openAudioModal() {
   const audio = audioRegistry[currentReelsAudioId];
   const disc = document.getElementById('audio-modal-disc');
   if (audio.avatar) {
-    disc.innerHTML = `<img src="${audio.avatar}" style="width:100%;height:100%;object-fit:cover">`;
+    disc.innerHTML = `<img src="${esc(audio.avatar)}" style="width:100%;height:100%;object-fit:cover">`;
   } else {
     disc.innerHTML = `<svg width="40" height="40" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
   }
@@ -4082,7 +4090,7 @@ function renderPinnedTracks() {
     const audio = audioRegistry[t.id];
     if (!audio) return '';
     return `<div class="pinned-track-chip" onclick="openAudioModalById('${t.id}')">
-      ${audio.avatar ? `<img src="${audio.avatar}">` : `<div style="width:24px;height:24px;border-radius:6px;background:var(--surf2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">${audio.originalUploader.charAt(0).toUpperCase()}</div>`}
+      ${audio.avatar ? `<img src="${esc(audio.avatar)}">` : `<div style="width:24px;height:24px;border-radius:6px;background:var(--surf2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">${audio.originalUploader.charAt(0).toUpperCase()}</div>`}
       <span>${audio.title}</span>
     </div>`;
   }).join('');
@@ -4148,7 +4156,7 @@ async function renderProfileTracksTab() {
       const audio = audioRegistry[t.id];
       const thumb = audio && audio.avatar ? audio.avatar : null;
       html += `<div class="track-card" onclick="openAudioModalById('${t.id}')">
-        <div class="track-card-thumb">${thumb ? `<img src="${thumb}">` : `<svg width="24" height="24" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`}</div>
+        <div class="track-card-thumb">${thumb ? `<img src="${esc(thumb)}">` : `<svg width="24" height="24" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`}</div>
         <div class="track-card-info">
           <div class="track-card-title">${esc(audio ? audio.title : t.title)}</div>
           <div class="track-card-artist">${esc(audio ? audio.artist : t.artist)}</div>
@@ -4174,7 +4182,7 @@ function renderEditModalTracks() {
     const isPinned = pinnedIds.has(t.id);
     const thumb = audio && audio.avatar ? audio.avatar : null;
     return `<div class="edit-track-row">
-      ${thumb ? `<img src="${thumb}">` : `<div style="width:40px;height:40px;border-radius:8px;background:var(--surf2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">${(audio ? audio.originalUploader : t.originalUploader || '?').charAt(0).toUpperCase()}</div>`}
+      ${thumb ? `<img src="${esc(thumb)}">` : `<div style="width:40px;height:40px;border-radius:8px;background:var(--surf2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">${(audio ? audio.originalUploader : t.originalUploader || '?').charAt(0).toUpperCase()}</div>`}
       <div class="edit-track-row-info">
         <div class="edit-track-row-title">${audio ? audio.title : t.title}</div>
         <div class="edit-track-row-artist">${audio ? audio.artist : t.artist}</div>
@@ -4259,7 +4267,7 @@ openUserProfile = function(username) {
       const audio = audioRegistry[t.id];
       if (!audio) return;
       stripHtml += `<div class="pinned-track-chip" onclick="openAudioModalById('${t.id}')">
-        ${audio.avatar ? `<img src="${audio.avatar}">` : `<div style="width:24px;height:24px;border-radius:6px;background:var(--surf2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">${audio.originalUploader.charAt(0).toUpperCase()}</div>`}
+        ${audio.avatar ? `<img src="${esc(audio.avatar)}">` : `<div style="width:24px;height:24px;border-radius:6px;background:var(--surf2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">${audio.originalUploader.charAt(0).toUpperCase()}</div>`}
         <span>${audio.title}</span>
       </div>`;
     });
@@ -4335,7 +4343,7 @@ function mxRenderChatInfo() {
   const staff = ch.role === 'OWNER' || ch.role === 'ADMIN';
   const ROLE = { OWNER: ['Владелец', '#8b5cf6'], ADMIN: ['Админ', '#22c55e'] };
   const pill = r => ROLE[r] ? `<span style="font-size:11px;font-weight:700;color:#fff;background:${ROLE[r][1]};border-radius:8px;padding:2px 8px;flex-shrink:0">${ROLE[r][0]}</span>` : '';
-  const members = mxInfoMembers.map(m => `<div onclick="mxMemberMenu('${esc(m.id)}')" style="display:flex;align-items:center;gap:10px;padding:8px 2px;cursor:pointer">
+  const members = isChannel ? [] : mxInfoMembers.map(m => `<div onclick="mxMemberMenu('${esc(m.id)}')" style="display:flex;align-items:center;gap:10px;padding:8px 2px;cursor:pointer">
       <div style="width:40px;height:40px;border-radius:50%;background:var(--surf2);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700">${m.avatar ? `<img src="${esc(m.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">` : esc((m.name || m.username).charAt(0).toUpperCase())}</div>
       <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.name || m.username)}</div><div style="font-size:12px;color:var(--text2)">@${esc(m.username)}</div></div>
       ${pill(m.role)}
@@ -4361,10 +4369,10 @@ function mxRenderChatInfo() {
       ${act(mxInfoSvg('chat'), 'Чат', 'mxInfoClose()')}
       ${act(mxInfoSvg(ch.muted ? 'bellOff' : 'bell'), ch.muted ? 'Без звука' : 'Звук', `mxToggleMute('${esc(ch.id)}')`)}
       ${third}
-      ${act(mxInfoSvg('leave'), 'Покинуть', ch.role === 'OWNER' ? `showToast('Владелец не может покинуть чат')` : 'mxLeaveChat()', true)}
+      ${ch.preview ? '' : act(mxInfoSvg('leave'), 'Покинуть', ch.role === 'OWNER' ? `showToast('Владелец не может покинуть чат')` : 'mxLeaveChat()', true)}
     </div>
     ${staff && !isChannel && ch.inviteCode ? `<div style="padding:0 14px 12px"><button class="mx-btn" style="width:100%" onclick="mxCopyInvite()">Скопировать ссылку-приглашение</button></div>` : ''}
-    ${staff ? `<div style="padding:0 14px 6px"><button onclick="mxOpenAddMembers()" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px;border:none;border-radius:14px;background:var(--surf);color:var(--accent);font-family:var(--font);font-size:14px;font-weight:700;cursor:pointer">${mxInfoSvg('plus', 20)} Добавить участников</button></div>` : ''}
+    ${staff && !isChannel ? `<div style="padding:0 14px 6px"><button onclick="mxOpenAddMembers()" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px;border:none;border-radius:14px;background:var(--surf);color:var(--accent);font-family:var(--font);font-size:14px;font-weight:700;cursor:pointer">${mxInfoSvg('plus', 20)} Добавить участников</button></div>` : ''}
     ${members ? `<div style="padding:4px 14px 10px"><div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin:8px 0 2px">${isChannel ? 'Подписчики' : 'Участники'}</div>${members}</div>` : ''}
     <div style="display:flex;border-bottom:1px solid var(--border);margin-top:6px">${tab('media', 'Медиа')}${tab('links', 'Ссылки')}${tab('music', 'Музыка')}${tab('voice', 'Голосовые')}</div>
     <div id="mx-info-shared" style="padding:10px 14px calc(30px + env(safe-area-inset-bottom))"></div>

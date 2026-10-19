@@ -295,6 +295,7 @@
     const ch = chats.find((c) => c.id === currentChatId);
     const m = (typeof mxInfoMembers !== 'undefined' ? mxInfoMembers : []).find((x) => x.id === userId);
     if (!ch || !m) return;
+    if (ch.type === 'CHANNEL') return; // в канале нет админов и управления подписчиками
     const isMe = currentUser && m.id === currentUser.id;
     const iOwner = ch.role === 'OWNER';
     const ROLE = { OWNER: 'Владелец', ADMIN: 'Админ' };
@@ -316,6 +317,7 @@
     goToUserOrOwnProfile(m.username);
   };
   window.mxMemberToggleAdmin = async function (userId) {
+    { const c0 = chats.find((c) => c.id === currentChatId); if (c0 && c0.type === 'CHANNEL') return; } // в каналах админов нет
     const ch = chats.find((c) => c.id === currentChatId);
     const m = (typeof mxInfoMembers !== 'undefined' ? mxInfoMembers : []).find((x) => x.id === userId);
     F.closeSheet('mx-member-sheet');
@@ -540,7 +542,7 @@
     rows.push(`<div class="mx-f-row static"><span class="mx-f-rico">${F.svg('timer', 18)}</span><span class="mx-f-rtxt">Очистка чата через 24 часа<small>Новые сообщения исчезают через сутки</small></span>
       ${mxSwitchHtml(!!ch.autoDeleteSec, canTtl ? `mxToggleAutoDelete('${esc(ch.id)}')` : `showToast('Включать очистку могут только владелец и админы')`)}</div>`);
     rows.push(row('brush', 'Оформление чата', '', `mxFClose('mx-chatmodal');mxOpenChatCustomize()`));
-    if (group) rows.push(row('info', ch.type === 'CHANNEL' ? 'Участники и управление каналом' : 'Участники и управление группой', '', `mxFClose('mx-chatmodal');mxOpenChatInfo()`));
+    if (group) rows.push(row('info', ch.type === 'CHANNEL' ? 'Информация о канале' : 'Участники и управление группой', '', `mxFClose('mx-chatmodal');mxOpenChatInfo()`));
     if (ch.type === 'DIRECT' && ch.peer) {
       const mine = ch.dm && ch.dm.blockedByMe;
       rows.push(mine
