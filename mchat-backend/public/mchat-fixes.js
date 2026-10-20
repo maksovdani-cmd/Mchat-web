@@ -634,3 +634,408 @@
   }
   window.addEventListener('load', () => setTimeout(iosHint, 4000));
 })();
+
+/* ============================================================
+   Титул «Генерал Mchat»: градиент звезды, праздничный экран, настройки, раздел админа
+   ============================================================ */
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const toast = (m) => { try { window.showToast(m); } catch (e) { /* noop */ } };
+  const STAR = 'M12 1.8l2.9 6.5 7.1.7-5.3 4.8 1.5 7-6.2-3.6-6.2 3.6 1.5-7L2 9l7.1-.7z';
+
+  // общий градиент пурпурной звезды (используется всеми значками через url(#gsGrad))
+  function injectDefs() {
+    if ($('gs-defs')) return;
+    const d = document.createElement('div');
+    d.id = 'gs-defs'; d.setAttribute('aria-hidden', 'true'); d.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden';
+    d.innerHTML = '<svg width="0" height="0"><defs><linearGradient id="gsGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f0abfc"/><stop offset=".45" stop-color="#c026d3"/><stop offset="1" stop-color="#6d28d9"/></linearGradient></defs></svg>';
+    document.body.appendChild(d);
+  }
+  injectDefs();
+  document.addEventListener('DOMContentLoaded', injectDefs);
+
+  /* ── Праздничный экран: конфетти + салюты + письмо ── */
+  let celebrating = false;
+  window.mxShowGeneralCelebration = function () {
+    if (celebrating || $('mx-general-celebration')) return;
+    celebrating = true;
+    const host = $('app') || document.querySelector('.phone') || document.body;
+    const el = document.createElement('div');
+    el.id = 'mx-general-celebration';
+    el.innerHTML = `<canvas></canvas>
+      <div class="gc-card" role="dialog" aria-modal="true">
+        <span class="gc-star"><svg viewBox="0 0 24 24"><path d="${STAR}" fill="url(#gsGrad)"/></svg></span>
+        <div class="gc-title">🌌 ПОЗДРАВЛЯЕМ! ТЕБЕ ПРИСВОЕН ТИТУЛ «ГЕНЕРАЛ Mchat»!</div>
+        <p class="gc-p">Твои усилия, активность и вклад в развитие сообщества не остались незамеченными.</p>
+        <p class="gc-p">За верность, инициативу и службу Mchat тебе присвоен особый титул — Генерал Mchat.</p>
+        <p class="gc-p">Этот титул — знак признания твоих заслуг и доверия со стороны создателя Mchat.</p>
+        <p class="gc-p">Носи его с честью. Твоё имя теперь часть истории Mchat. 🫡</p>
+        <p class="gc-p">Спасибо, что помогаешь Mchat развиваться! 💜</p>
+        <button class="gc-btn" type="button">Принять с честью</button>
+      </div>`;
+    host.appendChild(el);
+    const stop = startFx(el.querySelector('canvas'));
+    el.querySelector('.gc-btn').onclick = async () => {
+      stop(); el.remove(); celebrating = false;
+      if (typeof currentUser !== 'undefined' && currentUser) currentUser.generalPending = false;
+      try { await MchatAPI.generalSeen(); } catch (e) { /* покажем ещё раз при следующем входе */ }
+    };
+  };
+
+  /** Конфетти и салюты на canvas. Пока открыт экран — частицы рождаются и падают; на слабых устройствах их меньше. */
+  function startFx(canvas) {
+    const ctx = canvas.getContext('2d');
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const low = window.MxPerf && MxPerf.detect().tier === 'low';
+    const dpr = Math.min(window.devicePixelRatio || 1, low ? 1 : 2);
+    let W = 0, H = 0, raf = 0, running = true, last = performance.now();
+    const resize = () => { const r = canvas.getBoundingClientRect(); W = r.width; H = r.height; canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
+    resize(); window.addEventListener('resize', resize);
+    const COLORS = ['#e879f9', '#c026d3', '#a855f7', '#7c3aed', '#f0abfc', '#fde68a', '#ffffff', '#60a5fa'];
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    const confetti = [], sparks = [], rockets = [];
+    const maxConf = reduce ? 40 : low ? 90 : 190;
+
+    const spawnConfetti = (n) => { for (let i = 0; i < n && confetti.length < maxConf; i++) confetti.push({
+      x: rnd(0, W), y: rnd(-40, -5), vx: rnd(-30, 30), vy: rnd(70, 190), w: rnd(5, 10), h: rnd(8, 16), rot: rnd(0, 6.28), vr: rnd(-6, 6),
+      c: COLORS[(Math.random() * COLORS.length) | 0], sway: rnd(0, 6.28) }); };
+    const burst = (x, y) => {
+      const n = reduce ? 18 : low ? 34 : 70, col = COLORS[(Math.random() * COLORS.length) | 0], col2 = COLORS[(Math.random() * COLORS.length) | 0];
+      for (let i = 0; i < n; i++) { const a = (i / n) * 6.283 + rnd(-.05, .05), sp = rnd(60, 230);
+        sparks.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, decay: rnd(.55, 1.1), c: i % 3 ? col : col2, r: rnd(1.4, 2.8) }); }
+    };
+    const launch = () => rockets.push({ x: rnd(W * .15, W * .85), y: H + 10, vy: -rnd(380, 560), ty: rnd(H * .12, H * .45) });
+
+    let tConf = 0, tRocket = 0;
+    spawnConfetti(60); setTimeout(() => { launch(); }, 250);
+    const frame = (now) => {
+      if (!running) return;
+      raf = requestAnimationFrame(frame);
+      const dt = Math.min(.05, (now - last) / 1000); last = now;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.clearRect(0, 0, W, H);
+
+      tConf += dt; if (tConf > .06) { tConf = 0; spawnConfetti(reduce ? 1 : 3); }
+      tRocket += dt; if (tRocket > (reduce ? 2.2 : 1.1)) { tRocket = 0; launch(); if (!reduce && Math.random() < .5) launch(); }
+
+      for (let i = confetti.length - 1; i >= 0; i--) {
+        const p = confetti[i]; p.sway += dt * 3; p.x += (p.vx + Math.sin(p.sway) * 40) * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+        if (p.y > H + 20) { confetti.splice(i, 1); continue; }
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.c; ctx.globalAlpha = .9;
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.rot * 1.3)) + 1); ctx.restore();
+      }
+      for (let i = rockets.length - 1; i >= 0; i--) {
+        const r = rockets[i]; r.y += r.vy * dt; r.vy *= .992;
+        ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(r.x, r.y, 2, 0, 6.283); ctx.fill();
+        if (r.y <= r.ty) { burst(r.x, r.y); rockets.splice(i, 1); }
+      }
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = sparks.length - 1; i >= 0; i--) {
+        const s = sparks[i]; s.vy += 140 * dt; s.vx *= .985; s.vy *= .985; s.x += s.vx * dt; s.y += s.vy * dt; s.life -= s.decay * dt;
+        if (s.life <= 0) { sparks.splice(i, 1); continue; }
+        ctx.globalAlpha = Math.max(0, s.life); ctx.fillStyle = s.c; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 6.283); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    };
+    raf = requestAnimationFrame(frame);
+    if (navigator.vibrate) try { navigator.vibrate([60, 40, 60, 40, 140]); } catch (e) { /* noop */ }
+    return () => { running = false; cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
+  }
+
+  /* ── Синхронизация интерфейса с титулом ── */
+  function syncUi() {
+    const u = typeof currentUser !== 'undefined' ? currentUser : null; if (!u) return;
+    // пункт настроек «Звезда Генерала» — только у обладателя титула, рядом с «Админ панелью»
+    let item = $('general-star-item');
+    if (!item) {
+      const admin = $('admin-panel-item');
+      if (admin) {
+        item = document.createElement('div');
+        item.id = 'general-star-item'; item.className = 'sitem'; item.style.display = 'none';
+        item.onclick = () => window.mxOpenGeneralSettings();
+        item.innerHTML = `<div class="sico" style="background:#c026d318"><svg fill="url(#gsGrad)" stroke="none" viewBox="0 0 24 24"><path d="${STAR}"/></svg></div>
+          <div class="stxt">Звезда «Генерал Mchat»</div>
+          <svg class="chev" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>`;
+        admin.parentNode.insertBefore(item, admin.nextSibling);
+      }
+    }
+    if (item) item.style.display = u.general ? 'flex' : 'none';
+    if (u.generalPending && u.general) window.mxShowGeneralCelebration();
+  }
+  const prevUpdate = window.updateProfileUI;
+  window.updateProfileUI = function () { const r = prevUpdate.apply(this, arguments); try { syncUi(); } catch (e) { console.warn(e); } return r; };
+
+  async function reloadMe() {
+    try {
+      const me = await MchatAPI.me();
+      currentUser.general = me.general || null; currentUser.generalPending = !!me.generalPending;
+      if (typeof saveUser === 'function') saveUser();
+      if (typeof cacheUser === 'function') cacheUser(currentUser.username, { general: currentUser.general });
+      updateProfileUI();
+    } catch (e) { /* noop */ }
+  }
+  if (window.MchatAPI && MchatAPI.on) {
+    MchatAPI.on('title:granted', reloadMe);        // человек в сети — праздничный экран появится сразу
+    MchatAPI.on('title:revoked', async () => { await reloadMe(); toast('Титул «Генерал Mchat» снят'); });
+  }
+
+  /* ── Раздел настроек: только яркость и анимация. Цвет менять и убирать звезду нельзя. ── */
+  const GLOWS = [['soft', 'Мягкое'], ['normal', 'Обычное'], ['bright', 'Яркое']];
+  const ANIMS = [['pulse', 'Пульс'], ['shimmer', 'Блик'], ['sparkle', 'Искры'], ['calm', 'Спокойно']];
+  window.mxOpenGeneralSettings = function () {
+    const u = typeof currentUser !== 'undefined' ? currentUser : null; if (!u || !u.general) return;
+    let [glow, anim] = String(u.general).split('.');
+    document.querySelectorAll('.modal.mx-gs').forEach((x) => x.remove());
+    const m = document.createElement('div');
+    m.className = 'modal active mx-gs'; m.style.zIndex = '900';
+    m.onclick = (e) => { if (e.target === m) m.remove(); };
+    const draw = () => {
+      const style = glow + '.' + anim;
+      const opts = (list, cur, kind) => list.map(([v, l]) => `<button type="button" class="gs-opt${cur === v ? ' on' : ''}" data-k="${kind}" data-v="${v}">${l}</button>`).join('');
+      m.innerHTML = `<div class="modal-box" style="max-width:380px">
+        <h3>Звезда «Генерал Mchat»</h3>
+        <div class="gs-preview"><span>${window.esc(u.name || u.username)}</span>${window.mxStarHtml(style)}</div>
+        <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px">Свечение</div>
+        <div class="gs-opt-row">${opts(GLOWS, glow, 'glow')}</div>
+        <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px">Анимация</div>
+        <div class="gs-opt-row">${opts(ANIMS, anim, 'anim')}</div>
+        <div class="gs-note">Цвет звезды фиксированный — пурпурный. Убрать звезду нельзя: титул выдан навсегда, снять его может только создатель Mchat.</div>
+        <button type="button" id="gs-save" style="width:100%;padding:12px;border-radius:14px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-family:var(--font);font-size:14px">Сохранить</button>
+        <button type="button" onclick="this.closest('.modal').remove()" style="width:100%;padding:12px;border-radius:14px;border:none;background:var(--surf);color:var(--text);margin-top:8px;cursor:pointer">Закрыть</button>
+      </div>`;
+      m.querySelectorAll('.gs-opt').forEach((b) => { b.onclick = () => { if (b.dataset.k === 'glow') glow = b.dataset.v; else anim = b.dataset.v; draw(); }; });
+      m.querySelector('#gs-save').onclick = async () => {
+        try {
+          const r = await MchatAPI.generalSetStyle(glow, anim);
+          currentUser.general = r.style; if (typeof saveUser === 'function') saveUser();
+          updateProfileUI(); m.remove(); toast('Оформление звезды сохранено');
+        } catch (e) { toast(MchatAPI.errorText(e)); }
+      };
+    };
+    draw();
+    ($('app') || document.body).appendChild(m);
+  };
+
+  /* ── Админ-панель: раздел «Титулы» (только создатель/админ) ── */
+  const prevAdmin = window.openAdminPanel;
+  window.openAdminPanel = async function () {
+    const r = await prevAdmin.apply(this, arguments);
+    mountAdminTitles();
+    return r;
+  };
+  function mountAdminTitles() {
+    const modal = document.querySelector('.modal.mx-admin'); if (!modal || modal.querySelector('#adm-titles')) return;
+    const scroller = modal.querySelector('.modal-box > div'); if (!scroller) return;
+    const sec = document.createElement('div');
+    sec.id = 'adm-titles'; sec.style.cssText = 'margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)';
+    sec.innerHTML = `<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Титулы · Генерал Mchat ${window.mxStarHtml('normal.pulse')}</div>
+      <input id="adm-gen-find" placeholder="@username — выдать/забрать титул" autocomplete="off" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:none;background:var(--surf);color:var(--text);font-family:var(--font);margin-bottom:8px">
+      <div id="adm-gen-res"></div>
+      <div style="font-size:11px;color:var(--text2);margin:8px 0 6px">Сейчас носят титул:</div>
+      <div id="adm-gen-list"><div style="color:var(--text2);padding:6px">Загрузка…</div></div>`;
+    scroller.insertBefore(sec, scroller.firstChild);
+    const btn = 'padding:8px 12px;border-radius:8px;border:none;color:#fff;cursor:pointer;font-size:12px;';
+    const row = (u, withActions) => `<div style="background:var(--surf);border-radius:12px;padding:10px;margin-bottom:6px;display:flex;align-items:center;gap:8px">
+        ${u.avatar ? `<img src="${window.esc(u.avatar)}" style="width:30px;height:30px;border-radius:50%;object-fit:cover" referrerpolicy="no-referrer">` : ''}
+        <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis">${window.esc(u.name)} (@${window.esc(u.username)})${u.general ? window.mxStarHtml('normal.calm') : ''}</div>
+        ${u.grantedAt ? `<div style="font-size:11px;color:var(--text2)">выдан ${window.fmtDate(u.grantedAt)} · навсегда</div>` : ''}</div>
+        ${withActions ? (u.general
+          ? `<button data-revoke="${window.esc(u.id)}" style="${btn}background:#dc2626">Забрать</button>`
+          : `<button data-grant="${window.esc(u.username)}" style="${btn}background:#a21caf">Выдать</button>`) : ''}</div>`;
+    const bind = (box) => {
+      box.querySelectorAll('[data-grant]').forEach((b) => b.onclick = async () => {
+        try { await MchatAPI.adminGeneralGrant(b.dataset.grant); toast('Титул «Генерал Mchat» выдан навсегда'); refresh(); $('adm-gen-find').dispatchEvent(new Event('input')); }
+        catch (e) { toast(MchatAPI.errorText(e)); }
+      });
+      box.querySelectorAll('[data-revoke]').forEach((b) => b.onclick = () => window.showConfirm('Забрать титул «Генерал Mchat»?', async () => {
+        try { await MchatAPI.adminGeneralRevoke(b.dataset.revoke); toast('Титул снят'); refresh(); $('adm-gen-find').dispatchEvent(new Event('input')); }
+        catch (e) { toast(MchatAPI.errorText(e)); }
+      }));
+    };
+    async function refresh() {
+      const box = $('adm-gen-list'); if (!box) return;
+      try { const r = await MchatAPI.adminGenerals(); box.innerHTML = r.users.length ? r.users.map((u) => row(u, true)).join('') : '<div style="color:var(--text2);padding:6px">Пока никому не выдан</div>'; bind(box); }
+      catch (e) { box.innerHTML = ''; toast(MchatAPI.errorText(e)); }
+    }
+    let t = null;
+    $('adm-gen-find').addEventListener('input', (e) => {
+      clearTimeout(t); const q = e.target.value.trim(), box = $('adm-gen-res');
+      if (!q) { box.innerHTML = ''; return; }
+      t = setTimeout(async () => {
+        try { const r = await MchatAPI.adminGeneralFind(q); box.innerHTML = r.users.length ? r.users.map((u) => row(u, true)).join('') : '<div style="color:var(--text2);padding:6px">Ничего не найдено</div>'; bind(box); }
+        catch (err) { toast(MchatAPI.errorText(err)); }
+      }, 250);
+    });
+    refresh();
+  }
+})();
+
+/* ============================================================
+   Тексты постов: «[Имя] текст…» + аккуратная обрезка и кнопка «еще...»
+   ============================================================ */
+(function () {
+  'use strict';
+  function render(el, t, more) {
+    const name = el.dataset.name || '';
+    el.textContent = '';
+    if (name) { const b = document.createElement('b'); b.className = 'mx-cap-name'; b.textContent = name; el.appendChild(b); el.appendChild(document.createTextNode(' ')); }
+    const sp = document.createElement('span'); sp.className = 'mx-cap-text'; sp.textContent = t; el.appendChild(sp);
+    if (more) {
+      sp.appendChild(document.createTextNode('… '));
+      const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'mx-more'; btn.textContent = 'еще...';
+      btn.onclick = (e) => { e.stopPropagation(); el.dataset.expanded = '1'; render(el, el.dataset.text || '', false); };   // клик — полный текст
+      el.appendChild(btn);
+    }
+  }
+  /** Подбирает самую длинную начальную часть текста, которая вместе с «… еще...» помещается в N строк. */
+  function fit(el) {
+    const full = el.dataset.text || '', lines = Math.max(1, +el.dataset.lines || 3);
+    if (el.dataset.expanded === '1') return render(el, full, false);
+    render(el, full, false);
+    const lh = parseFloat(getComputedStyle(el).lineHeight) || (parseFloat(getComputedStyle(el).fontSize) || 13) * 1.5;
+    const max = lh * lines + 2;
+    if (!el.clientWidth || el.offsetHeight <= max) return;        // помещается целиком (или элемент скрыт — подгоним, когда появится)
+    let lo = 0, hi = full.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      render(el, full.slice(0, mid).trimEnd(), true);
+      if (el.offsetHeight <= max) lo = mid; else hi = mid - 1;
+    }
+    render(el, full.slice(0, lo).trimEnd(), true);
+  }
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver((entries) => {
+    for (const en of entries) {
+      const el = en.target, w = Math.round(en.contentRect.width);
+      if (w && w !== el._mxW) { el._mxW = w; fit(el); }          // показали экран / повернули телефон — пересчитываем
+    }
+  }) : null;
+  function init(el) { if (el._mxInit) return; el._mxInit = true; fit(el); if (ro) ro.observe(el); else window.addEventListener('resize', () => fit(el)); }
+  window.mxInitCaptions = function (root) { (root || document).querySelectorAll('.mx-cap[data-text]').forEach(init); };
+  /** Для одиночных подписей (просмотр поста, Reels). */
+  window.mxSetCaption = function (el, name, text, lines) {
+    if (!el) return;
+    el.classList.add('mx-cap'); el.dataset.name = name || ''; el.dataset.text = text || ''; el.dataset.lines = String(lines || 3); delete el.dataset.expanded;
+    if (!el._mxInit) { el._mxInit = true; if (ro) ro.observe(el); }
+    fit(el);
+  };
+  document.addEventListener('DOMContentLoaded', () => window.mxInitCaptions());
+})();
+
+/* ============================================================
+   Жест/кнопка «Назад» (History API): шаг назад ВНУТРИ приложения, выход — только с главного экрана
+   Пример: чат → список чатов → главная → (ещё раз) выход.
+   Схема: пока есть куда возвращаться, в истории стоит «страж» (state {mx:'app'}). Жест «Назад» съедает его —
+   срабатывает popstate, мы закрываем верхний слой интерфейса / возвращаем прошлый экран и снова ставим стража.
+   На главном экране стража нет, поэтому следующий «Назад» штатно закрывает приложение.
+   ============================================================ */
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const AUTH = ['s-login', 's-code'];
+  const stack = [];            // предыдущие экраны
+  let armed = false;           // стоит ли сейчас страж
+  let navByBack = false;
+
+  const screenId = () => { const s = document.querySelector('.screen.active'); return s ? s.id : null; };
+  const loggedIn = () => typeof currentUser !== 'undefined' && !!currentUser && !AUTH.includes(screenId());
+
+  /* ── стек экранов ── */
+  const origGoTo = window.goTo;
+  window.goTo = function (id) {
+    const prev = screenId();
+    if (AUTH.includes(id)) stack.length = 0;                       // выход из аккаунта / экран входа — истории нет
+    else if (!navByBack && prev && prev !== id && !AUTH.includes(prev)) {
+      const i = stack.lastIndexOf(id);
+      if (i >= 0) stack.length = i;                                // вернулись на уже посещённый экран — «хвост» обрезаем
+      else { stack.push(prev); if (stack.length > 40) stack.shift(); }
+    }
+    const r = origGoTo.apply(this, arguments);
+    schedule();
+    return r;
+  };
+
+  /* ── слои интерфейса поверх экрана ── */
+  const CLOSERS = {
+    'story-viewer': () => closeStoryViewer(), 'story-creator': () => closeStoryCreator(), 'post-viewer': () => closePostViewer(),
+    'foreign-post-viewer': () => closeForeignPostViewer(), 'user-profile-viewer': () => closeUserProfile(), 'avatar-fullscreen': () => closeAvatarFull(),
+    'mx-preview': () => mxPreviewClose(), 'mx-camera': () => { if (typeof mxCam !== 'undefined' && mxCam && mxCam.recording) return; mxCameraClose(); },
+    'chat-sheet': () => closeChatSheet(), 'post-media-sheet': () => closePostMediaSheet(), 'reels-comments-sheet': () => closeReelsComments(),
+    'edit-modal': () => closeModal(), 'post-creator-modal': () => closePostCreator(), 'audio-modal': () => closeAudioModal(),
+  };
+  const IGNORE = new Set(['call-screen', 'call-incoming']);
+  const z = (el) => parseInt(getComputedStyle(el).zIndex, 10) || 0;
+  const visible = (el) => getComputedStyle(el).display !== 'none';
+
+  function topLayer() {
+    const cands = [];
+    document.querySelectorAll('.mx-f-scrim, .modal.active, .sheet.active, .overlay.active, .modal.mx-admin, .modal.mx-gs').forEach((el) => {
+      if (!visible(el) || IGNORE.has(el.id)) return;
+      cands.push(el);
+    });
+    if (!cands.length) return null;
+    // самый верхний: по z-index, при равенстве — тот, что позже в DOM
+    return cands.map((el, i) => ({ el, z: z(el), i })).sort((a, b) => b.z - a.z || b.i - a.i)[0].el;
+  }
+  function closeLayer(el) {
+    const fn = CLOSERS[el.id];
+    try {
+      if (fn) fn();
+      else if (el.classList.contains('mx-f-scrim')) { if (window.mxFClose && el.id) window.mxFClose(el.id); else el.remove(); }
+      else if (el.id && /^(modal|sheet|overlay)$/.test(el.className.split(' ')[0]) && document.getElementById(el.id) === el && el.dataset.mxStatic !== '0') {
+        // статичная панель из index.html: закрываем снятием active; динамическую (создана скриптом) — удаляем
+        if (el.hasAttribute('data-dynamic')) el.remove(); else el.classList.remove('active');
+      } else el.remove();
+    } catch (e) { try { el.classList.remove('active'); } catch (e2) { /* noop */ } if (visible(el) && !el.id) el.remove(); }
+    // если после закрытия слой всё ещё виден (закрыватель не сработал) — убираем принудительно, чтобы не зациклиться
+    if (document.body.contains(el) && visible(el) && !CLOSERS[el.id]) el.classList.remove('active');
+  }
+
+  /** Один шаг «назад». true — что-то сделали (или сознательно проглотили), false — мы на главном экране. */
+  function backStep() {
+    if (!loggedIn()) return false;
+    const call = $('call-screen'), inc = $('call-incoming');
+    if ((call && call.classList.contains('active')) || (inc && inc.classList.contains('active'))) return true;   // из звонка жестом не выходим
+    const layer = topLayer();
+    if (layer) { closeLayer(layer); return true; }
+    const cur = screenId();
+    if (cur === 's-video-reels' && typeof closeVideoReels === 'function') { closeVideoReels(); return true; }
+    navByBack = true;
+    try {
+      if (stack.length) { origGoTo(stack.pop()); return true; }
+      if (cur && cur !== 's-feed') {
+        origGoTo(cur === 's-chat-open' ? 's-chats' : 's-feed');       // запасной путь, если стек пуст (например, чат открыли из push)
+        return true;
+      }
+    } finally { navByBack = false; schedule(); }
+    return false;
+  }
+  window.mxBackStep = backStep;
+
+  function canGoBack() {
+    if (!loggedIn()) return false;
+    return !!topLayer() || stack.length > 0 || screenId() !== 's-feed' ||
+      !!($('call-screen') && $('call-screen').classList.contains('active'));
+  }
+  function arm() {
+    if (!armed && canGoBack()) { history.pushState({ mx: 'app' }, ''); armed = true; }
+  }
+  let raf = 0;
+  function schedule() { cancelAnimationFrame(raf); raf = requestAnimationFrame(arm); }
+
+  window.addEventListener('popstate', () => {
+    armed = false;                                    // страж «съеден» жестом/кнопкой «Назад»
+    const handled = backStep();
+    if (handled) arm();                               // есть куда идти дальше — снова ставим стража
+    // handled=false: мы на главном экране, стража не ставим — следующий «Назад» закроет приложение
+  });
+
+  function init() {
+    if (history.state && history.state.mx === 'app') armed = true;       // страница перезагружена, страж уже в истории
+    else history.replaceState({ mx: 'root' }, '');
+    const app = $('app') || document.body;
+    new MutationObserver(schedule).observe(app, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    schedule();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();

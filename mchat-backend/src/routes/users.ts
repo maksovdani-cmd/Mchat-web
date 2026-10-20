@@ -9,6 +9,7 @@ import { hasActiveMoment } from '../services/moments';
 import { gcMedia, mediaUrl, toMediaDTO } from '../services/media';
 import { announcePresence, visiblePresence } from '../services/presence';
 import { publicUserSelect } from '../services/chat';
+import { generalOf } from '../services/titles';
 import { COOKIE, dropCookie, revokeDevice } from '../services/session';
 import { HttpError, wrap } from '../utils/errors';
 import { cleanQuery, displayNameAllowed, normalizeUsername } from '../utils/validate';
@@ -16,12 +17,13 @@ import { cleanQuery, displayNameAllowed, normalizeUsername } from '../utils/vali
 export const usersRouter = Router();
 usersRouter.use(requireAuth);
 
-const toPublic = (u: { id: string; username: string; name: string; avatarUrl: string | null; verified: boolean; bio?: string }) => ({
+const toPublic = (u: { id: string; username: string; name: string; avatarUrl: string | null; verified: boolean; bio?: string; generalTitle?: boolean | null; generalStyle?: string | null; }) => ({
   id: u.id,
   username: u.username,
   name: u.name,
   avatar: u.avatarUrl,
   verified: u.verified,
+  general: generalOf(u),
   ...(u.bio !== undefined ? { bio: u.bio } : {}),
 });
 
@@ -55,6 +57,7 @@ usersRouter.get(
       musicTrack: await trackOf(u.musicTrack),
       momentActive: await hasActiveMoment(u.id),
       role: u.role,
+      generalPending: u.generalTitle && !u.generalCelebratedAt, // титул получен, а праздничный экран ещё не показан
       settings: { notifyMessages: u.notifyMessages, hideOnline: u.hideOnline, hideRead: u.hideRead, hideFollowing: u.hideFollowing },
       deviceId: authOf(req).deviceId,
     });
@@ -81,7 +84,7 @@ usersRouter.patch(
   wrap(async (req, res) => {
     const userId = authOf(req).userId;
     // @username — неизменяемый идентификатор: менять его через API нельзя ни при каких условиях
-    if (req.body && typeof req.body === 'object' && ('username' in req.body || 'email' in req.body || 'role' in req.body || 'verified' in req.body)) {
+    if (req.body && typeof req.body === 'object' && ('username' in req.body || 'email' in req.body || 'role' in req.body || 'verified' in req.body || 'generalTitle' in req.body || 'generalStyle' in req.body)) {
       throw new HttpError(400, 'username_immutable');
     }
     const { avatarMediaId, bannerMediaId, musicTrack, ...rest } = patchSchema.parse(req.body);

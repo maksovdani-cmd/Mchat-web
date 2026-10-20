@@ -118,16 +118,26 @@
     }
     pill.textContent = dayFromKey(day);
     pill.style.top = (c.offsetTop + 8) + 'px';
-    pill.classList.add('show');
+    // «show» ставится только на время прокрутки (см. onScrollShowDate): раньше плашка висела постоянно и закрывала сообщения
     // кнопка «вниз»: появляется, когда прокрутили вверх
     const away = c.scrollHeight - c.scrollTop - c.clientHeight;
     btn.style.top = (c.offsetTop + c.clientHeight - 58) + 'px';
     btn.classList.toggle('show', away > 220);
   }
+  // Плашка даты: появляется во время прокрутки и плавно исчезает через 1,3 с после её остановки
+  let datePillTimer = null;
+  function onScrollShowDate() {
+    updateFloaters();
+    const pill = $('mx-float-date'), c = $('messages-container');
+    if (!pill || !c || !c.querySelector('.msg')) return;
+    pill.classList.add('show');
+    clearTimeout(datePillTimer);
+    datePillTimer = setTimeout(() => pill.classList.remove('show'), 1300);
+  }
   window.mxAfterRender = function (c) {
     if (bound !== c) {
       bound = c;
-      c.addEventListener('scroll', updateFloaters, { passive: true });
+      c.addEventListener('scroll', onScrollShowDate, { passive: true });
       if (window.ResizeObserver) new ResizeObserver(updateFloaters).observe(c);
     }
     updateFloaters();

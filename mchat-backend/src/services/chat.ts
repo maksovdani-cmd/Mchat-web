@@ -6,6 +6,7 @@ import { HttpError } from '../utils/errors';
 import { randomToken } from '../utils/crypto';
 import { normalizeUsername } from '../utils/validate';
 import { gcMedia, mediaUrl } from './media';
+import { generalOf } from './titles';
 import { visiblePresence } from './presence';
 
 export const MAX_TEXT = 4000;
@@ -21,6 +22,8 @@ export const publicUserSelect = {
   name: true,
   avatarUrl: true,
   verified: true,
+  generalTitle: true,
+  generalStyle: true,
 } as const;
 
 export const messageInclude = {
@@ -348,6 +351,7 @@ export async function getChatDTO(userId: string, chatId: string) {
       name: peer.name,
       avatar: peer.avatarUrl,
       verified: peer.verified,
+      general: generalOf(peer),
       ...visiblePresence(peer),
     },
     lastMessage: last && { text: lastText, createdAt: last.createdAt.toISOString(), senderId: last.senderId },
@@ -596,7 +600,7 @@ export async function listMembers(userId: string, chatId: string) {
   const order = { OWNER: 0, ADMIN: 1, MEMBER: 2 } as const;
   rows.sort((a, b) => order[a.role] - order[b.role]);
   return rows.map((r) => ({
-    id: r.user.id, username: r.user.username, name: r.user.name, avatar: r.user.avatarUrl, verified: r.user.verified, role: r.role,
+    id: r.user.id, username: r.user.username, name: r.user.name, avatar: r.user.avatarUrl, verified: r.user.verified, general: generalOf(r.user), role: r.role,
   }));
 }
 
@@ -661,7 +665,7 @@ export async function listContacts(userId: string) {
   ids.delete(userId);
   if (!ids.size) return [];
   const users = await prisma.user.findMany({ where: { id: { in: [...ids] } }, select: publicUserSelect, orderBy: { name: 'asc' } });
-  return users.map((u) => ({ id: u.id, username: u.username, name: u.name, avatar: u.avatarUrl, verified: u.verified }));
+  return users.map((u) => ({ id: u.id, username: u.username, name: u.name, avatar: u.avatarUrl, verified: u.verified, general: generalOf(u) }));
 }
 
 /** Глобальный поиск публичных каналов (по названию и описанию). */

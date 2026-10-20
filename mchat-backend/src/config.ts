@@ -75,7 +75,9 @@ export const config = {
   appOrigin: appUrl.origin,
   cookieSecure: appUrl.protocol === 'https:',
   adminEmails: env.ADMIN_EMAILS.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
-  uploadDir: path.resolve(env.UPLOAD_DIR),
+  // Относительный путь считаем от корня проекта, а не от папки, откуда запустили процесс: иначе при запуске из другой
+  // директории (или из dist/) сервер создавал новую пустую uploads/, а старые файлы «пропадали».
+  uploadDir: path.resolve(__dirname, '..', env.UPLOAD_DIR),
   s3PublicBase: env.S3_PUBLIC_URL.trim().replace(/\/+$/, ''),
   googleRedirectUri: `${appUrl.origin}/api/auth/google/callback`,
   sessionTtlMs: 30 * 24 * 60 * 60 * 1000, // 30 дней

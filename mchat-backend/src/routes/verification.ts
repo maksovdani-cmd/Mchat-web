@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import { adminFindUsers, adminOverview, approve, assertAdmin, createRequest, grantByUsername, myVerification, reject, revoke } from '../services/verification';
-import { wrap } from '../utils/errors';
+import { HttpError, wrap } from '../utils/errors';
 
 export const verificationRouter = Router();
 verificationRouter.use(requireAuth);
@@ -13,6 +13,8 @@ const intId = z.coerce.number().int().positive();
 verificationRouter.get('/mine', wrap(async (req, res) => res.json(await myVerification(authOf(req).userId))));
 
 verificationRouter.post('/requests', wrap(async (req, res) => {
+  // Титул «Генерал Mchat» выдаёт только создатель. Никакие поля «значок/титул» в обычной заявке не принимаются.
+  if (req.body && typeof req.body === 'object' && ('title' in req.body || 'badge' in req.body || 'general' in req.body)) throw new HttpError(400, 'title_not_requestable');
   const { reason } = z.object({ reason: z.string().trim().min(3).max(500).regex(/^[^<>]+$/) }).parse(req.body);
   res.json(await createRequest(authOf(req).userId, reason));
 }));

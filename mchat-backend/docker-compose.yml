@@ -22,6 +22,11 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://mchat:${DB_PASSWORD}@db:5432/mchat
+      # Файлы (аватарки, музыка, фото, видео, голосовые) лежат в постоянном томе, а не внутри контейнера.
+      # Раньше тома не было: при каждой пересборке/перезапуске контейнера папка uploads стиралась, а записи в БД оставались.
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -44,6 +49,7 @@ services:
       - app
 
 volumes:
+  uploads:
   pgdata:
   caddy_data:
   caddy_config:

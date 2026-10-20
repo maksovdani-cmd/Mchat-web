@@ -1,8 +1,9 @@
 import { prisma } from '../db';
 import { HttpError } from '../utils/errors';
 import { gcMedia, mediaUrl } from './media';
+import { generalOf } from './titles';
 
-const authorSelect = { id: true, username: true, name: true, avatarUrl: true, verified: true } as const;
+const authorSelect = { id: true, username: true, name: true, avatarUrl: true, verified: true, generalTitle: true, generalStyle: true } as const;
 
 const postInclude = (_viewerId: string) => ({
   author: { select: authorSelect },
@@ -30,6 +31,7 @@ export function toPostDTO(p: PostRow, viewerId: string, storyAuthors?: Set<strin
     name: p.author.name,
     avatar: p.author.avatarUrl,
     verified: p.author.verified,
+    general: generalOf(p.author),
     text: p.text,
     createdAt: p.createdAt.toISOString(),
     likes: p._count.likes,
@@ -203,14 +205,14 @@ export async function listStoriesFeed(viewerId: string) {
     take: 500,
   });
   const groups = new Map<string, {
-    username: string; name: string; avatar: string | null; verified: boolean; following: boolean; latestAt: number;
+    username: string; name: string; avatar: string | null; verified: boolean; general: string | null; following: boolean; latestAt: number;
     stories: ReturnType<typeof toStoryDTO>[];
   }>();
   for (const s of rows) {
     let g = groups.get(s.authorId);
     if (!g) {
       g = {
-        username: s.author.username, name: s.author.name, avatar: s.author.avatarUrl, verified: s.author.verified,
+        username: s.author.username, name: s.author.name, avatar: s.author.avatarUrl, verified: s.author.verified, general: generalOf(s.author),
         following: following.has(s.authorId), latestAt: 0, stories: [],
       };
       groups.set(s.authorId, g);

@@ -19,6 +19,13 @@ function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 const VERIFIED_BADGE_HTML = ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
+// Титул «Генерал Mchat»: пурпурная звезда с сиянием. style — «яркость.анимация» (например normal.pulse), приходит с сервера как поле general.
+const GENERAL_STAR_PATH = 'M12 1.8l2.9 6.5 7.1.7-5.3 4.8 1.5 7-6.2-3.6-6.2 3.6 1.5-7L2 9l7.1-.7z';
+function mxStarHtml(style) {
+  if (!style) return '';
+  const m = /^(soft|normal|bright)\.(pulse|shimmer|sparkle|calm)$/.exec(String(style)) || ['', 'normal', 'pulse'];
+  return ' <span class="general-star gs-glow-' + m[1] + ' gs-anim-' + m[2] + '" title="Генерал Mchat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + GENERAL_STAR_PATH + '" fill="url(#gsGrad)"/></svg><i class="gs-shine"></i><i class="gs-spark a"></i><i class="gs-spark b"></i></span>';
+}
 
 // Ключи для локального хранилища с привязкой к пользователю (только настройки интерфейса)
 function getUserKey(baseKey) {
@@ -42,7 +49,7 @@ function saveUser() {
   if (!currentUser) return;
   try { localStorage.setItem('mchat_user', JSON.stringify({ id: currentUser.id, username: currentUser.username, role: currentUser.role })); } catch (e) {}
   if (currentUser.nameChangedAt) { try { localStorage.setItem('mchat_name_changed_' + currentUser.username, String(currentUser.nameChangedAt)); } catch (e) {} }
-  cacheUser(currentUser.username, { name: currentUser.name, avatar: currentUser.avatar, verified: currentUser.verified, bio: currentUser.bio, banner: currentUser.banner });
+  cacheUser(currentUser.username, { name: currentUser.name, avatar: currentUser.avatar, verified: currentUser.verified, general: currentUser.general || null, bio: currentUser.bio, banner: currentUser.banner });
 }
 
 function savePosts() { /* посты хранятся на сервере */ }
@@ -60,6 +67,7 @@ function loadUserData(username) {
     bio: c.bio != null ? c.bio : '',
     nameChangedAt: changedAt,
     verified: !!c.verified,
+    general: c.general || null,
     banner: c.banner || null,
     username: username,
     followers: 0,
@@ -87,7 +95,7 @@ async function mxUrlToBlob(url) {
 }
 
 function postFromServer(p) {
-  cacheUser(p.username, { name: p.name, avatar: p.avatar, verified: p.verified });
+  cacheUser(p.username, { name: p.name, avatar: p.avatar, verified: p.verified, general: p.general || null });
   return Object.assign({}, p, {
     time: fmtClock(p.createdAt),
     comments: (p.comments || []).map(commentFromServer),
@@ -161,7 +169,7 @@ function openUserProfile(username) {
   upCurrentTab = 'posts';
   const data = loadUserData(username);
   document.getElementById('up-header-username').textContent = '@' + username;
-  document.getElementById('up-name').innerHTML = (data.name || username) + (data.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
+  document.getElementById('up-name').innerHTML = esc(data.name || username) + mxStarHtml(data.general) + (data.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
   document.getElementById('up-username').textContent = '@' + username;
   document.getElementById('up-bio').textContent = data.bio || '';
   document.getElementById('up-avatar').innerHTML = data.avatar
@@ -189,9 +197,9 @@ function openUserProfile(username) {
   // имя, био, аватар, галочка, статус и дружба — с сервера (локально чужих данных нет)
   MchatAPI.getUser(username).then(u => {
     if (upViewedUsername !== username) return;
-    document.getElementById('up-name').innerHTML = esc(u.name || u.username) + (u.verified ? VERIFIED_BADGE_HTML : '');
+    document.getElementById('up-name').innerHTML = esc(u.name || u.username) + (u.verified ? VERIFIED_BADGE_HTML : '') + mxStarHtml(u.general);
     document.getElementById('up-bio').textContent = u.bio || '';
-    cacheUser(username, { name: u.name, avatar: u.avatar, verified: u.verified, bio: u.bio, banner: u.banner });
+    cacheUser(username, { name: u.name, avatar: u.avatar, verified: u.verified, general: u.general || null, bio: u.bio, banner: u.banner });
     if (u.avatar) document.getElementById('up-avatar').innerHTML = `<img src="${esc(u.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">`;
     upFriendState = u.friendship || { status: 'none', id: null };
     mxRenderFriendButton();
@@ -265,9 +273,9 @@ function openForeignPostViewer(p, ownerUsername) {
   document.getElementById('fpv-av').innerHTML = authorData.avatar
     ? `<img src="${esc(authorData.avatar)}" style="width:100%;height:100%;object-fit:cover">`
     : `<svg width="18" height="18" fill="none" stroke="var(--text2)" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
-  document.getElementById('fpv-name').innerHTML = esc(p.name || authorData.name) + (authorData.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
+  document.getElementById('fpv-name').innerHTML = esc(p.name || authorData.name) + mxStarHtml(authorData.general) + (authorData.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
   document.getElementById('fpv-time').textContent = p.time || '';
-  document.getElementById('fpv-caption').textContent = p.text || '';
+  if (window.mxSetCaption) mxSetCaption(document.getElementById('fpv-caption'), p.name || authorData.name, p.text || '', 4); else document.getElementById('fpv-caption').textContent = p.text || '';
   document.getElementById('fpv-like-count').textContent = p.likes || 0;
   document.getElementById('fpv-cmt-count').textContent = Array.isArray(p.comments) ? p.comments.length : (p.comments||0);
   const imgWrap = document.getElementById('fpv-img-wrap'), vidWrap = document.getElementById('fpv-vid-wrap');
@@ -587,6 +595,8 @@ async function onLoggedIn(me) {
     avatar: me.avatar || null, // загруженный аватар или фото из Google — оба приходят с сервера
     nameChangedAt: loadUserData(me.username).nameChangedAt,
     verified: !!me.verified,
+    general: me.general || null,
+    generalPending: !!me.generalPending,
     role: me.role,
     banner: me.banner || null,
     followers: me.followers || 0,
@@ -803,7 +813,7 @@ function logout() {
 // ============================================================
 function updateProfileUI() {
   if (!currentUser) return;
-  document.getElementById('profile-name').innerHTML = esc(currentUser.name || currentUser.username) + (currentUser.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
+  document.getElementById('profile-name').innerHTML = esc(currentUser.name || currentUser.username) + mxStarHtml(currentUser.general) + (currentUser.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
   document.getElementById('profile-username').innerHTML = '@'+currentUser.username;
   document.getElementById('profile-bio').textContent = currentUser.bio || '';
   document.getElementById('posts-count').textContent = posts.filter(p=>p.username===currentUser.username).length;
@@ -2370,10 +2380,10 @@ function renderFeed() {
       ${repostBadge}
       <div class="post-head" onclick="goToUserOrOwnProfile('${post.username}')" style="cursor:pointer">
         <div class="post-av"><div class="post-avi">${av}</div></div>
-        <div><div style="font-weight:500;font-size:14px;display:flex;align-items:center;gap:5px">${esc(post.name)}${post.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : ''}</div><div style="font-size:11px;color:var(--text2)">${post.time}</div></div>
+        <div><div style="font-weight:500;font-size:14px;display:flex;align-items:center;gap:5px">${esc(post.name)}${mxStarHtml(post.general)}${post.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : ''}</div><div style="font-size:11px;color:var(--text2)">${post.time}</div></div>
       </div>
       ${media}
-      ${post.text?`<div class="post-caption"><span>${esc(post.text)}</span></div>`:''}
+      ${post.text?`<div class="post-caption mx-cap" data-lines="3" data-name="${esc(post.name)}" data-text="${esc(post.text)}"></div>`:''}
       <div class="post-actions">
         <button class="ab ${post.liked?'liked':''}" onclick="toggleLike(${post.id})">
           <svg fill="${post.liked?'currentColor':'none'}" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
@@ -2390,6 +2400,7 @@ function renderFeed() {
     </div>`;
   });
   container.innerHTML = html;
+  if (window.mxInitCaptions) mxInitCaptions(container);
 }
 
 let _postMediaClickTimers = {};
@@ -2556,7 +2567,7 @@ function openVideoReels(id) {
   
   document.getElementById('reels-name').textContent = p.name || '@' + p.username;
   document.getElementById('reels-time').textContent = p.time || '—';
-  document.getElementById('reels-caption').textContent = p.text || '—';
+  if (window.mxSetCaption) mxSetCaption(document.getElementById('reels-caption'), '', p.text || '—', 2); else document.getElementById('reels-caption').textContent = p.text || '—';
   document.getElementById('reels-like-count').textContent = p.likes || 0;
   document.getElementById('reels-cmt-count').textContent = (Array.isArray(p.comments) ? p.comments.length : 0);
   
@@ -3098,7 +3109,7 @@ function _renderChatsInner(q='') {
   c.innerHTML = filtered.map(ch=>`
     <div class="chat-item" onclick="openChat('${esc(ch.id)}')">
       <div class="chat-avatar">${chatAvatarHtml(ch)}</div>
-      <div class="chat-info"><div class="chat-name">${esc(ch.name)}</div><div class="chat-last">${esc(ch.lastMessage||'')}</div></div>
+      <div class="chat-info"><div class="chat-name">${esc(ch.name)}${ch.type === 'DIRECT' && ch.peer ? mxStarHtml(ch.peer.general) : ''}</div><div class="chat-last">${esc(ch.lastMessage||'')}</div></div>
       <div class="chat-time">${esc(ch.time||'')}</div>
       ${ch.unread>0?'<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-left:8px"></div>':''}
     </div>`).join('');
@@ -3136,7 +3147,7 @@ async function openChat(id) {
   currentChatPeer = ch.peer || null;
   currentChatMeta = { type: ch.type, canPost: ch.canPost !== false, canModerate: !!ch.canModerate, dm: ch.dm || null, autoDeleteSec: ch.autoDeleteSec || null };
   mxCancelCompose();
-  document.getElementById('chat-name').textContent = ch.name;
+  document.getElementById('chat-name').innerHTML = esc(ch.name) + (ch.type === 'DIRECT' && ch.peer ? mxStarHtml(ch.peer.general) : '');
   document.getElementById('chat-open-av').innerHTML = ch.type === 'SAVED' ? MX_SAVED_AV : ch.avatar
     ? `<img src="${esc(ch.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">`
     : (ch.type && ch.type !== 'DIRECT' ? `<div class="mx-letter-av${ch.type === 'CHANNEL' ? ' channel' : ''}">${esc((ch.name||'#').charAt(0).toUpperCase())}</div>` : AVATAR_SVG_OPEN);
@@ -3987,7 +3998,7 @@ function renderReelsOverlay() {
   av.innerHTML = authorData.avatar
     ? `<img src="${esc(authorData.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
     : `<span style="color:#fff;font-weight:700;font-size:14px">${(p.username).charAt(0).toUpperCase()}</span>`;
-  document.getElementById('reels-author-name').innerHTML = esc(p.name || p.username) + (authorData.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
+  document.getElementById('reels-author-name').innerHTML = esc(p.name || p.username) + mxStarHtml(authorData.general) + (authorData.verified ? ' <span class="verified-badge" title="Верифицирован"><svg viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,5 4.5,8.5 10.5,1.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : '');
   document.getElementById('reels-author-handle').textContent = '@' + p.username;
   av.classList.toggle('mx-story-ring', !!p.hasStory); // активная история — цветной круг вокруг аватарки автора
   av.onclick = p.hasStory ? (e) => { e.stopPropagation(); mxOpenStoriesOf(p.username); } : null;

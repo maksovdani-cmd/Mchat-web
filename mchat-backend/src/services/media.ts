@@ -1,6 +1,9 @@
 import type { Media, MediaKind } from '@prisma/client';
 import { prisma } from '../db';
-import { removeFile } from './storage';
+import fs from 'node:fs';
+import path from 'node:path';
+import { config } from '../config';
+import { removeFile, storageMode } from './storage';
 
 /** Что можно загружать: разрешённые MIME-типы (→ расширение на диске) и потолок размера. */
 export const MEDIA_RULES: Record<MediaKind, { mimes: Record<string, string>; maxBytes: number }> = {
@@ -63,7 +66,7 @@ export async function canAccessMedia(userId: string, m: Pick<Media, 'id' | 'owne
     if (av) return true; // аватарка группы/канала видна её участникам
     // аватар / обложка профиля видны всем вошедшим пользователям
     const url = mediaUrl(m.id);
-    const prof = await prisma.user.findFirst({ where: { OR: [{ avatarUrl: url }, { bannerUrl: url }] }, select: { id: true } });
+    const prof = await prisma.user.findFirst({ where: { OR: [{ avatarUrl: { endsWith: url } }, { bannerUrl: { endsWith: url } }] }, select: { id: true } });
     if (prof) return true;
   }
   if (m.kind === 'IMAGE' || m.kind === 'VIDEO') {
@@ -95,7 +98,8 @@ async function isMediaReferenced(mediaId: string): Promise<boolean> {
     prisma.message.count({ where: { mediaId, deletedAt: null } }),
     prisma.post.count({ where: { OR: [{ mediaId }, { thumbId: mediaId }] } }),
     prisma.story.count({ where: { mediaId } }),
-    prisma.user.count({ where: { OR: [{ avatarUrl: url }, { bannerUrl: url }] } }),
+    // endsWith: аватар мог быть сохранён и как «/api/media/ID», и как абсолютная ссылка — файл в любом случае нужен
+    prisma.user.count({ where: { OR: [{ avatarUrl: { endsWith: url } }, { bannerUrl: { endsWith: url } }] } }),
     prisma.chat.count({ where: { avatarMediaId: mediaId } }),
     prisma.moment.count({ where: { mediaId } }),
   ]);
@@ -109,4 +113,20 @@ export async function gcMedia(mediaId: string) {
   if (await isMediaReferenced(mediaId)) return;
   await prisma.media.delete({ where: { id: mediaId } }).catch(() => {});
   await removeFile(m.file);
+}
+/**
+ * Проверка при старте: все ли файлы из БД реально лежат на диске. Если записи есть, а файлов нет — значит папка uploads
+ * была стёрта (контейнер пересобран без тома, диск хостинга сброшен). Тихо это не оставляем: пишем в лог, чего и сколько потеряно.
+ */
+export async function checkMediaIntegrity() {
+  if (storageMode !== 'disk') return;
+  const rows = await prisma.media.findMany({ where: { url: null }, select: { id: true, file: true, kind: true }, take: 5000 });
+  if (!rows.length) return;
+  const missing = rows.filter((r) => !fs.existsSync(path.join(config.uploadDir, path.basename(r.file))));
+  if (!missing.length) { console.log(`[storage] Проверка файлов: все ${rows.length} на месте (${config.uploadDir})`); return; }
+  const byKind: Record<string, number> = {};
+  for (const m of missing) byKind[m.kind] = (byKind[m.kind] ?? 0) + 1;
+  console.error(`[storage] ⚠️ НЕ НАЙДЕНО ${missing.length} из ${rows.length} файлов в ${config.uploadDir}: ${JSON.stringify(byKind)}.\n` +
+    '          Папка uploads была стёрта или смонтирована не туда. Подключи постоянный том (docker-compose: volume uploads:/app/uploads)\n' +
+    '          либо облако S3_* — иначе аватарки, музыка, фото, видео и голосовые будут пропадать после каждого деплоя.');
 }

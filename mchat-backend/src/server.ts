@@ -22,6 +22,7 @@ import { callsRouter } from './routes/calls';
 import { supportRouter } from './routes/support';
 import { expireVerifications } from './services/verification';
 import { pushRouter } from './routes/push';
+import { titlesRouter } from './routes/titles';
 import { usersRouter } from './routes/users';
 import { ensureUploadDir, storageMode } from './services/storage';
 import { HttpError } from './utils/errors';
@@ -121,6 +122,7 @@ app.use('/api/moments', momentsRouter);
 app.use('/api/verification', verificationRouter);
 app.use('/api/calls', callsRouter);
 app.use('/api/support', supportRouter);
+app.use('/api/titles', titlesRouter);
 app.use('/api', usersRouter); // /api/me, /api/users/*, /api/me/devices
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
 
@@ -157,6 +159,7 @@ ensureUploadDir();
 if (config.isProd && storageMode === 'disk') {
   console.warn('[storage] Файлы хранятся на диске сервера и пропадут при следующем деплое. Задай S3_* (см. CHANGES-step4.md), чтобы они жили в облаке.');
 }
+import('./services/media').then((m) => m.checkMediaIntegrity()).catch((e) => console.error('media integrity', e));
 const server = http.createServer(app);
 const io = initSocket(server);
 

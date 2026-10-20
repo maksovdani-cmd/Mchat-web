@@ -69,6 +69,14 @@ model User {
   verifiedUntil  DateTime?
   role           Role     @default(USER)
 
+  /// Титул «Генерал Mchat» (пурпурная звезда рядом с ником). Выдаётся и забирается только админом, навсегда.
+  generalTitle        Boolean   @default(false)
+  generalGrantedAt    DateTime?
+  /// когда человек увидел торжественный экран; null при generalTitle=true — экран ещё надо показать
+  generalCelebratedAt DateTime?
+  /// оформление звезды: «яркость.анимация», например «normal.pulse». Цвет менять нельзя, убрать звезду нельзя.
+  generalStyle        String?
+
   // настройки (соответствуют тумблерам в UI)
   notifyMessages Boolean  @default(true)
   hideOnline     Boolean  @default(false)

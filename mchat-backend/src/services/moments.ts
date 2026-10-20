@@ -9,6 +9,7 @@ import { prisma } from '../db';
 import { emitToRooms, emitToUser } from '../realtime/hub';
 import { HttpError } from '../utils/errors';
 import { gcMedia, mediaUrl } from './media';
+import { generalOf } from './titles';
 
 export const MOMENT_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_MOMENTS_PER_DAY = 20;
@@ -16,7 +17,7 @@ export const MAX_MOMENT_TEXT = 500;
 export const MAX_MOMENT_COMMENT = 500;
 const PAGE = 20;
 
-const authorSelect = { id: true, username: true, name: true, avatarUrl: true, verified: true } as const;
+const authorSelect = { id: true, username: true, name: true, avatarUrl: true, verified: true, generalTitle: true, generalStyle: true } as const;
 const momentInclude = {
   author: { select: authorSelect },
   media: { select: { id: true, kind: true } },
@@ -37,6 +38,7 @@ export interface MomentDTO {
   name: string;
   avatar: string | null;
   verified: boolean;
+  general: string | null;
   text: string;
   mediaType: 'image' | 'video' | null;
   mediaUrl: string | null;
@@ -59,6 +61,7 @@ export function toMomentDTO(m: NonNullable<MomentRow>, viewerId: string, viewed:
     name: m.author.name,
     avatar: m.author.avatarUrl,
     verified: m.author.verified,
+    general: generalOf(m.author),
     text: m.text,
     mediaType: m.media ? (m.mediaType === 'video' ? 'video' : 'image') : null,
     mediaUrl: m.media ? mediaUrl(m.media.id) : null,
@@ -174,14 +177,14 @@ export interface MomentCommentDTO {
   momentId: number;
   text: string;
   createdAt: string;
-  user: { id: string; username: string; name: string; avatar: string | null; verified: boolean };
+  user: { id: string; username: string; name: string; avatar: string | null; verified: boolean; general: string | null };
   mine: boolean;
 }
 
 const commentInclude = { user: { select: authorSelect } } as const;
-const toCommentDTO = (c: { id: number; momentId: number; text: string; createdAt: Date; user: { id: string; username: string; name: string; avatarUrl: string | null; verified: boolean } }, viewerId: string): MomentCommentDTO => ({
+const toCommentDTO = (c: { id: number; momentId: number; text: string; createdAt: Date; user: { id: string; username: string; name: string; avatarUrl: string | null; verified: boolean; generalTitle?: boolean | null; generalStyle?: string | null; } }, viewerId: string): MomentCommentDTO => ({
   id: c.id, momentId: c.momentId, text: c.text, createdAt: c.createdAt.toISOString(),
-  user: { id: c.user.id, username: c.user.username, name: c.user.name, avatar: c.user.avatarUrl, verified: c.user.verified },
+  user: { id: c.user.id, username: c.user.username, name: c.user.name, avatar: c.user.avatarUrl, verified: c.user.verified, general: generalOf(c.user) },
   mine: c.user.id === viewerId,
 });
 

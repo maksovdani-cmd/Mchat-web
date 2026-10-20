@@ -86,16 +86,31 @@ mediaRouter.get('/:id', wrap(async (req, res) => {
   // Документы (FILE) отдаём только через сервер: им нужны заголовки «attachment» и sandbox.
   if (storageMode === 's3' && m.url && m.kind !== 'FILE') {
     res.setHeader('Cache-Control', 'private, max-age=3600');
-    res.redirect(302, m.url);
+    res.redirect(302, publicUrlFor(m.file) ?? m.url); // адрес считаем от текущих настроек: смена S3_PUBLIC_URL не ломает старые файлы
     return;
   }
   await sendFile(req, res, m.file, headers);
 }));
 
-/** Удалить свой трек из профиля. (Файлы сообщений удаляются вместе с сообщением.) */
+/**
+ * Удалить свой трек из профиля. Если его сохранили к себе другие люди или поставили в профиль, файл НЕ стираем:
+ * он переходит к одному из них, и у остальных музыка не пропадает.
+ */
 mediaRouter.delete('/:id', wrap(async (req, res) => {
+  const { userId } = authOf(req);
   const m = await prisma.media.findUnique({ where: { id: String(req.params.id) } });
-  if (!m || m.ownerId !== authOf(req).userId || m.kind !== 'TRACK') throw new HttpError(404, 'media_not_found');
+  if (!m || m.ownerId !== userId || m.kind !== 'TRACK') throw new HttpError(404, 'media_not_found');
+  const savers = await prisma.savedTrack.findMany({ where: { mediaId: m.id, userId: { not: userId } }, select: { userId: true }, orderBy: { createdAt: 'asc' } });
+  const users = await prisma.user.findMany({ where: { musicTrack: m.id, id: { not: userId } }, select: { id: true } });
+  const heir = savers[0]?.userId ?? users[0]?.id;
+  await prisma.user.updateMany({ where: { id: userId, musicTrack: m.id }, data: { musicTrack: null } });
+  if (heir) {
+    await prisma.$transaction([
+      prisma.media.update({ where: { id: m.id }, data: { ownerId: heir } }),
+      prisma.savedTrack.deleteMany({ where: { mediaId: m.id, userId: heir } }), // стал владельцем — «сохранённой» копии больше нет
+    ]);
+    return void res.json({ ok: true, kept: true });
+  }
   await prisma.media.delete({ where: { id: m.id } });
   await removeFile(m.file);
   res.json({ ok: true });

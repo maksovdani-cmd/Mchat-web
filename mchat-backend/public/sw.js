@@ -229,3 +229,4 @@ self.addEventListener('pushsubscriptionchange', (event) => {
     } catch (e) { /* при следующем открытии приложения syncPush() подпишет заново */ }
   })());
 });
+  
