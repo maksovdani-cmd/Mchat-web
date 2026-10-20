@@ -159,7 +159,7 @@ ensureUploadDir();
 if (config.isProd && storageMode === 'disk') {
   console.warn('[storage] Файлы хранятся на диске сервера и пропадут при следующем деплое. Задай S3_* (см. CHANGES-step4.md), чтобы они жили в облаке.');
 }
-import('./services/media').then((m) => m.checkMediaIntegrity()).catch((e) => console.error('media integrity', e));
+import('./services/media.js').then((m) => m.checkMediaIntegrity()).catch((e) => console.error('media integrity', e));
 const server = http.createServer(app);
 const io = initSocket(server);
 
