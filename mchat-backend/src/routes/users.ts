@@ -12,7 +12,7 @@ import { publicUserSelect } from '../services/chat';
 import { generalOf } from '../services/titles';
 import { COOKIE, dropCookie, revokeDevice } from '../services/session';
 import { HttpError, wrap } from '../utils/errors';
-import { cleanQuery, displayNameAllowed, normalizeUsername } from '../utils/validate';
+import { cleanDisplayName, cleanQuery, displayNameAllowed, normalizeUsername } from '../utils/validate';
 
 export const usersRouter = Router();
 usersRouter.use(requireAuth);
@@ -89,7 +89,11 @@ usersRouter.patch(
     }
     const { avatarMediaId, bannerMediaId, musicTrack, ...rest } = patchSchema.parse(req.body);
     // Display Name можно менять и повторять, но нецензурное и оскорбительное (в том числе внутри слова) — нельзя
-    if (rest.name !== undefined && !displayNameAllowed(rest.name)) throw new HttpError(400, 'name_forbidden');
+    if (rest.name !== undefined) {
+      rest.name = cleanDisplayName(rest.name).slice(0, 40);   // убираем невидимые/«битые» символы (иначе в профиле квадратики)
+      if (!rest.name) throw new HttpError(400, 'bad_request');
+      if (!displayNameAllowed(rest.name)) throw new HttpError(400, 'name_forbidden');
+    }
     const data: Record<string, unknown> = { ...rest };
     const before = await prisma.user.findUnique({ where: { id: userId }, select: { hideOnline: true, avatarUrl: true, bannerUrl: true } });
     // аватар/обложка: только своя картинка; null — убрать

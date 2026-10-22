@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import { MAX_TEXT } from '../services/chat';
 import { deleteAndDispatch, editAndDispatch, forwardAndDispatch, reactAndDispatch } from '../services/messaging';
+import { closeViewOnce, openViewOnce } from '../services/viewonce';
 import { wrap } from '../utils/errors';
 
 export const messagesRouter = Router();
@@ -33,4 +34,14 @@ messagesRouter.put('/:id/reaction', wrap(async (req, res) => {
 messagesRouter.post('/:id/forward', wrap(async (req, res) => {
   const b = z.object({ chatId: z.string().min(1).max(40), clientId: z.string().min(1).max(64).optional() }).parse(req.body);
   res.json({ message: await forwardAndDispatch(authOf(req).userId, mid(req), b.chatId, b.clientId) });
+}));
+
+/** Получатель открывает одноразовое медиа. Второй раз — 410 «уже просмотрено». Возвращает временную ссылку на файл. */
+messagesRouter.post('/:id/view-once/open', wrap(async (req, res) => {
+  res.json(await openViewOnce(authOf(req).userId, mid(req)));
+}));
+
+/** Просмотр закончен (закрыл окно / дослушал): файл и сообщение удаляются навсегда у обоих. */
+messagesRouter.post('/:id/view-once/close', wrap(async (req, res) => {
+  res.json(await closeViewOnce(authOf(req).userId, mid(req)));
 }));

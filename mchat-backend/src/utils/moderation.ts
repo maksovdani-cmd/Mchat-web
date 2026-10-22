@@ -30,7 +30,7 @@ const BASE_WORDS: string[] = [
   'blyad', 'blyat', 'suka', 'sukin', 'gandon', 'gondon', 'mudak', 'mudila', 'zalupa', 'pidor', 'pidar', 'pidr',
   'dolboeb', 'dolbaeb', 'shlyuh', 'shluh', 'govno', 'pedofil',
   // ── экстремизм ──
-  'нацист', 'hitler', 'гитлер', 'heilhitler','gitler',
+  'нацист', 'hitler', 'гитлер', 'heilhitler',
 ];
 
 /** Безобидные слова, внутри которых случайно встречается запрещённый корень («скипидар» → «пидар»). */

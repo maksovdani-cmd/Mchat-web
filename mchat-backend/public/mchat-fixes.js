@@ -961,7 +961,7 @@
     'foreign-post-viewer': () => closeForeignPostViewer(), 'user-profile-viewer': () => closeUserProfile(), 'avatar-fullscreen': () => closeAvatarFull(),
     'mx-preview': () => mxPreviewClose(), 'mx-camera': () => { if (typeof mxCam !== 'undefined' && mxCam && mxCam.recording) return; mxCameraClose(); },
     'chat-sheet': () => closeChatSheet(), 'post-media-sheet': () => closePostMediaSheet(), 'reels-comments-sheet': () => closeReelsComments(),
-    'edit-modal': () => closeModal(), 'post-creator-modal': () => closePostCreator(), 'audio-modal': () => closeAudioModal(),
+    'mx-once-viewer': () => window.mxCloseOnce(), 'edit-modal': () => closeModal(), 'post-creator-modal': () => closePostCreator(), 'audio-modal': () => closeAudioModal(),
   };
   const IGNORE = new Set(['call-screen', 'call-incoming']);
   const z = (el) => parseInt(getComputedStyle(el).zIndex, 10) || 0;
@@ -1038,4 +1038,476 @@
     schedule();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+
+/* ============================================================
+   Серия 3: звонки (качество и надёжное завершение), сохранение медиа, просмотр аватарки по долгому нажатию,
+   удаление/выход из чатов, открепление, одноразовые медиа
+   ============================================================ */
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const toast = (m) => { try { window.showToast(m); } catch (e) { /* noop */ } };
+  const esc = (s) => window.esc(s);
+  const isMob = () => /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  const isApple = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  // Доступ к переменным основного скрипта (let в общей глобальной области). eval не используем: CSP его запрещает.
+  const G = {
+    get chats() { return typeof chats !== 'undefined' && chats ? chats : []; },
+    get messages() { return typeof messages !== 'undefined' && messages ? messages : {}; },
+    get chatId() { return typeof currentChatId !== 'undefined' ? currentChatId : null; },
+    get meta() { return typeof currentChatMeta !== 'undefined' ? currentChatMeta : null; },
+    get pinned() { return typeof currentChatPinned !== 'undefined' ? currentChatPinned : null; },
+    get call() { return typeof mxCall !== 'undefined' ? mxCall : null; },
+    get user() { return typeof currentUser !== 'undefined' ? currentUser : null; },
+  };
+
+  /* ═════════ 3. Звонки: качество без лагов ═════════ */
+  // Лестница качества: снизу вверх. Битрейт в кбит/с.
+  const LADDER = [
+    { w: 320, h: 240, fps: 15, kbps: 250, q: 1 },
+    { w: 480, h: 360, fps: 20, kbps: 450, q: 2 },
+    { w: 640, h: 480, fps: 24, kbps: 800, q: 3 },
+    { w: 960, h: 540, fps: 24, kbps: 1200, q: 4 },
+  ];
+  const levelFor = (call) => {
+    const tier = window.MxPerf ? MxPerf.detect().tier : 'mid';
+    let lvl = tier === 'high' ? (isMob() ? 2 : 3) : tier === 'mid' ? (isMob() ? 1 : 2) : 0;
+    if (call && call.isGroup) lvl -= 1;                         // в групповом звонке видео с нескольких людей — берём на ступень ниже
+    const c = navigator.connection;
+    if (c && (c.saveData || /2g|3g/.test(c.effectiveType || ''))) lvl = Math.min(lvl, 0);
+    return Math.max(0, Math.min(LADDER.length - 1, lvl));
+  };
+  window.mxCallStreamOptions = function (call) {
+    const L = LADDER[levelFor(call)];
+    if (call) call.qLevel = levelFor(call);
+    return { camera: {
+      audio: true, video: true,
+      videoQuality: L.q, width: L.w, height: L.h, frameRate: L.fps, bitrate: L.kbps,
+      audioBitrate: 32,                                          // речь: 32 кбит/с хватает, остальное — на видео
+      ANS: true, AEC: true, AGC: true,                           // шумо-, эхоподавление и автоусиление микрофона
+    } };
+  };
+  /** H264 — аппаратное кодирование на телефонах и в Safari (меньше нагрев и лаги); VP8 — на мощных ПК вне Safari. */
+  window.mxCallPublishOptions = function () {
+    const tier = window.MxPerf ? MxPerf.detect().tier : 'mid';
+    const safari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    return { videoCodec: (isMob() || safari || tier !== 'high') ? 'H264' : 'VP8' };
+  };
+
+  /** Автоподстройка: плохая связь → ступенька вниз (меньше разрешение/fps/битрейт), долго стабильно → вверх. */
+  function attachAdaptive(call) {
+    if (!call || !call.zg || call._adaptive) return;
+    call._adaptive = true;
+    let bad = 0, good = 0;
+    const apply = (lvl) => {
+      lvl = Math.max(0, Math.min(LADDER.length - 1, lvl));
+      if (lvl === call.qLevel) return;
+      const L = LADDER[lvl]; call.qLevel = lvl;
+      try { if (call.zg.setVideoConfig && call.localStream) call.zg.setVideoConfig(call.localStream, { width: L.w, height: L.h, frameRate: L.fps, maxBitrate: L.kbps }); }
+      catch (e) { /* SDK без setVideoConfig — остаёмся на текущем уровне */ }
+    };
+    try {
+      call.zg.on('publishQualityUpdate', (streamID, st) => {
+        const v = (st && st.video) || {};
+        const lost = Number(st && st.packetLostRate) || 0, rtt = Number(st && st.rtt) || 0, q = Number(v.videoQuality) || 0;
+        if (q >= 3 || lost > 0.12 || rtt > 600) { bad++; good = 0; } else { good++; bad = 0; }
+        if (bad >= 2) { bad = 0; apply((call.qLevel || 0) - 1); }
+        else if (good >= 8) { good = 0; apply((call.qLevel || 0) + 1); }
+      });
+    } catch (e) { /* noop */ }
+  }
+  const origConnect = window.mxCallConnect;
+  window.mxCallConnect = async function (call) {
+    const r = await origConnect.apply(this, arguments);
+    try { attachAdaptive(call); } catch (e) { /* noop */ }
+    return r;
+  };
+
+  /* ── Завершение звонка: гарантированно закрываем всё на обоих устройствах ── */
+  const stopStream = (st) => { try { if (st && st.getTracks) st.getTracks().forEach((t) => { try { t.stop(); } catch (e) { /* noop */ } }); } catch (e) { /* noop */ } };
+  const origCleanup = window.mxCallCleanup;
+  window.mxCallCleanup = function () {
+    const call = G.call;
+    // 1) собираем ссылки на все потоки ДО очистки (обработчики обнуляют mxCall)
+    const streams = [];
+    if (call) {
+      streams.push(call.localStream, call.screenStream, call.shareStream);
+      try { if (call.remote && call.remote.forEach) call.remote.forEach((p) => { if (p) streams.push(p.stream || p.mediaStream); }); } catch (e) { /* noop */ }
+    }
+    document.querySelectorAll('#call-screen video, #call-screen audio, #call-grid video').forEach((el) => { streams.push(el.srcObject); });
+    // 2) штатная очистка (с масками и т. д.) — в try: раньше исключение в одном из обработчиков обрывало всё, и звонок «висел»
+    let r; try { r = origCleanup.apply(this, arguments); } catch (e) { console.warn('[call] cleanup handler failed', e); }
+    // 3) страховка: останавливаем треки, чистим элементы, закрываем соединение, отпускаем камеру и микрофон
+    streams.forEach(stopStream);
+    document.querySelectorAll('#call-screen video, #call-screen audio, #call-grid video').forEach((el) => { try { el.pause(); } catch (e) { /* noop */ } el.srcObject = null; });
+    if (call) {
+      try { if (call.zg) { try { call.zg.stopPublishingStream && call.zg.stopPublishingStream(call.streamId); } catch (e) { /* noop */ } try { call.zg.logoutRoom && call.zg.logoutRoom(); } catch (e) { /* noop */ } try { call.zg.destroyEngine && call.zg.destroyEngine(); } catch (e) { /* noop */ } } } catch (e) { /* noop */ }
+      if (call.id && !call._leftSent) { call._leftSent = true; try { MchatAPI.leaveCall(call.id).catch(() => {}); } catch (e) { /* noop */ } }
+    }
+    try { if (window.MxMasks && MxMasks.reset) MxMasks.reset(); } catch (e) { /* noop */ }
+    const scr = $('call-screen'); if (scr) { scr.classList.remove('active'); scr.classList.remove('mx-swapped'); }
+    const inc = $('call-incoming'); if (inc) inc.classList.remove('active');
+    try { if (G.call === call) mxCall = null; } catch (e) { /* noop */ }
+    return r;
+  };
+  // кнопка «Завершить»: интерфейс закрывается мгновенно, тяжёлая очистка идёт следом
+  window.mxCallEnd = function () {
+    const scr = $('call-screen'); if (scr) scr.classList.remove('active');
+    window.mxCallCleanup('Звонок завершён');
+  };
+  // Закрыли вкладку/приложение во время звонка — сообщаем серверу, чтобы у собеседника звонок тоже завершился
+  window.addEventListener('pagehide', () => {
+    const call = G.call;
+    if (call && call.id && !call._leftSent) { call._leftSent = true; try { navigator.sendBeacon('/api/calls/' + encodeURIComponent(call.id) + '/leave', new Blob(['{}'], { type: 'application/json' })); } catch (e) { /* noop */ } }
+  });
+  // Сторож: собеседник пропал, а событие «звонок завершён» не дошло (потеря связи) — через 6 с закрываем сами
+  setInterval(() => {
+    const call = G.call;
+    if (!call) return;
+    if (!call.isGroup && call.startedAt && call.remote && call.remote.size === 0) {
+      if (!call._emptySince) call._emptySince = Date.now();
+      else if (Date.now() - call._emptySince > 6000) window.mxCallCleanup('Звонок завершён');
+    } else call._emptySince = 0;
+  }, 2000);
+
+  /* ═════════ 2. Сохранение фото/видео в память устройства ═════════ */
+  const DL_ICO = '<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>';
+  const extOf = (t) => ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov', 'audio/mp4': 'm4a', 'audio/webm': 'webm', 'audio/mpeg': 'mp3' }[(t || '').split(';')[0]] || 'bin');
+  window.mxDownloadMedia = async function (url, name) {
+    if (!url) { toast('Нет файла для сохранения'); return; }
+    toast('Сохраняем…');
+    try {
+      const r = await fetch(url, { credentials: 'include' });
+      if (!r.ok) throw new Error('http ' + r.status);
+      const blob = await r.blob();
+      const fname = name || ('mchat-' + Date.now() + '.' + extOf(blob.type));
+      const file = new File([blob], fname, { type: blob.type });
+      // iPhone/iPad: сохранить в «Фото» можно только через системное меню «Поделиться» → «Сохранить изображение/видео»
+      if (isApple() && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file] }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+      }
+      // Android и компьютер: обычное скачивание (файл попадает в «Загрузки»/галерею)
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = fname; a.style.display = 'none';
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 5000);
+      toast('Сохранено: ' + fname);
+    } catch (e) {
+      // файл на другом домене (облако без CORS) — открываем напрямую, браузер предложит сохранить
+      try { window.open(url, '_blank', 'noopener'); } catch (e2) { toast('Не удалось сохранить файл'); }
+    }
+  };
+  window.mxDownloadMessage = function (id) {
+    if (window.mxCloseFloating) mxCloseFloating();
+    const m = (G.messages[G.chatId] || []).find((x) => x.id === id);
+    if (m && m.mediaUrl) window.mxDownloadMedia(m.mediaUrl, m.fileName || '');
+  };
+  function currentMediaUrl(root) {
+    if (!root) return null;
+    const vids = [...root.querySelectorAll('video')].filter((v) => (v.currentSrc || v.src) && v.offsetParent !== null);
+    if (vids.length) return vids[0].currentSrc || vids[0].src;
+    const imgs = [...root.querySelectorAll('img')].filter((i) => i.src && i.offsetParent !== null && (i.naturalWidth || 0) > 120)
+      .sort((a, b) => b.naturalWidth * b.naturalHeight - a.naturalWidth * a.naturalHeight);
+    return imgs[0] ? imgs[0].src : null;
+  }
+  window.mxDownloadFrom = function (id) { const url = currentMediaUrl($(id)); if (url) window.mxDownloadMedia(url); else toast('Нет файла для сохранения'); };
+  function injectDownloadButtons() {
+    ['avatar-fullscreen', 'post-viewer', 'foreign-post-viewer', 'story-viewer'].forEach((id) => {
+      const ov = $(id); if (!ov || ov.querySelector('.mx-dl-btn')) return;
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'mx-dl-btn'; b.title = 'Сохранить'; b.setAttribute('aria-label', 'Сохранить'); b.innerHTML = DL_ICO;
+      b.onclick = (e) => { e.stopPropagation(); window.mxDownloadFrom(id); };
+      b.addEventListener('pointerdown', (e) => e.stopPropagation());
+      ov.appendChild(b);
+    });
+    // Reels: кнопка в колонке действий
+    const ra = $('reels-actions');
+    if (ra && !ra.querySelector('.mx-dl-reel')) {
+      const d = document.createElement('div');
+      d.className = 'mx-dl-reel'; d.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer';
+      d.innerHTML = '<div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;color:#fff">' + DL_ICO.replace('width="18" height="18"', 'width="26" height="26"') + '</div><div style="font-size:11px;color:#fff">Скачать</div>';
+      d.onclick = () => window.mxDownloadFrom('s-video-reels');
+      ra.appendChild(d);
+    }
+  }
+  document.addEventListener('DOMContentLoaded', injectDownloadButtons);
+  injectDownloadButtons();
+
+  /* ═════════ 4. Аватарка по долгому нажатию → на весь экран в высоком разрешении ═════════ */
+  /** Универсальное долгое нажатие (палец, мышь, перо). После срабатывания «проглатывает» последующий клик. */
+  function bindLongPress(el, onLong, ms) {
+    if (!el || el._mxLP) return; el._mxLP = true;
+    let t = null, sx = 0, sy = 0, fired = false;
+    const clear = () => { clearTimeout(t); t = null; };
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button != null && e.button > 0) return;
+      fired = false; sx = e.clientX; sy = e.clientY; clear();
+      t = setTimeout(() => { fired = true; if (navigator.vibrate) try { navigator.vibrate(15); } catch (er) { /* noop */ } onLong(e); }, ms || 450);
+    });
+    el.addEventListener('pointermove', (e) => { if (t && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) clear(); });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => el.addEventListener(ev, clear));
+    el.addEventListener('click', (e) => { if (fired) { e.stopImmediatePropagation(); e.preventDefault(); fired = false; } }, true);
+    el.addEventListener('contextmenu', (e) => { e.preventDefault(); }); // системное меню картинки на долгом нажатии не нужно
+    el.style.webkitTouchCallout = 'none'; el.style.userSelect = 'none';
+  }
+  window.mxBindLongPress = bindLongPress;
+  function openAvatarHiRes(el) {
+    const img = el.querySelector('img'); if (!img || !img.src) return;
+    const fs = $('avatar-fullscreen'), big = $('avatar-full-img'); if (!fs || !big) return;
+    big.src = img.currentSrc || img.src;                 // тот же файл без сжатия: аватарки теперь грузятся в 1024 px
+    fs.style.zIndex = '990'; fs.classList.add('active');
+  }
+  function initAvatars() {
+    [$('profile-av-wrap'), $('up-avatar')].forEach((el) => bindLongPress(el, () => openAvatarHiRes(el), 450));
+  }
+  document.addEventListener('DOMContentLoaded', initAvatars);
+  initAvatars();
+  // аватар чужого профиля может создаваться позже — подхватываем
+  new MutationObserver(initAvatars).observe(document.body, { childList: true, subtree: true });
+
+  /* ═════════ 6. Открепление сообщений ═════════ */
+  window.mxUnpinFromMenu = function () { if (window.mxCloseFloating) mxCloseFloating(); if (typeof mxUnpin === 'function') mxUnpin(); };
+
+  /* Контекстное меню сообщения: «Открепить», «Сохранить», одноразовые */
+  window.mxCtxAdjust = function (msg, buttons) {
+    const id = msg.id;
+    if (msg.viewOnce) {                                  // одноразовое: нельзя ни ответить, ни переслать, ни сохранить — только удалить
+      const keep = buttons.filter((b) => b.includes('mxDeleteMessage('));
+      buttons.length = 0; keep.forEach((b) => buttons.push(b)); return;
+    }
+    const pinned = G.pinned;
+    const isPinned = !!(pinned && pinned.id === id);
+    const i = buttons.findIndex((b) => b.includes("mxPin('" + id + "')"));
+    const unpin = window.mxCtxItem(MX_ICO.pin, 'Открепить', 'mxUnpinFromMenu()');
+    if (isPinned) { if (i >= 0) buttons[i] = unpin; else buttons.splice(Math.max(0, buttons.length - 1), 0, unpin); }
+    if (['IMAGE', 'VIDEO', 'VIDEO_NOTE', 'FILE'].includes(msg.kind) && msg.mediaUrl) {
+      buttons.splice(Math.max(0, buttons.length - 1), 0, window.mxCtxItem(DL_ICO, 'Сохранить', "mxDownloadMessage('" + esc(id) + "')"));
+    }
+  };
+
+  /* ═════════ 5. Удаление чатов/контактов и выход (в том числе владельца) ═════════ */
+  function askModal(o) {
+    document.querySelectorAll('.modal.mx-ask').forEach((x) => x.remove());
+    const m = document.createElement('div'); m.className = 'modal active mx-ask'; m.style.zIndex = '995';
+    m.onclick = (e) => { if (e.target === m) m.remove(); };
+    const btn = (b, i) => `<button type="button" data-i="${i}" style="width:100%;padding:12px;border-radius:14px;border:none;margin-top:8px;cursor:pointer;font-family:var(--font);font-size:14px;color:${b.danger || b.primary ? '#fff' : 'var(--text)'};background:${b.danger ? '#dc2626' : b.primary ? 'var(--accent)' : 'var(--surf)'}">${esc(b.label)}</button>`;
+    m.innerHTML = `<div class="modal-box" style="max-width:380px"><h3>${esc(o.title)}</h3>${o.text ? `<div style="font-size:13px;color:var(--text2);line-height:1.45;margin-bottom:6px">${o.text}</div>` : ''}${o.body || ''}${o.buttons.map(btn).join('')}</div>`;
+    m.querySelectorAll('button[data-i]').forEach((b) => { b.onclick = async () => { const h = o.buttons[+b.dataset.i]; if (h.keep !== true) m.remove(); if (h.onClick) await h.onClick(m); }; });
+    ($('app') || document.body).appendChild(m);
+    return m;
+  }
+  function dropLocalChat(id) {
+    try { chats = chats.filter((c) => c.id !== id); delete messages[id]; } catch (e) { /* noop */ }
+    const q = $('chat-search'); try { window.renderChats(q ? q.value.toLowerCase() : ''); } catch (e) { /* noop */ }
+    if (G.chatId === id) { const im = $('mx-info-modal'); if (im) im.remove(); window.goTo('s-chats'); }
+  }
+
+  window.mxChatMenuExtra = function (ch) {
+    const id = esc(ch.id), del = MX_ICO.del;
+    if (ch.type === 'DIRECT') {
+      let h = window.mxCtxItem(del, 'Удалить чат', `mxDeleteDirectChat('${id}')`, true);
+      if (ch.peer && ch.peer.username) h += window.mxCtxItem(del, 'Удалить из контактов', `mxRemoveContact('${esc(ch.peer.username)}','${id}','${esc(ch.name || ch.peer.username)}')`, true);
+      return h;
+    }
+    if (ch.type === 'GROUP' || ch.type === 'CHANNEL') {
+      const ch1 = ch.type === 'CHANNEL' ? 'канала' : 'группы';
+      return window.mxCtxItem(del, ch.role === 'OWNER' ? `Выйти из ${ch1}…` : (ch.type === 'CHANNEL' ? 'Покинуть канал' : 'Покинуть группу'), `mxLeaveChatFlow('${id}')`, true);
+    }
+    return '';
+  };
+
+  window.mxDeleteDirectChat = function (id) {
+    if (window.mxCloseFloating) mxCloseFloating();
+    const ch = G.chats.find((c) => c.id === id); if (!ch) return;
+    window.showConfirm(`Удалить чат с «${esc(ch.name)}»? Переписка исчезнет только у вас — у собеседника останется.`, async () => {
+      try { await MchatAPI.hideChat(id); dropLocalChat(id); toast('Чат удалён'); } catch (e) { toast(MchatAPI.errorText(e)); }
+    });
+  };
+
+  window.mxRemoveContact = function (username, chatId, name) {
+    if (window.mxCloseFloating) mxCloseFloating();
+    window.showConfirm(`Удалить «${esc(name || username)}» из контактов?`, async () => {
+      try {
+        try { await MchatAPI.unfollow(username); } catch (e) { /* уже не подписан — это не ошибка */ }
+        if (chatId) { try { await MchatAPI.hideChat(chatId); } catch (e) { /* нет диалога */ } dropLocalChat(chatId); }
+        try { mxContactsCache = (mxContactsCache || []).filter((c) => c.username !== username); } catch (e) { /* noop */ }
+        document.querySelectorAll('[data-username="' + CSS.escape(username) + '"]').forEach((r) => r.remove());
+        toast('Удалено из контактов');
+      } catch (e) { toast(MchatAPI.errorText(e)); }
+    });
+  };
+
+  /** Выход из группы/канала. Участник — просто выходит. Владелец — передаёт права или удаляет всё для всех. */
+  window.mxLeaveChatFlow = function (id) {
+    if (window.mxCloseFloating) mxCloseFloating();
+    const ch = G.chats.find((c) => c.id === id); if (!ch) return;
+    const isCh = ch.type === 'CHANNEL', noun = isCh ? 'канал' : 'группу', nounGen = isCh ? 'канала' : 'группы';
+    const finish = (r, msg) => { dropLocalChat(id); toast(msg); };
+    const doLeave = async (body, msg) => { try { const r = await MchatAPI.leaveChat(id, body); finish(r, msg); } catch (e) { toast(MchatAPI.errorText(e)); } };
+
+    if (ch.role !== 'OWNER') {
+      askModal({ title: `Покинуть ${noun}?`, text: `«${esc(ch.name)}» исчезнет из вашего списка.`, buttons: [
+        { label: 'Покинуть', danger: true, onClick: () => doLeave({}, isCh ? 'Вы покинули канал' : 'Вы покинули группу') },
+        { label: 'Отмена' } ] });
+      return;
+    }
+    const alone = (ch.memberCount || 0) <= 1;
+    const askDeleteAll = () => window.showConfirm(`Удалить ${noun} «${esc(ch.name)}» навсегда для всех участников? Все сообщения и файлы будут стёрты.`, () => doLeave({ mode: 'delete' }, isCh ? 'Канал удалён' : 'Группа удалена'));
+    if (alone) {
+      askModal({ title: `Выйти из ${nounGen}`, text: 'Кроме вас здесь никого нет — при выходе чат будет удалён.', buttons: [
+        { label: 'Удалить и выйти', danger: true, onClick: () => doLeave({ mode: 'delete' }, 'Чат удалён') }, { label: 'Отмена' } ] });
+      return;
+    }
+    askModal({ title: `Выйти из ${nounGen}`, text: 'Вы владелец. Передайте права другому участнику или удалите чат для всех.', buttons: [
+      { label: 'Передать права и выйти', primary: true, onClick: () => pickHeir() },
+      { label: 'Удалить для всех', danger: true, onClick: () => askDeleteAll() },
+      { label: 'Отмена' } ] });
+
+    async function pickHeir() {
+      let members = [];
+      try { members = ((await MchatAPI.chatMembers(id)).members || []).filter((m) => !m.me && m.id !== (G.user || {}).id); } catch (e) { /* список недоступен — выберем автоматически */ }
+      if (!members.length) return doLeave({ mode: 'transfer' }, 'Вы вышли, права переданы');
+      members.sort((a, b) => (a.role === 'ADMIN' ? -1 : 0) - (b.role === 'ADMIN' ? -1 : 0));
+      let chosen = members[0].id;
+      const rows = members.map((m) => `<label style="display:flex;align-items:center;gap:10px;padding:8px 4px;cursor:pointer"><input type="radio" name="mx-heir" value="${esc(m.id)}" ${m.id === chosen ? 'checked' : ''}><div style="flex:1;min-width:0"><div style="font-size:14px;overflow:hidden;text-overflow:ellipsis">${esc(m.name || m.username)}</div><div style="font-size:11px;color:var(--text2)">@${esc(m.username)}${m.role === 'ADMIN' ? ' · админ' : ''}</div></div></label>`).join('');
+      const m2 = askModal({ title: 'Кому передать права?', body: `<div style="max-height:40vh;overflow-y:auto;margin:6px 0">${rows}</div>`, buttons: [
+        { label: 'Передать и выйти', primary: true, onClick: (md) => { const r = md.querySelector('input[name="mx-heir"]:checked'); return doLeave({ mode: 'transfer', newOwnerId: r ? r.value : chosen }, 'Вы вышли, права переданы'); }, keep: true },
+        { label: 'Отмена' } ] });
+      m2.querySelectorAll('input[name="mx-heir"]').forEach((r) => r.onchange = () => { chosen = r.value; });
+    }
+  };
+
+  /* Долгое нажатие на контакты: «Удалить из контактов» (список «Подписки» и выбор участников) */
+  function contactMenu(row, e) {
+    const username = row.dataset.username; if (!username) return;
+    if (window.mxCloseFloating) mxCloseFloating();
+    const name = row.dataset.name || username;
+    const scrim = document.createElement('div'); scrim.className = 'mx-ctx-scrim'; scrim.onclick = () => mxCloseFloating();
+    const panel = document.createElement('div'); panel.className = 'mx-ctx';
+    panel.innerHTML = window.mxCtxItem(MX_ICO.del, 'Удалить из контактов', `mxRemoveContactRow('${esc(username)}','${esc(name)}')`, true);
+    const host = $('app') || document.body;
+    host.appendChild(scrim); host.appendChild(panel);
+    mxPositionNear(row, panel);
+  }
+  window.mxRemoveContactRow = function (username, name) {
+    const ch = G.chats.find((c) => c.type === 'DIRECT' && c.peer && c.peer.username === username);
+    window.mxRemoveContact(username, ch ? ch.id : '', name);
+  };
+  document.addEventListener('pointerdown', (e) => {
+    const row = e.target.closest && e.target.closest('.mx-f-user[data-own="1"], .mx-contact-row'); if (!row || row._mxLP) return;
+    bindLongPress(row, (ev) => contactMenu(row, ev), 500);
+    row.dispatchEvent(new PointerEvent('pointerdown', e));   // первое нажатие уже случилось — запускаем отсчёт для него
+  }, true);
+
+  /* ═════════ 7. Одноразовые медиа (фото, видео, голосовые, кружки) ═════════ */
+  let once = false;
+  const KINDS = ['IMAGE', 'VIDEO', 'VOICE', 'VIDEO_NOTE'];
+  const ONCE_ICO = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3.2 3"/><path d="M10.3 9.6L12.4 8.2v7.6" stroke-width="2.2"/></svg>';
+  const directNow = () => { const m = G.meta || (G.chats || []).find((c) => c.id === G.chatId); return !!m && m.type === 'DIRECT'; };
+  function syncOnceUi() {
+    document.querySelectorAll('.mx-once-chip').forEach((b) => { b.classList.toggle('on', once); b.classList.toggle('hidden', !directNow()); });
+  }
+  function setOnce(v) { once = !!v; syncOnceUi(); }
+  window.mxToggleOnce = function () { setOnce(!once); toast(once ? 'Одноразовое: получатель откроет один раз' : 'Обычная отправка'); };
+  function mkChip(extraClass, html) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'mx-once-chip ' + extraClass; b.title = 'Одноразовый просмотр (1 раз)'; b.innerHTML = html;
+    b.onclick = (e) => { e.stopPropagation(); window.mxToggleOnce(); };
+    return b;
+  }
+  function injectOnceChips() {
+    const mic = $('mx-mic-btn');
+    if (mic && !$('mx-once-btn')) { const b = mkChip('ib ghost mx-once-composer', ONCE_ICO); b.id = 'mx-once-btn'; mic.parentNode.insertBefore(b, mic); }
+    const hd = $('mx-pv-hd');
+    if (hd && !$('mx-once-pv')) { const b = mkChip('ib ghost mx-once-pv', '1 раз'); b.id = 'mx-once-pv'; hd.parentNode.insertBefore(b, hd); }
+    const rp = $('mx-rec-prev');
+    if (rp && !$('mx-once-rec')) { const b = mkChip('mx-once-rec', ONCE_ICO + '<span>1 раз</span>'); b.id = 'mx-once-rec'; rp.insertAdjacentElement('afterend', b); }
+    syncOnceUi();
+  }
+  document.addEventListener('DOMContentLoaded', injectOnceChips);
+  injectOnceChips();
+  const prevAfterOpen = window.mxAfterOpenChat;
+  window.mxAfterOpenChat = function (ch) { const r = prevAfterOpen.apply(this, arguments); setOnce(false); injectOnceChips(); return r; };
+
+  // К отправке медиа в личном чате добавляем флаг viewOnce (сервер проверит тип чата и вид файла)
+  const origSend = MchatAPI.sendMessage;
+  let onceTimer = null;
+  MchatAPI.sendMessage = function (chatId, text, clientId, extra) {
+    if (once && extra && KINDS.includes(extra.kind) && directNow()) {
+      extra = Object.assign({}, extra, { viewOnce: true });
+      clearTimeout(onceTimer); onceTimer = setTimeout(() => setOnce(false), 1500);   // флажок снимается после отправки (серия файлов успевает)
+    }
+    return origSend.call(this, chatId, text, clientId, extra);
+  };
+
+  const KIND_RU = { IMAGE: 'Фото', VIDEO: 'Видео', VOICE: 'Голосовое', VIDEO_NOTE: 'Кружок' };
+  window.mxOnceBubble = function (m) {
+    const label = KIND_RU[m.kind] || 'Медиа';
+    if (m.outgoing || m.mine) {
+      return `<div class="mx-once out"><span class="mx-once-ico">${ONCE_ICO}</span><div><b>${label}</b><small>${m.viewOnceOpened ? 'Открыто получателем' : 'Одноразовое · отправлено'}</small></div></div>`;
+    }
+    return `<div class="mx-once in" onclick="event.stopPropagation();mxOpenOnce('${esc(m.id)}')"><span class="mx-once-ico">${ONCE_ICO}</span><div><b>${label}</b><small>${m.viewOnceOpened ? 'Уже открыто' : 'Нажмите, чтобы открыть · 1 раз'}</small></div></div>`;
+  };
+
+  let onceBusy = false, onceState = null;
+  function dropOnceLocal(mid) {
+    try { messages[currentChatId] = (messages[currentChatId] || []).filter((m) => m.id !== mid); renderMessages(currentChatId); } catch (e) { /* noop */ }
+  }
+  window.mxCloseOnce = function () {
+    if (!onceState) return;
+    const st = onceState; onceState = null;
+    st.stop && st.stop();
+    const v = $('mx-once-viewer'); if (v) v.remove();
+    MchatAPI.closeOnce(st.id).catch(() => {});             // сервер удаляет файл и сообщение навсегда
+    dropOnceLocal(st.id);
+  };
+  window.mxOpenOnce = async function (id) {
+    if (onceBusy || onceState) return;
+    const msg = (G.messages[G.chatId] || []).find((m) => m.id === id);
+    if (!msg || msg.outgoing || msg.mine) return;
+    onceBusy = true;
+    let r;
+    try { r = await MchatAPI.openOnce(id); }
+    catch (e) {
+      onceBusy = false;
+      toast(MchatAPI.errorText(e));
+      if (/view_once_gone/.test((e && (e.code || e.message)) || '')) {
+        dropOnceLocal(id);
+      }
+      return;
+    }
+    onceBusy = false;
+    const kind = r.kind;
+    const v = document.createElement('div');
+    v.id = 'mx-once-viewer'; v.className = 'overlay active';
+    v.style.cssText = 'background:#000;z-index:985;flex-direction:column;align-items:center;justify-content:center';
+    const noSave = 'controlsList="nodownload noplaybackrate noremoteplayback" disablepictureinpicture oncontextmenu="return false"';
+    let media = '';
+    if (kind === 'IMAGE') media = `<img id="mx-once-media" src="${esc(r.url)}" draggable="false" oncontextmenu="return false" style="max-width:100%;max-height:78%;object-fit:contain;-webkit-user-select:none;user-select:none;pointer-events:none">`;
+    else if (kind === 'VIDEO') media = `<video id="mx-once-media" src="${esc(r.url)}" ${noSave} controls autoplay playsinline style="max-width:100%;max-height:78%;background:#000"></video>`;
+    else if (kind === 'VIDEO_NOTE') media = `<video id="mx-once-media" src="${esc(r.url)}" ${noSave} autoplay playsinline style="width:min(82vw,360px);height:min(82vw,360px);border-radius:50%;object-fit:cover;background:#000"></video>`;
+    else media = `<div class="mx-once-voice"><div class="mx-once-ring">${ONCE_ICO}</div><audio id="mx-once-media" src="${esc(r.url)}" autoplay ${noSave}></audio><div class="mx-once-bar"><i id="mx-once-prog"></i></div><div id="mx-once-time" style="font-size:13px;color:#ddd">0:00</div></div>`;
+    v.innerHTML = `<button type="button" class="mx-once-x" aria-label="Закрыть" onclick="mxCloseOnce()">✕</button>
+      ${media}<div class="mx-once-note">Одноразовое · после закрытия исчезнет навсегда</div>`;
+    ($('app') || document.body).appendChild(v);
+    const el = $('mx-once-media');
+    onceState = { id, stop: null };
+    const closeSoon = () => setTimeout(() => window.mxCloseOnce(), kind === 'IMAGE' ? 0 : 400);
+    if (el && (kind === 'VIDEO' || kind === 'VIDEO_NOTE' || kind === 'VOICE')) {
+      el.addEventListener('ended', closeSoon);               // проиграно до конца — удаляем
+      el.addEventListener('error', () => { toast('Не удалось открыть файл'); window.mxCloseOnce(); });
+      if (kind === 'VOICE') el.addEventListener('timeupdate', () => {
+        const d = el.duration || r.durationSec || 0, p = d ? (el.currentTime / d) * 100 : 0;
+        const bar = $('mx-once-prog'); if (bar) bar.style.width = p + '%';
+        const t = $('mx-once-time'); if (t) { const s = Math.floor(el.currentTime); t.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+      });
+      if (kind === 'VIDEO_NOTE') v.addEventListener('click', () => { if (el.paused) el.play().catch(() => {}); else el.pause(); });
+      el.play && el.play().catch(() => {});
+      onceState.stop = () => { try { el.pause(); } catch (e) { /* noop */ } el.removeAttribute('src'); try { el.load(); } catch (e) { /* noop */ } };
+    }
+    // Свернули/ушли с вкладки — просмотр считается законченным (иначе файл можно «подержать» открытым)
+    const hide = () => { if (document.hidden && onceState && onceState.id === id) window.mxCloseOnce(); };
+    document.addEventListener('visibilitychange', hide, { once: true });
+  };
 })();

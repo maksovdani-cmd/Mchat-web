@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
   addMembers, createGroupOrChannel, getChannelPreview, listShared, getChatDTO, getOrCreateDirectChat, getOrCreateSavedChat, joinByInvite, joinPublicChannel, listChats, listContacts,
-  listMembers, listMessages, removeMember, searchPublicChannels, setChatAutoDelete, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
+  hideChat, leaveChat, listMembers, listMessages, removeMember, searchPublicChannels, setChatAutoDelete, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
 } from '../services/chat';
 import { emitToChat, emitToUser, leaveUserFromChat } from '../realtime/hub';
 import { joinAllToChat, pinAndDispatch, readAndBroadcast, sendAndDispatch } from '../services/messaging';
@@ -135,6 +135,7 @@ chatsRouter.post('/:id/messages', wrap(async (req, res) => {
     mediaId: id.optional(),
     durationSec: z.number().min(0).max(3600).optional(),
     replyToId: id.optional(),
+    viewOnce: z.boolean().optional(),
   }).parse(req.body);
   res.json({ message: await sendAndDispatch(authOf(req).userId, String(req.params.id), b) });
 }));
@@ -198,6 +199,31 @@ chatsRouter.post('/:id/members', wrap(async (req, res) => {
   added.forEach((u) => emitToUser(u, 'chat:changed', { chatId })); // новичку — чат появится в списке
   changed(chatId);
   res.json({ added: added.length, members: await listMembers(userId, chatId) });
+}));
+
+/** Удалить личный чат из моего списка (у собеседника останется). */
+chatsRouter.post('/:id/hide', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const chatId = String(req.params.id);
+  await hideChat(userId, chatId);
+  emitToUser(userId, 'chat:removed', { chatId });
+  res.json({ ok: true });
+}));
+
+/**
+ * Выйти из группы/канала — в том числе владельцу.
+ * Владельцу: mode=transfer (+ newOwnerId, иначе выберется сам) — передать права; mode=delete — удалить для всех.
+ */
+chatsRouter.post('/:id/leave', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const chatId = String(req.params.id);
+  const b = z.object({ mode: z.enum(['transfer', 'delete']).optional(), newOwnerId: id.optional() }).parse(req.body ?? {});
+  const r = await leaveChat(userId, chatId, b);
+  leaveUserFromChat(userId, chatId);
+  emitToUser(userId, 'chat:removed', { chatId });
+  if (r.deleted) { for (const uid of r.memberIds) { if (uid === userId) continue; leaveUserFromChat(uid, chatId); emitToUser(uid, 'chat:removed', { chatId }); } }
+  else changed(chatId);
+  res.json({ ok: true, deleted: r.deleted, newOwnerId: r.newOwnerId });
 }));
 
 chatsRouter.delete('/:id/members/:userId', wrap(async (req, res) => {

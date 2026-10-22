@@ -7,6 +7,7 @@ services:
       POSTGRES_USER: mchat
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: mchat
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8" # база строго в UTF-8 (для новых баз)
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

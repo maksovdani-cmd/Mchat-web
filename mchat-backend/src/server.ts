@@ -4,28 +4,30 @@ import cookieParser from 'cookie-parser';
 import express, { type ErrorRequestHandler } from 'express';
 import helmet from 'helmet';
 import { ZodError } from 'zod';
-import { config } from './config.js';
-import { prisma } from './db.js';
-import { apiLimiter, noStore, originGuard } from './middleware/security.js';
-import { initSocket } from './realtime/socket.js';
-import { authRouter } from './routes/auth.js';
-import { chatsRouter } from './routes/chats.js';
-import { friendsRouter } from './routes/friends.js';
-import { mediaRouter } from './routes/media.js';
-import { momentsRouter } from './routes/moments.js';
-import { messagesRouter } from './routes/messages.js';
-import { postsRouter, storiesRouter } from './routes/posts.js';
-import { purgeExpiredAndBroadcast } from './services/messaging.js';
-import { purgeExpiredStories } from './services/posts.js';
-import { verificationRouter } from './routes/verification.js';
-import { callsRouter } from './routes/calls.js';
-import { supportRouter } from './routes/support.js';
-import { expireVerifications } from './services/verification.js';
-import { pushRouter } from './routes/push.js';
-import { titlesRouter } from './routes/titles.js';
-import { usersRouter } from './routes/users.js';
-import { ensureUploadDir, storageMode } from './services/storage.js';
-import { HttpError } from './utils/errors.js';
+import { config } from './config';
+import { prisma } from './db';
+import { checkMediaIntegrity } from './services/media';
+import { sanitizeStoredNames } from './utils/validate';
+import { apiLimiter, noStore, originGuard } from './middleware/security';
+import { initSocket } from './realtime/socket';
+import { authRouter } from './routes/auth';
+import { chatsRouter } from './routes/chats';
+import { friendsRouter } from './routes/friends';
+import { mediaRouter } from './routes/media';
+import { momentsRouter } from './routes/moments';
+import { messagesRouter } from './routes/messages';
+import { postsRouter, storiesRouter } from './routes/posts';
+import { purgeExpiredAndBroadcast, purgeViewOnceAndBroadcast } from './services/messaging';
+import { purgeExpiredStories } from './services/posts';
+import { verificationRouter } from './routes/verification';
+import { callsRouter } from './routes/calls';
+import { supportRouter } from './routes/support';
+import { expireVerifications } from './services/verification';
+import { pushRouter } from './routes/push';
+import { titlesRouter } from './routes/titles';
+import { usersRouter } from './routes/users';
+import { ensureUploadDir, storageMode } from './services/storage';
+import { HttpError } from './utils/errors';
 
 const app = express();
 app.set('trust proxy', config.TRUST_PROXY); // корректный req.ip и req.protocol за Caddy/nginx
@@ -159,7 +161,8 @@ ensureUploadDir();
 if (config.isProd && storageMode === 'disk') {
   console.warn('[storage] Файлы хранятся на диске сервера и пропадут при следующем деплое. Задай S3_* (см. CHANGES-step4.md), чтобы они жили в облаке.');
 }
-import('./services/media.js').then((m) => m.checkMediaIntegrity()).catch((e) => console.error('media integrity', e));
+sanitizeStoredNames(prisma as never).catch((e) => console.error('sanitize names', e));   // чистим «битые» имена, оставшиеся в базе
+checkMediaIntegrity().catch((e) => console.error('media integrity', e));                 // все ли файлы из БД на месте
 const server = http.createServer(app);
 const io = initSocket(server);
 
@@ -167,6 +170,7 @@ const expireNow = () => expireVerifications().catch((e) => console.error('expire
 expireNow();
 setInterval(expireNow, 5 * 60 * 1000).unref(); // срок галочки вышел — она исчезает (проверка раз в 5 минут)
 setInterval(() => purgeExpiredAndBroadcast().catch((e) => console.error('purge disappearing messages', e)), 60 * 1000).unref(); // «очистка чата через 24 часа»
+setInterval(() => purgeViewOnceAndBroadcast().catch((e) => console.error('purge view-once', e)), 2 * 60 * 1000).unref(); // одноразовые медиа, которые открыли и бросили
 setInterval(() => purgeExpiredStories().catch((e) => console.error('purge stories', e)), 60 * 60 * 1000).unref();
 
 // Чтобы бесплатный Render не засыпал: раз в 10 минут сервер сам стучится на свой /ping (только в проде)

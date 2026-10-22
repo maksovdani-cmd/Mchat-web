@@ -3,7 +3,7 @@
  *  2) Web Push: сообщения и ВХОДЯЩИЕ ЗВОНКИ (долгая вибрация, кнопки «Ответить/Отклонить», уведомление не исчезает само). */
 'use strict';
 
-const VERSION = 'v5';
+const VERSION = 'v6';
 const STATIC_CACHE = 'mchat-static-' + VERSION;
 const RUNTIME_CACHE = 'mchat-runtime-' + VERSION;
 const MP_CACHE = 'mchat-mediapipe-1'; // wasm и модель масок — тяжёлые, меняются редко
@@ -229,4 +229,3 @@ self.addEventListener('pushsubscriptionchange', (event) => {
     } catch (e) { /* при следующем открытии приложения syncPush() подпишет заново */ }
   })());
 });
-  

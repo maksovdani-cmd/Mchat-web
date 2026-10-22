@@ -575,7 +575,7 @@
       const r = await MchatAPI.followsOf(username, kind);
       const body = $('mx-fl-body'); if (!body || fl.name !== username || fl.kind !== kind) return;
       if (r.hidden) { body.innerHTML = `<div class="mx-f-empty">${F.svg('lock', 30)}<div style="margin-top:10px">Пользователь скрыл свои подписки</div></div>`; return; }
-      body.innerHTML = r.users.length ? r.users.map((u) => `<div class="mx-f-user" onclick="mxFlOpen('${esc(u.username)}')">
+      body.innerHTML = r.users.length ? r.users.map((u) => `<div class="mx-f-user" data-username="${esc(u.username)}" data-name="${esc(u.name || u.username)}" data-own="${own && kind === 'following' ? 1 : 0}" onclick="mxFlOpen('${esc(u.username)}')">
         ${F.avatar(u)}<div class="mx-f-utxt"><div class="mx-f-uname">${esc(u.name || u.username)}${F.badge(u)}</div><div class="mx-f-usub">@${esc(u.username)}</div></div>
         ${u.isMe ? '' : `<button class="mx-f-btn${u.iFollow ? ' ghost' : ''}" data-f="${u.iFollow ? 1 : 0}" onclick="event.stopPropagation();mxFlToggle('${esc(u.username)}',this,${own && kind === 'following' ? 'true' : 'false'})">${u.iFollow ? 'Отписаться' : 'Подписаться'}</button>`}</div>`).join('')
         : `<div class="mx-f-empty">${kind === 'followers' ? 'Подписчиков пока нет' : 'Подписок пока нет'}</div>`;

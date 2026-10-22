@@ -26,6 +26,7 @@ const sendSchema = z.object({
   mediaId: id.optional(),
   durationSec: z.number().min(0).max(3600).optional(),
   replyToId: id.optional(),
+  viewOnce: z.boolean().optional(),
 });
 const chatIdSchema = z.object({ chatId: id });
 const momentId = z.object({ id: z.number().int().positive() });

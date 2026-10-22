@@ -685,6 +685,12 @@ function bindRealtimeHandlers() {
   h.onLoginCode = showLoginCodeModal;
   h.onNewDevice = (d) => showToast('Новый вход в аккаунт: ' + (d && d.label ? d.label : 'устройство'));
   h.onUnauthorized = () => { resetSessionState(); goTo('s-login'); showToast('Сессия завершена. Войди снова'); };
+  h.onChatRemoved = (p) => {  // меня удалили/я вышел/чат удалён — убираем из списка (раньше событие игнорировалось)
+    chats = chats.filter(c => c.id !== p.chatId);
+    delete messages[p.chatId];
+    renderChats(document.getElementById('chat-search') ? document.getElementById('chat-search').value.toLowerCase() : '');
+    if (currentChatId === p.chatId) { const m = document.getElementById('mx-info-modal'); if (m) m.remove(); goTo('s-chats'); }
+  };
   h.onChatChanged = () => { refreshChats().then(() => { mxApplyChatBackground(); const cur = chats.find(c => c.id === currentChatId); if (cur) { mxApplyChatInputState(cur); try { updateChatStatus(cur); } catch (e) {} } }); };
   h.onCallIncoming = mxOnCallIncoming; h.onCallEnded = mxOnCallEnded; h.onCallHandled = mxOnCallHandled;
   h.onReconnect = () => { refreshChats(); if (currentChatId) loadChatHistory(currentChatId); };
@@ -1070,16 +1076,15 @@ function applyAvatarCrop() {
   const img = document.getElementById('avatar-cropper-img');
   if (!container || !img) return;
   
+  // Раньше аватарка сжималась до 200×200 и обрезалась кругом (JPEG давал чёрные углы) — отсюда мутное фото на весь экран.
+  // Теперь сохраняем квадрат до 1024×1024; круг рисуется стилями интерфейса, поэтому вид аватарки не меняется.
   const canvas = document.createElement('canvas');
-  canvas.width = 200;
-  canvas.height = 200;
+  const AV = 1024;
+  canvas.width = AV;
+  canvas.height = AV;
   const ctx = canvas.getContext('2d');
-  
-  ctx.beginPath();
-  ctx.arc(100, 100, 100, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0,0,0,0)';
-  ctx.fill();
-  ctx.clip();
+  ctx.imageSmoothingQuality = 'high';
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, AV, AV);
   
   // Видимый круг (в пикселях контейнера) — квадратная область, которую нужно перенести на канвас
   const C = container.offsetWidth;
@@ -1109,7 +1114,7 @@ function applyAvatarCrop() {
     
     ctx.drawImage(tempImg, sx, sy, sSize, sSize, 0, 0, canvas.width, canvas.height);
     
-    const croppedUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const croppedUrl = canvas.toDataURL('image/jpeg', 0.9);
     const prevAvatar = currentUser.avatar;
     currentUser.avatar = croppedUrl; // сразу показываем, параллельно грузим на сервер
     canvas.toBlob(async blob => {
@@ -3004,6 +3009,7 @@ function msgFromServer(m) {
     senderName: m.senderName, senderUsername: m.senderUsername,
     kind: m.kind || 'TEXT', text: m.text, mediaUrl: m.mediaUrl, fileName: m.fileName, fileSize: m.fileSize, durationSec: m.durationSec,
     replyTo: m.replyTo, forwardedFrom: m.forwardedFrom, call: m.call || null,
+    viewOnce: !!m.viewOnce, viewOnceOpened: !!m.viewOnceOpened,
     reactions: m.reactions || [], editedAt: m.editedAt,
     time: fmtClock(m.createdAt), createdAt: m.createdAt,
     outgoing: !!currentUser && m.senderId === currentUser.id, pending: false
@@ -3266,6 +3272,7 @@ function mxCallCardHtml(m) {
 }
 function bubbleBodyHtml(m) {
   if (m.kind === 'CALL') return mxCallCardHtml(m);
+  if (m.viewOnce && window.mxOnceBubble) return window.mxOnceBubble(m); // одноразовое медиа: файла в чате нет, только плашка
   if (m.kind === 'VOICE') {
     return `<div class="mx-voice" data-audio-url="${esc(m.mediaUrl||'')}">
       <button class="mx-vplay" onclick="event.stopPropagation();mxVoicePlayToggle(this,'${esc(m.id)}')"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 20 12 7 20 7 4"/></svg></button>
@@ -3320,9 +3327,10 @@ function renderMessages(id) {
     if (m.kind === 'CALL') return `${daySep}<div class="msg mx-callmsg ${m.outgoing?'mo':'mi'}" data-id="${esc(m.id)}" data-day="${day}">${bubbleBodyHtml(m)}<div class="mt">${esc(m.time)}</div></div>`;
     const cls = ['msg', m.outgoing?'mo':'mi'];
     if (m.kind === 'TEXT' && mxBigEmojiCount(m.text)) cls.push('mx-emoji-only');
-    if (m.kind === 'VIDEO_NOTE') cls.push('mx-vn');
-    if (m.kind === 'IMAGE') cls.push('mx-photo');
-    if (m.kind === 'VIDEO') cls.push('mx-media');
+    if (m.kind === 'VIDEO_NOTE' && !m.viewOnce) cls.push('mx-vn');
+    if (m.kind === 'IMAGE' && !m.viewOnce) cls.push('mx-photo');
+    if (m.kind === 'VIDEO' && !m.viewOnce) cls.push('mx-media');
+    if (m.viewOnce) cls.push('mx-once-msg');
     if (m.kind === 'TEXT') cls.push('mx-tm');   // текст + время в одном потоке (Telegram)
     const senderHtml = (isGroup && !m.outgoing && m.senderName) ? `<div class="mx-sender">${esc(m.senderName)}</div>` : '';
     const fwdHtml = m.forwardedFrom ? `<div class="mx-fwd">Переслано от ${esc(m.forwardedFrom)}</div>` : '';
@@ -4380,7 +4388,7 @@ function mxRenderChatInfo() {
       ${act(mxInfoSvg('chat'), 'Чат', 'mxInfoClose()')}
       ${act(mxInfoSvg(ch.muted ? 'bellOff' : 'bell'), ch.muted ? 'Без звука' : 'Звук', `mxToggleMute('${esc(ch.id)}')`)}
       ${third}
-      ${ch.preview ? '' : act(mxInfoSvg('leave'), 'Покинуть', ch.role === 'OWNER' ? `showToast('Владелец не может покинуть чат')` : 'mxLeaveChat()', true)}
+      ${ch.preview ? '' : act(mxInfoSvg('leave'), 'Покинуть', 'mxLeaveChat()', true)}
     </div>
     ${staff && !isChannel && ch.inviteCode ? `<div style="padding:0 14px 12px"><button class="mx-btn" style="width:100%" onclick="mxCopyInvite()">Скопировать ссылку-приглашение</button></div>` : ''}
     ${staff && !isChannel ? `<div style="padding:0 14px 6px"><button onclick="mxOpenAddMembers()" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px;border:none;border-radius:14px;background:var(--surf);color:var(--accent);font-family:var(--font);font-size:14px;font-weight:700;cursor:pointer">${mxInfoSvg('plus', 20)} Добавить участников</button></div>` : ''}
@@ -4452,12 +4460,7 @@ function mxKickMember(userId) {
     catch (e) { showToast(MchatAPI.errorText(e)); }
   });
 }
-function mxLeaveChat() {
-  showConfirm('Выйти из чата?', async () => {
-    try { await MchatAPI.removeMember(currentChatId, currentUser.id); const m = document.getElementById('mx-info-modal'); if (m) m.remove(); await refreshChats(); goTo('s-chats'); }
-    catch (e) { showToast(MchatAPI.errorText(e)); }
-  });
-}
+function mxLeaveChat() { if (window.mxLeaveChatFlow) window.mxLeaveChatFlow(currentChatId); }
 function mxOpenEditChat() {
   const ch = chats.find(c => c.id === currentChatId);
   if (!ch) return;
@@ -4726,11 +4729,16 @@ async function mxCallConnect(call, r) {
 
   // свои микрофон и камера: если не получилось — звонок продолжается без них
   try {
-    const local = await zg.createStream({ camera: { audio: true, video: true } });
+    // Параметры под устройство и тип звонка (разрешение/fps/битрейт, шумо- и эхоподавление). Не получилось — обычные настройки.
+    let local;
+    try { local = await zg.createStream(window.mxCallStreamOptions ? window.mxCallStreamOptions(call) : { camera: { audio: true, video: true } }); }
+    catch (e0) { console.warn('[call] createStream (optimized) failed, retry default', e0); local = await zg.createStream({ camera: { audio: true, video: true } }); }
     if (mxCall !== call) { zg.destroyStream(local); return; }
     call.localStream = local;
     if (!call.video) { await zg.enableVideoCaptureDevice(local, false); call.camOn = false; }
-    const pub = zg.startPublishingStream(r.roomId + '_' + r.userId, local);
+    let pub;
+    try { pub = zg.startPublishingStream(r.roomId + '_' + r.userId, local, window.mxCallPublishOptions ? window.mxCallPublishOptions() : undefined); }
+    catch (e1) { console.warn('[call] publish options rejected, retry default', e1); pub = zg.startPublishingStream(r.roomId + '_' + r.userId, local); }
     console.info('[call] startPublishingStream', r.roomId + '_' + r.userId, pub);
   } catch (e) {
     console.error('[call] createStream failed:', e);
@@ -5090,7 +5098,7 @@ function renderPinnedBar(pinned) {
   bar.style.display = 'flex';
   const textEl = document.getElementById('mx-pinned-text');
   if (textEl) textEl.textContent = msgPreview(pinned);
-  const canUnpin = currentChatMeta && currentChatMeta.canModerate;
+  const canUnpin = currentChatMeta && (currentChatMeta.canModerate || currentChatMeta.type === 'DIRECT' || currentChatMeta.type === 'SAVED'); // в личных чатах открепить может любой из двоих
   const xBtn = document.getElementById('mx-pinned-x');
   if (xBtn) xBtn.style.display = canUnpin ? 'flex' : 'none';
 }
@@ -5187,6 +5195,7 @@ function mxOpenContextMenu(id, evt) {
   if (mine || canModerate) buttons.push(mxCtxItem(MX_ICO.pin, 'Закрепить', `mxPin('${esc(id)}')`));
   if (mine && msg.kind === 'TEXT') buttons.push(mxCtxItem(MX_ICO.edit, 'Изменить', `mxEditMessage('${esc(id)}')`));
   buttons.push(mxCtxItem(MX_ICO.del, mine ? 'Удалить у всех' : 'Удалить у меня', `mxDeleteMessage('${esc(id)}')`, true));
+  if (window.mxCtxAdjust) window.mxCtxAdjust(msg, buttons); // «Открепить», «Сохранить», одноразовые медиа
   const scrim = document.createElement('div');
   scrim.className = 'mx-ctx-scrim';
   scrim.onclick = mxCloseFloating;
@@ -5326,7 +5335,7 @@ let mxContactsCache = [];     // контакты с сервера
 
 function mxContactRowsHtml(list, onToggle) {
   if (!list.length) return '<div style="text-align:center;padding:16px;color:var(--text2);font-size:13px">Контактов пока нет. Напиши кому-нибудь или добавь друга — они появятся здесь</div>';
-  return list.map(c => `<label style="display:flex;align-items:center;gap:10px;padding:8px 4px;cursor:pointer">
+  return list.map(c => `<label class="mx-contact-row" data-username="${esc(c.username)}" data-name="${esc(c.name || c.username)}" style="display:flex;align-items:center;gap:10px;padding:8px 4px;cursor:pointer">
     <input type="checkbox" ${mxPick.has(c.id) ? 'checked' : ''} onchange="${onToggle}('${esc(c.id)}',this.checked)" style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0">
     <div style="width:36px;height:36px;border-radius:50%;background:var(--surf2);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700">${c.avatar ? `<img src="${esc(c.avatar)}" style="width:100%;height:100%;object-fit:cover" referrerpolicy="no-referrer">` : esc((c.name || c.username).charAt(0).toUpperCase())}</div>
     <div style="min-width:0"><div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name || c.username)}</div><div style="font-size:12px;color:var(--text2)">@${esc(c.username)}</div></div>

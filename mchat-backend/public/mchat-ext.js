@@ -415,7 +415,8 @@
     scrim.className = 'mx-ctx-scrim'; scrim.onclick = mxCloseFloating;
     const panel = document.createElement('div');
     panel.className = 'mx-ctx';
-    panel.innerHTML = mxCtxItem(MX_ICO.pin, ch.pinnedChat ? 'Открепить' : 'Закрепить', `mxTogglePinChat('${esc(chatId)}')`);
+    panel.innerHTML = mxCtxItem(MX_ICO.pin, ch.pinnedChat ? 'Открепить' : 'Закрепить', `mxTogglePinChat('${esc(chatId)}')`)
+      + (window.mxChatMenuExtra ? window.mxChatMenuExtra(ch) : ''); // «Удалить чат» / «Выйти» / «Удалить из контактов»
     $('app').appendChild(scrim); $('app').appendChild(panel);
     mxPositionNear(evt.currentTarget || evt.target.closest('.chat-item') || evt.target, panel);
   }

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
+import { viewOnceMediaAllowed } from '../services/viewonce';
 import { prisma } from '../db';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
@@ -71,9 +72,12 @@ mediaRouter.post('/', uploadLimiter, wrap(async (req, res) => {
 mediaRouter.get('/:id', wrap(async (req, res) => {
   const m = await prisma.media.findUnique({ where: { id: String(req.params.id) } });
   if (!m || !(await canAccessMedia(authOf(req).userId, m))) throw new HttpError(404, 'media_not_found');
+  // Одноразовое медиа: только по временной ссылке, выданной получателю при открытии; никаких кэшей и редиректов на публичное облако
+  const vo = await viewOnceMediaAllowed(authOf(req).userId, m.id, typeof req.query.vo === 'string' ? req.query.vo : undefined);
+  if (vo === 'deny') throw new HttpError(404, 'media_not_found');
   const headers: Record<string, string> = {
     'Content-Type': m.mime, // тип берём из нашей БД (белый список), а не «угадываем» по файлу
-    'Cache-Control': 'private, max-age=86400',
+    'Cache-Control': vo === 'ok' ? 'no-store' : 'private, max-age=86400',
     'Content-Disposition': 'inline',
   };
   if (m.kind === 'FILE') {
@@ -84,7 +88,7 @@ mediaRouter.get('/:id', wrap(async (req, res) => {
   }
   // Файл лежит в облаке с публичным адресом: после проверки доступа отправляем прямо туда — трафик не идёт через сервер.
   // Документы (FILE) отдаём только через сервер: им нужны заголовки «attachment» и sandbox.
-  if (storageMode === 's3' && m.url && m.kind !== 'FILE') {
+  if (storageMode === 's3' && m.url && m.kind !== 'FILE' && vo !== 'ok') {
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.redirect(302, publicUrlFor(m.file) ?? m.url); // адрес считаем от текущих настроек: смена S3_PUBLIC_URL не ломает старые файлы
     return;

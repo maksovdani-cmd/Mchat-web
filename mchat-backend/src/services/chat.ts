@@ -57,6 +57,9 @@ export interface MessageDTO {
   hd: boolean;
   /** карточка завершённого звонка (kind === 'CALL') */
   call: CallCardDTO | null;
+  /** одноразовое медиа: файла в DTO нет — получатель запрашивает его отдельно и только один раз */
+  viewOnce: boolean;
+  viewOnceOpened: boolean;
 }
 
 export interface CallCardDTO {
@@ -93,8 +96,8 @@ export const toMessageDTO = (m: FullMessage): MessageDTO => ({
   senderName: m.sender?.name ?? null,
   senderUsername: m.sender?.username ?? null,
   kind: m.kind,
-  text: m.kind === 'CALL' ? '' : m.text,
-  mediaUrl: m.mediaId ? mediaUrl(m.mediaId) : null,
+  text: m.kind === 'CALL' || m.viewOnce ? '' : m.text,
+  mediaUrl: m.mediaId && !m.viewOnce ? mediaUrl(m.mediaId) : null,
   fileName: m.kind === 'FILE' ? m.media?.title ?? null : null,
   fileSize: m.media?.size ?? null,
   durationSec: m.durationSec,
@@ -112,6 +115,8 @@ export const toMessageDTO = (m: FullMessage): MessageDTO => ({
   reactions: groupReactions(m.reactions),
   hd: !!m.media?.hd,
   call: m.kind === 'CALL' ? parseCall(m.text) : null,
+  viewOnce: m.viewOnce,
+  viewOnceOpened: !!m.viewOnceOpenedAt,
 });
 
 // ───────────────────────── права ─────────────────────────
@@ -123,7 +128,7 @@ export const toMessageDTO = (m: FullMessage): MessageDTO => ({
 export async function assertMember(chatId: string, userId: string) {
   const m = await prisma.chatMember.findUnique({
     where: { chatId_userId: { chatId, userId } },
-    include: { chat: { select: { type: true, pinnedMessageId: true, title: true } } },
+    include: { chat: { select: { type: true, pinnedMessageId: true, title: true, avatarMediaId: true } } },
   });
   if (!m) throw new HttpError(404, 'chat_not_found');
   return m;
@@ -370,18 +375,20 @@ export async function listChats(userId: string) {
       chat: { OR: [{ type: { not: 'DIRECT' } }, { messages: { some: { deletedAt: null } } }] },
     },
     orderBy: { chat: { lastMessageAt: 'desc' } },
-    select: { chatId: true },
+    select: { chatId: true, hiddenAt: true, chat: { select: { lastMessageAt: true } } },
     take: 200,
   });
+  // «Удалил чат» из списка: пока нет сообщений новее этого момента — не показываем
+  const visible = memberships.filter((m) => !m.hiddenAt || m.chat.lastMessageAt > m.hiddenAt);
   // N+1 запросов на чат — для первой версии нормально; при росте заменить на один SQL с агрегатами
-  return Promise.all(memberships.map((m) => getChatDTO(userId, m.chatId)));
+  return Promise.all(visible.map((m) => getChatDTO(userId, m.chatId)));
 }
 
 export async function listMessages(userId: string, chatId: string, before: string | undefined, limit: number) {
-  await assertMember(chatId, userId);
+  const me = await assertMember(chatId, userId);
   await purgeChat(chatId); // исчезающие сообщения: старше срока — уже не показываем
   const rows = await prisma.message.findMany({
-    where: { chatId, deletedAt: null, hides: { none: { userId } } },
+    where: { chatId, deletedAt: null, hides: { none: { userId } }, ...(me.hiddenAt ? { createdAt: { gt: me.hiddenAt } } : {}) },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit + 1,
     include: messageInclude,
@@ -404,6 +411,8 @@ export interface CreateInput {
   forwardedFromName?: string | null;
   /** true — медиа принадлежит не отправителю (пересылка); права уже проверены */
   trustedMedia?: boolean;
+  /** одноразовое медиа (только личные чаты; фото, видео, голосовое, кружок) */
+  viewOnce?: boolean;
 }
 
 export async function createMessage(userId: string, chatId: string, input: CreateInput) {
@@ -420,6 +429,7 @@ export async function createMessage(userId: string, chatId: string, input: Creat
   if (kind === 'TEXT' && !text) throw new HttpError(400, 'empty_message');
   if (text.length > MAX_TEXT) throw new HttpError(400, 'message_too_long');
 
+  if (input.viewOnce && (member.chat.type !== 'DIRECT' || !['IMAGE', 'VIDEO', 'VOICE', 'VIDEO_NOTE'].includes(kind))) throw new HttpError(400, 'view_once_not_allowed');
   let mediaId: string | null = null;
   let durationSec: number | null = null;
   if (kind !== 'TEXT') {
@@ -451,7 +461,7 @@ export async function createMessage(userId: string, chatId: string, input: Creat
     const [message] = await prisma.$transaction([
       prisma.message.create({
         data: {
-          chatId, senderId: userId, kind, text, mediaId, durationSec,
+          chatId, senderId: userId, kind, text: input.viewOnce ? '' : text, mediaId, durationSec, viewOnce: !!input.viewOnce,
           replyToId: input.replyToId ?? null,
           forwardedFromName: input.forwardedFromName ?? null,
           clientId: input.clientId ?? null,
@@ -477,7 +487,7 @@ export async function createMessage(userId: string, chatId: string, input: Creat
 
 export async function forwardMessage(userId: string, messageId: string, targetChatId: string, clientId?: string) {
   const { msg } = await loadVisibleMessage(userId, messageId); // видеть исходное сообщение обязан
-  if (msg.kind === 'CALL') throw new HttpError(400, 'not_forwardable'); // карточки звонков создаёт только сервер
+  if (msg.kind === 'CALL' || msg.viewOnce) throw new HttpError(400, 'not_forwardable'); // карточки звонков создаёт сервер; одноразовое пересылать нельзя
   const author = msg.senderId ? await prisma.user.findUnique({ where: { id: msg.senderId }, select: { name: true } }) : null;
   return createMessage(userId, targetChatId, {
     kind: msg.kind,
@@ -656,12 +666,13 @@ export async function listContacts(userId: string) {
     friendIds(userId),
     prisma.chatMember.findMany({
       where: { userId, chat: { type: 'DIRECT' } },
-      select: { chat: { select: { members: { where: { userId: { not: userId } }, select: { userId: true } } } } },
+      select: { hiddenAt: true, chat: { select: { lastMessageAt: true, members: { where: { userId: { not: userId } }, select: { userId: true } } } } },
     }),
   ]);
   const ids = new Set<string>();
   friends.forEach((id) => ids.add(id));
-  directs.forEach((d) => d.chat.members.forEach((m) => ids.add(m.userId)));
+  // удалённые из списка диалоги (hiddenAt) в контакты не попадают, пока собеседник не напишет снова
+  directs.filter((d) => !d.hiddenAt || d.chat.lastMessageAt > d.hiddenAt).forEach((d) => d.chat.members.forEach((m) => ids.add(m.userId)));
   ids.delete(userId);
   if (!ids.size) return [];
   const users = await prisma.user.findMany({ where: { id: { in: [...ids] } }, select: publicUserSelect, orderBy: { name: 'asc' } });
@@ -833,7 +844,7 @@ const audioFile = (): Prisma.MessageWhereInput => ({
 });
 export async function listShared(userId: string, chatId: string, tab: SharedTab, limit = 60) {
   await assertMember(chatId, userId);
-  const where: Prisma.MessageWhereInput = { chatId, deletedAt: null, hides: { none: { userId } } };
+  const where: Prisma.MessageWhereInput = { chatId, deletedAt: null, viewOnce: false, hides: { none: { userId } } };
   if (tab === 'media') where.kind = { in: ['IMAGE', 'VIDEO'] };
   else if (tab === 'voice') where.kind = { in: ['VOICE', 'VIDEO_NOTE'] };
   else if (tab === 'music') where.AND = [audioFile()];
@@ -843,3 +854,46 @@ export async function listShared(userId: string, chatId: string, tab: SharedTab,
   const rows = await prisma.message.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: limit, include: messageInclude });
   return rows.map(toMessageDTO);
 } 
+
+// ───────────────────────── удаление чата из списка и выход владельца ─────────────────────────
+
+/** «Удалить чат» (личный диалог): исчезает из МОЕГО списка вместе с прошлой перепиской. Собеседник ничего не теряет. Новое сообщение вернёт диалог. */
+export async function hideChat(userId: string, chatId: string) {
+  const m = await assertMember(chatId, userId);
+  if (m.chat.type !== 'DIRECT') throw new HttpError(400, 'bad_request');
+  const now = new Date();
+  await prisma.chatMember.update({ where: { chatId_userId: { chatId, userId } }, data: { hiddenAt: now, lastReadAt: now, pinnedAt: null } });
+  return { ok: true };
+}
+
+/**
+ * Выйти из группы/канала. Обычный участник просто выходит. ВЛАДЕЛЕЦ тоже может выйти:
+ *   mode=transfer — права владельца переходят новому владельцу (указанному, иначе — старшему админу, иначе — самому раннему участнику);
+ *   mode=delete   — группа/канал удаляется полностью для всех.
+ * Если кроме владельца в чате никого нет — чат удаляется.
+ */
+export async function leaveChat(userId: string, chatId: string, opts: { mode?: 'transfer' | 'delete'; newOwnerId?: string } = {}) {
+  const m = await assertMember(chatId, userId);
+  if (!isGroupType(m.chat.type)) throw new HttpError(400, 'not_a_group');
+  if (m.role !== 'OWNER') {
+    await prisma.chatMember.delete({ where: { chatId_userId: { chatId, userId } } });
+    return { deleted: false, newOwnerId: null as string | null, memberIds: [] as string[] };
+  }
+  const others = await prisma.chatMember.findMany({ where: { chatId, userId: { not: userId } }, orderBy: { joinedAt: 'asc' }, select: { userId: true, role: true } });
+  if (opts.mode === 'delete' || !others.length) {
+    const memberIds = [userId, ...others.map((o) => o.userId)];
+    const media = await prisma.message.findMany({ where: { chatId, mediaId: { not: null } }, select: { mediaId: true } });
+    const avatar = m.chat.avatarMediaId;
+    await prisma.chat.delete({ where: { id: chatId } });   // сообщения и участники удаляются каскадом
+    const ids = new Set<string>(media.map((x: { mediaId: string | null }) => x.mediaId as string)); if (avatar) ids.add(avatar);
+    for (const id of ids) await gcMedia(id).catch(() => {}); // файлы, на которые больше никто не ссылается, стираем
+    return { deleted: true, newOwnerId: null, memberIds };
+  }
+  const heir = opts.newOwnerId ? others.find((o) => o.userId === opts.newOwnerId) : (others.find((o) => o.role === 'ADMIN') ?? others[0]);
+  if (!heir) throw new HttpError(400, 'bad_owner');
+  await prisma.$transaction([
+    prisma.chatMember.update({ where: { chatId_userId: { chatId, userId: heir.userId } }, data: { role: 'OWNER' } }),
+    prisma.chatMember.delete({ where: { chatId_userId: { chatId, userId } } }),
+  ]);
+  return { deleted: false, newOwnerId: heir.userId, memberIds: [] as string[] };
+}

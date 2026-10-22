@@ -25,6 +25,7 @@ function dispatchNew(userId: string, chatId: string, r: Awaited<ReturnType<typeo
 }
 
 const preview = (d: MessageDTO) =>
+  d.viewOnce ? '🔥 Одноразовое ' + (d.kind === 'VOICE' ? 'голосовое' : d.kind === 'IMAGE' ? 'фото' : 'видео') :
   d.kind !== 'TEXT' ? previewOf(d.kind, d.text) : d.text.length > 140 ? d.text.slice(0, 137) + '…' : d.text;
 
 async function notifyRecipients(senderId: string, chatId: string, dto: MessageDTO) {
@@ -95,6 +96,9 @@ export async function postCallCard(chatId: string, initiatorId: string, card: Ca
 }
 
 /** Исчезающие сообщения: удаляем просроченные и сообщаем открытым чатам. Вызывается раз в минуту. */
+/** Одноразовые медиа: открыты, но не закрыты (связь пропала) — стираем по таймеру. */
+export { purgeViewOnce as purgeViewOnceAndBroadcast } from './viewonce';
+
 export async function purgeExpiredAndBroadcast() {
   const done = await purgeAllChats();
   for (const r of done) {

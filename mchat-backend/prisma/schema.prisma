@@ -213,6 +213,8 @@ model ChatMember {
   mutedUntil DateTime?
   /// чат закреплён вверху списка (только для этого участника); время закрепления — для порядка
   pinnedAt   DateTime?
+  /// «Удалить чат» из моего списка: сообщения до этого момента мне не показываем; новое сообщение вернёт чат в список
+  hiddenAt   DateTime?
 
   @@id([chatId, userId])
   @@index([userId])
@@ -229,6 +231,10 @@ model Message {
   mediaId   String?
   media     Media?    @relation(fields: [mediaId], references: [id], onDelete: SetNull)
   durationSec Int?
+  /// Одноразовое медиа (фото/видео/голосовое/кружок): получатель открывает один раз, после закрытия файл и сообщение удаляются
+  viewOnce         Boolean   @default(false)
+  viewOnceOpenedAt DateTime?
+  viewOnceOpenedBy String?
   replyToId String?
   replyTo   Message?  @relation("Replies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies   Message[] @relation("Replies")
