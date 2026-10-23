@@ -393,6 +393,7 @@
     openOnce: (id) => api('/messages/' + encodeURIComponent(id) + '/view-once/open', { method: 'POST', body: {} }),
     closeOnce: (id) => api('/messages/' + encodeURIComponent(id) + '/view-once/close', { method: 'POST', body: {} }),
     hideChat: (id) => api('/chats/' + encodeURIComponent(id) + '/hide', { method: 'POST', body: {} }),
+    clearChat: (id) => api('/chats/' + encodeURIComponent(id) + '/clear', { method: 'POST', body: {} }),
     leaveChat: (id, body) => api('/chats/' + encodeURIComponent(id) + '/leave', { method: 'POST', body: body || {} }),
     channelPreview: (id) => api('/chats/' + encodeURIComponent(id) + '/preview'),
     checkUsername: (u) => api('/auth/check-username?u=' + encodeURIComponent(u)),

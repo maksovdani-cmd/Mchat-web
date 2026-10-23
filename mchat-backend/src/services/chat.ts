@@ -29,12 +29,13 @@ export const publicUserSelect = {
 export const messageInclude = {
   sender: { select: { id: true, name: true, username: true } },
   replyTo: { select: { id: true, text: true, kind: true, deletedAt: true, sender: { select: { id: true, name: true } } } },
-  reactions: { select: { emoji: true, userId: true } },
+  reactions: { select: { emoji: true, userId: true, user: { select: { id: true, name: true, username: true, avatarUrl: true } } } },
   media: { select: { title: true, size: true, hd: true } },
 } satisfies Prisma.MessageInclude;
 export type FullMessage = Prisma.MessageGetPayload<{ include: typeof messageInclude }>;
 
-export interface ReactionDTO { emoji: string; userIds: string[] }
+export interface ReactionUserDTO { id: string; name: string; username: string; avatar: string | null }
+export interface ReactionDTO { emoji: string; userIds: string[]; users: ReactionUserDTO[] }
 export interface MessageDTO {
   id: string;
   chatId: string;
@@ -83,10 +84,16 @@ export const previewOf = (kind: MessageKind, text: string) =>
   kind === 'TEXT' ? text : kind === 'VOICE' ? '🎤 Голосовое сообщение' : kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение'
     : kind === 'VIDEO' ? '🎬 Видео' : kind === 'FILE' ? '📎 Файл' : kind === 'CALL' ? '📞 Звонок' : '📷 Фото';
 
-export const groupReactions = (list: { emoji: string; userId: string }[]): ReactionDTO[] => {
-  const map = new Map<string, string[]>();
-  for (const r of list) map.set(r.emoji, [...(map.get(r.emoji) ?? []), r.userId]);
-  return [...map].map(([emoji, userIds]) => ({ emoji, userIds }));
+type ReactionRow = { emoji: string; userId: string; user?: { id: string; name: string; username: string; avatarUrl: string | null } | null };
+export const groupReactions = (list: ReactionRow[]): ReactionDTO[] => {
+  const map = new Map<string, ReactionDTO>();
+  for (const r of list) {
+    const g = map.get(r.emoji) ?? { emoji: r.emoji, userIds: [], users: [] };
+    g.userIds.push(r.userId);
+    if (r.user) g.users.push({ id: r.user.id, name: r.user.name, username: r.user.username, avatar: r.user.avatarUrl });
+    map.set(r.emoji, g);
+  }
+  return [...map.values()];
 };
 
 export const toMessageDTO = (m: FullMessage): MessageDTO => ({
@@ -546,7 +553,7 @@ export async function setReaction(userId: string, messageId: string, emoji: stri
       create: { messageId, userId, emoji }, update: { emoji },
     });
   }
-  const all = await prisma.reaction.findMany({ where: { messageId }, select: { emoji: true, userId: true } });
+  const all = await prisma.reaction.findMany({ where: { messageId }, orderBy: { createdAt: 'asc' }, select: { emoji: true, userId: true, user: { select: { id: true, name: true, username: true, avatarUrl: true } } } });
   return { chatId: msg.chatId, id: messageId, reactions: groupReactions(all) };
 }
 
@@ -864,6 +871,23 @@ export async function hideChat(userId: string, chatId: string) {
   const now = new Date();
   await prisma.chatMember.update({ where: { chatId_userId: { chatId, userId } }, data: { hiddenAt: now, lastReadAt: now, pinnedAt: null } });
   return { ok: true };
+}
+
+/** «Очистить чат» (любой тип): вся текущая переписка скрывается ТОЛЬКО у меня, чат остаётся в списке. */
+export async function clearChatForMe(userId: string, chatId: string) {
+  await assertMember(chatId, userId);
+  const rows = await prisma.message.findMany({
+    where: { chatId, deletedAt: null, hides: { none: { userId } } },
+    select: { id: true },
+  });
+  for (let i = 0; i < rows.length; i += 2000) {
+    await prisma.messageHide.createMany({
+      data: rows.slice(i, i + 2000).map((r) => ({ messageId: r.id, userId })),
+      skipDuplicates: true,
+    });
+  }
+  await prisma.chatMember.update({ where: { chatId_userId: { chatId, userId } }, data: { lastReadAt: new Date() } });
+  return { ok: true, cleared: rows.length };
 }
 
 /**

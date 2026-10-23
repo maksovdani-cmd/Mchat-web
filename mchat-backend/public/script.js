@@ -3247,7 +3247,7 @@ function mxBigEmojiCount(text) {
 }
 function mxDayKey(iso) { const d = iso ? new Date(iso) : new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 /** «1 января 2035 г.» */
-function mxDayLabel(iso) { return (iso ? new Date(iso) : new Date()).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }); }
+function mxDayLabel(iso) { return (iso ? new Date(iso) : new Date()).toLocaleDateString((window.I18N ? I18N.locale() : 'ru-RU'), { day: 'numeric', month: 'long', year: 'numeric' }); }
 function mxFmtCallDur(sec) {
   sec = Math.max(0, Math.round(sec || 0));
   if (sec < 60) return mxPlural(sec, ['секунду', 'секунды', 'секунд']);
@@ -3678,7 +3678,7 @@ function confirmVideoCover() {
 }
 
 const VERIFY_DAYS = [[5, '5 дней'], [15, '15 дней'], [30, '30 дней'], [null, 'Навсегда']];
-function fmtDate(iso) { return new Date(iso).toLocaleDateString(currentLanguage === 'en' ? 'en-GB' : 'ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+function fmtDate(iso) { return new Date(iso).toLocaleDateString((window.I18N ? I18N.locale() : 'ru-RU'), { day: '2-digit', month: '2-digit', year: 'numeric' }); }
 
 async function openAdminPanel() {
   document.querySelectorAll('.modal.mx-admin').forEach(x => x.remove());
@@ -5879,11 +5879,16 @@ async function mxAttachChosen(evt) {
   evt.target.value = '';
   const chatId = currentChatId;
   if (!files.length || !chatId) return;
+  // Несколько фото/видео за раз → один альбом: общий префикс clientId собирает их в единый блок у обоих собеседников
+  const isMedia = (f) => { const k = mxKindOfFile(f); return k === 'image' || k === 'video'; };
+  const albumId = files.filter(isMedia).length >= 2 ? 'a' + Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 5) : null;
+  let n = 0;
   for (const f of files) {
-    if (mxKindOfFile(f) === 'image' && f.type !== 'image/gif') {
+    const cid = albumId && isMedia(f) ? albumId + '_' + (n++) + '_' + Math.random().toString(36).slice(2, 6) : undefined;
+    if (!albumId && mxKindOfFile(f) === 'image' && f.type !== 'image/gif') {
       const r = await mxPreviewOpen(f); // полноэкранный предпросмотр: HD, маркер, подпись
       if (r) await mxSendAttachment(chatId, r.file, { caption: r.caption, hd: r.hd });
-    } else await mxSendAttachment(chatId, f, { hd: mxHdPref() });
+    } else await mxSendAttachment(chatId, f, { hd: mxHdPref(), clientId: cid });
   }
 }
 
@@ -5958,7 +5963,7 @@ async function mxSendAttachment(chatId, file, opts) {
   else if (mxKindOfFile(file) === 'video') { showToast('Сжимаю видео…'); file = await mxCompressVideoFile(file, !!opts.hd); }
   const kind = mxKindOfFile(file);
   if (file.size > MX_ATTACH_LIMIT_MB[kind] * 1024 * 1024) { showToast('«' + file.name + '» больше ' + MX_ATTACH_LIMIT_MB[kind] + ' МБ'); return; }
-  const clientId = MchatAPI.newClientId();
+  const clientId = opts.clientId || MchatAPI.newClientId();
   const local = { id: clientId, clientId, chatId, kind: MX_ATTACH_KIND[kind], text: caption, fileName: file.name, fileSize: file.size,
     mediaUrl: kind === 'image' ? URL.createObjectURL(file) : '', reactions: [], time: fmtClock(new Date().toISOString()),
     outgoing: true, pending: true, progress: 0 };

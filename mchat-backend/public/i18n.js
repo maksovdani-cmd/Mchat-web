@@ -1,5 +1,5 @@
-/* Mchat · локализация RU / EN.
- * Приложение написано на русском; при выборе English весь интерфейс (включая динамически созданные окна,
+/* Mchat · локализация RU / EN / ES / TR / ZH.
+ * Приложение написано на русском; при выборе языка (EN / ES / TR / ZH) весь интерфейс (включая динамически созданные окна,
  * тосты и ошибки сервера) переводится «на лету»: словарь + правила для чисел/имён + MutationObserver.
  * При возврате на русский исходные тексты восстанавливаются. Содержимое пользователей (сообщения) не переводится. */
 (function () {
@@ -559,48 +559,342 @@
 "🎥 Видеосообщение": "🎥 Video message",
 "🎬 Видео": "🎬 Video",
 "👑 Админ панель верификации": "👑 Verification admin panel",
-"📷 Фото": "📷 Photo"
+"📷 Фото": "📷 Photo",
+"Поиск постов и пользователей...": "Search posts and users...",
+"Очищено": "Cleared",
+"Скрыть подписки": "Hide following",
+"Заметки, файлы и пересланное": "Notes, files and forwarded messages",
+"· ⏱ 24 ч": "· ⏱ 24 h",
+"⏱ Очистка через 24 ч": "⏱ Clears in 24 h",
+"Вы заблокировали этого пользователя": "You blocked this user",
+"Разблокировать": "Unblock",
+"Пользователь ограничил с вами общение": "This user has restricted who can message them",
+"Писать можно только взаимным подписчикам": "Only mutual followers can message",
+"Писать в этот чат нельзя": "You can't write in this chat",
+"секунду": "sec",
+"секунды": "sec",
+"секунд": "sec",
+"минуту": "min",
+"минуты": "min",
+"минут": "min",
+"Звонок": "Call",
+"в группе": "in group",
+"Разговор длился": "Call lasted",
+"Исходящий звонок": "Outgoing call",
+"Отклонённый звонок": "Declined call",
+"Собеседник отклонил": "The other person declined",
+"Вы отклонили звонок": "You declined the call",
+"Нет ответа": "No answer",
+"Вы не ответили": "You didn't answer",
+"Перезвонить": "Call back",
+"📞 Звонок": "📞 Call",
+"Медиа и настройки": "Media and settings",
+"В избранное": "To favorites",
+"Описание (необязательно)": "Description (optional)",
+"вчера,": "yesterday,",
+"Вниз": "Down",
+"Прокрутить вниз": "Scroll down",
+"на 1 час": "for 1 hour",
+"на 2 часа": "for 2 hours",
+"на 8 часов": "for 8 hours",
+"На 1 час": "For 1 hour",
+"На 2 часа": "For 2 hours",
+"На 8 часов": "For 8 hours",
+"Включены": "On",
+"Выключены": "Off",
+"Выключены до": "Off until",
+"Включать очистку могут только владелец и админы": "Only the owner and admins can turn on auto-clear",
+"Сообщения будут исчезать через 24 часа": "Messages will disappear after 24 hours",
+"Очистка чата выключена": "Auto-clear is off",
+"Отключить очистку (24 ч)": "Turn off auto-clear (24 h)",
+"Очистка чата через 24 ч": "Clear chat after 24 h",
+"Сохранено в «Избранное»": "Saved to “Favorites”",
+"Вы подписались. Теперь собеседник сможет вам ответить": "You followed them. Now they can reply to you",
+"Пользователь разблокирован": "User unblocked",
+"Заблокировать @": "Block @",
+"Пользователь заблокирован": "User blocked",
+"Да, заблокировать": "Yes, block",
+"Список пуст. Заблокированные пользователи не смогут вам писать и звонить": "The list is empty. Blocked users can't message or call you",
+"Разблокировано": "Unblocked",
+"теперь админ": "is now an admin",
+"Админ снят:": "Admin removed:",
+"Активных историй нет": "No active stories",
+"Истории видны только подписчикам. Подпишись, чтобы смотреть": "Stories are visible to followers only. Follow to watch",
+"Подписки 🔒": "Following 🔒",
+"Музыка ·": "Music ·",
+"Заблокировать": "Block",
+"Файлы": "Files",
+"Аудио": "Audio",
+"Избранное": "Favorites",
+"Фото и видео пока нет": "No photos or videos yet",
+"Файлов пока нет": "No files yet",
+"Аудио и голосовых пока нет": "No audio or voice messages yet",
+"Ссылок пока нет": "No links yet",
+"Оформление чата": "Chat appearance",
+"Информация о канале": "Channel info",
+"Участники и управление группой": "Members and group management",
+"Заблокировать пользователя": "Block user",
+"Пользователь скрыл свои подписки": "The user has hidden their following list",
+"Отписаться": "Unfollow",
+"Исходящий": "Outgoing",
+"Входящий": "Incoming",
+"Пропущенный": "Missed",
+"Отклонённый": "Declined",
+"мин": "min",
+"Звонков пока нет": "No calls yet",
+"группа": "group",
+"· видео": "· video",
+"Не удалось воспроизвести трек": "Could not play the track",
+"У этого трека нет аудио": "This track has no audio",
+"Не удалось воспроизвести. Нажми ещё раз": "Could not play. Tap again",
+"Убрать из моего профиля": "Remove from my profile",
+"Поставить в мой профиль": "Set as my profile track",
+"Трек убран из сохранённых": "Track removed from saved",
+"Трек сохранён": "Track saved",
+"Трек стоит в вашем профиле": "This track is in your profile",
+"Играть": "Play",
+"Поставить в профиль": "Set in profile",
+"Открой профиль человека и сохрани его трек — он появится здесь": "Open a person's profile and save their track — it will appear here",
+"Звуки из Reels": "Sounds from Reels",
+"Удалить трек?": "Delete track?",
+"Трек удалён": "Track deleted",
+"Убрать из сохранённых": "Remove from saved",
+"Сохранить себе": "Save for myself",
+"У пользователя нет треков": "This user has no tracks",
+"просмотр": "view",
+"просмотра": "views",
+"просмотров": "views",
+"24 ч": "24 h",
+"Уникальные просмотры (автор и гости)": "Unique views (author and guests)",
+"· выкл": "· off",
+"Что происходит сейчас?": "What's happening now?",
+"Фото, мысли дня и трек — виден 24 часа и остаётся на стене": "Photo, thought of the day and a track — visible for 24 hours and stays on your wall",
+"Показать ещё": "Show more",
+"Отключены": "Disabled",
+"Комментарии включены": "Comments enabled",
+"Комментарии отключены": "Comments disabled",
+"Удалить момент?": "Delete moment?",
+"Момент удалён": "Moment deleted",
+"Комментариев пока нет": "No comments yet",
+"Автор отключил комментарии": "The author turned off comments",
+"Мысли дня…": "Thought of the day…",
+"Можно отключить": "Can be turned off",
+"Выбери фото или видео": "Choose a photo or video",
+"Видео слишком большое (до 60 МБ)": "Video is too large (up to 60 MB)",
+"Фото слишком большое (до 12 МБ)": "Photo is too large (up to 12 MB)",
+"Добавить фото или видео": "Add a photo or video",
+"Прогулка, тренировка, учёба — что угодно": "A walk, a workout, studying — anything",
+"Убрать трек": "Remove track",
+"Мои треки": "My tracks",
+"Сохранённые": "Saved",
+"Трек дня · нажми, чтобы изменить": "Track of the day · tap to change",
+"Загружаю трек…": "Uploading track…",
+"Добавь фото или напиши заметку": "Add a photo or write a note",
+"Публикуем…": "Publishing…",
+"Момент опубликован ✨": "Moment published ✨",
+"Другой камеры на устройстве нет": "There is no other camera on this device",
+"Нет доступа к камере. Разрешите его в настройках браузера": "No access to the camera. Allow it in your browser settings",
+"Включи камеру, чтобы развернуть своё видео": "Turn on the camera to expand your video",
+"Камера не найдена": "Camera not found",
+"Каналов с таким названием не найдено": "No channels with that name found",
+"Не удалось выполнить поиск каналов. Проверьте соединение": "Could not search channels. Check your connection",
+"Вкл. уведомления": "Turn on notifications",
+"Выкл. уведомления": "Turn off notifications",
+"Вы подписались на канал": "You followed the channel",
+"Ник свободен. Его нельзя будет изменить позже": "Username is available. It can't be changed later",
+"Чтобы получать звонки и сообщения в фоне, нажмите": "To receive calls and messages in the background, tap",
+"«Поделиться» → «На экран Домой»": "“Share” → “Add to Home Screen”",
+"и откройте Mchat с иконки.": "and open Mchat from the icon.",
+"Титул «Генерал Mchat» снят": "The “Mchat General” title was removed",
+"Мягкое": "Soft",
+"Обычное": "Normal",
+"Яркое": "Bright",
+"Пульс": "Pulse",
+"Блик": "Glint",
+"Искры": "Sparks",
+"Спокойно": "Calm",
+"Оформление звезды сохранено": "Star style saved",
+"@username — выдать/забрать титул": "@username — grant/revoke title",
+"выдан": "granted",
+"· навсегда": "· forever",
+"Забрать": "Revoke",
+"Выдать": "Grant",
+"Титул «Генерал Mchat» выдан навсегда": "The “Mchat General” title was granted forever",
+"Забрать титул «Генерал Mchat»?": "Revoke the “Mchat General” title?",
+"Титул снят": "Title removed",
+"Пока никому не выдан": "Not granted to anyone yet",
+"еще...": "more...",
+"Нет файла для сохранения": "No file to save",
+"Сохраняем…": "Saving…",
+"Сохранено:": "Saved:",
+"Не удалось сохранить файл": "Could not save the file",
+"Удалить чат": "Delete chat",
+"Удалить из контактов": "Remove from contacts",
+"Покинуть канал": "Leave channel",
+"Покинуть группу": "Leave group",
+"Чат удалён": "Chat deleted",
+"Удалено из контактов": "Removed from contacts",
+"Вы покинули канал": "You left the channel",
+"Вы покинули группу": "You left the group",
+"Канал удалён": "Channel deleted",
+"Группа удалена": "Group deleted",
+"Кроме вас здесь никого нет — при выходе чат будет удалён.": "You are the only one here — the chat will be deleted when you leave.",
+"Удалить и выйти": "Delete and leave",
+"Вы владелец. Передайте права другому участнику или удалите чат для всех.": "You are the owner. Transfer ownership to another member or delete the chat for everyone.",
+"Передать права и выйти": "Transfer ownership and leave",
+"Удалить для всех": "Delete for everyone",
+"Вы вышли, права переданы": "You left, ownership transferred",
+"Кому передать права?": "Transfer ownership to whom?",
+"Передать и выйти": "Transfer and leave",
+"Одноразовое: получатель откроет один раз": "View once: the recipient can open it one time",
+"Обычная отправка": "Regular send",
+"Одноразовый просмотр (1 раз)": "View once (1 time)",
+"1 раз": "1 time",
+"Не удалось открыть файл": "Could not open the file",
+"Нет данных": "No data",
+"Очистить всю переписку в этом чате? Сообщения исчезнут только у вас.": "Clear the whole conversation in this chat? Messages will disappear only for you.",
+"Чат очищен": "Chat cleared",
+"Мои стикеры": "My stickers",
+"Очистить чат": "Clear chat",
+"Показать в чате": "Show in chat",
+"Сделать стикер": "Make sticker",
+"Не удалось поделиться": "Could not share",
+"Не удалось открыть фото": "Could not open the photo",
+"Стикер": "Sticker",
+"Перетащите текст пальцем": "Drag the text with your finger",
+"Шрифт": "Font",
+"Размер": "Size",
+"Цвет": "Color",
+"Контур": "Outline",
+"Жирный": "Bold",
+"Без обрезки": "No cropping",
+"Не удалось создать стикер": "Could not create the sticker",
+"Стикер сохранён": "Sticker saved",
+"Не удалось сохранить стикер": "Could not save the sticker",
+"Откройте чат, чтобы отправить стикер": "Open a chat to send a sticker",
+"Пока пусто. Откройте фото в чате → ⋮ → «Сделать стикер».": "Nothing here yet. Open a photo in a chat → ⋮ → “Make sticker”.",
+"‹ Влево — отмена": "‹ Slide left to cancel",
+"Запись зафиксирована": "Recording locked",
+"Слишком короткое сообщение": "Message is too short",
+"Писать можно только взаимным подписчикам. Подпишись на человека, и он сможет ответить": "Only mutual followers can message. Follow this person so they can reply",
+"Вы заблокировали этого пользователя. Разблокируйте его, чтобы писать": "You blocked this user. Unblock them to write",
+"Это сообщение нельзя переслать": "This message can't be forwarded",
+"Нельзя заблокировать самого себя": "You can't block yourself",
+"Техподдержку заблокировать нельзя": "Support can't be blocked",
+"Групповой звонок могут начать только владелец и админы группы": "Only the group owner and admins can start a group call",
+"В «Избранном» звонки недоступны": "Calls are unavailable in “Favorites”",
+"Истории доступны только подписчикам": "Stories are available to followers only",
+"Сегодня уже опубликовано максимум моментов": "The maximum number of moments for today has been published",
+"Момент не найден": "Moment not found",
+"Комментарий пустой": "Comment is empty",
+"Комментарий не найден": "Comment not found",
+"Этот ник нельзя использовать: он содержит запрещённое слово": "This username can't be used: it contains a forbidden word",
+"Это имя нельзя использовать: оно содержит запрещённое слово": "This name can't be used: it contains a forbidden word",
+"@username изменить нельзя — менять можно только отображаемое имя": "@username can't be changed — only the display name can",
+"Этот титул выдаёт только создатель Mchat": "This title can only be granted by the Mchat creator",
+"Недопустимое оформление звезды": "Invalid star style",
+"Это медиа уже просмотрено": "This media has already been viewed",
+"Одноразовые медиа доступны только в личных чатах": "View-once media is only available in private chats",
+"Свой одноразовый файл открыть нельзя": "You can't open your own view-once file",
+"Выбранный участник не найден": "Selected member not found",
+"В канале это недоступно": "This isn't available in a channel",
+"Время входа истекло. Нажми «Войти через Google» ещё раз": "Sign-in timed out. Tap “Sign in with Google” again",
+"Не удалось завершить вход. Попробуй ещё раз": "Could not complete sign-in. Please try again",
+"Моя музыка": "My music",
+"Момент": "Moment",
+"♪ Музыка": "♪ Music",
+"История звонков": "Call history",
+"Чёрный список": "Blocklist",
+"Выйти из канала": "Leave channel",
+"Выйти из группы": "Leave group",
+"Выйти из канала…": "Leave channel…",
+"Выйти из группы…": "Leave group…",
+"Покинуть канал?": "Leave channel?",
+"Покинуть группу?": "Leave group?"
 };
+
   const CY = /[А-Яа-яЁё]/;
   const norm = (s) => s.replace(/\s+/g, ' ').trim();
-  const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+
+  /* ───────── языки ───────── */
+  const LANGS = {
+    ru: { name: 'Русский', locale: 'ru-RU' },
+    en: { name: 'English', locale: 'en-GB' },
+    es: { name: 'Español', locale: 'es-ES' },
+    tr: { name: 'Türkçe', locale: 'tr-TR' },
+    zh: { name: '中文', locale: 'zh-CN' },
+  };
+  const PACKS = (window.I18N_PACKS = window.I18N_PACKS || {});   // es / tr / zh подгружаются из i18n-<код>.js
+  PACKS.en = DICT;
+  let lang = (function () { try { const v = localStorage.getItem('mchat_lang'); return LANGS[v] ? v : 'ru'; } catch (e) { return 'ru'; } })();
+  const look = (k) => { const p = PACKS[lang]; const v = p ? p[k] : undefined; return v !== undefined ? v : DICT[k]; };   // нет в пакете → английский
+  const fmt = (s, a) => s.replace(/\{(\d)\}/g, (_, i) => (a[i] == null ? '' : a[i]));
 
   // ключи-префиксы: «<ключ> <что-то динамическое>»
-  const PREFIX_KEYS = Object.keys(DICT).filter((k) => /[:(@]$/.test(k) || / (от|на)$/.test(k) || k.length >= 18 || k === 'Вы с' || k === 'Ты репостнул' || k === 'Переслано от')
+  const PREFIX_KEYS = Object.keys(DICT).filter((k) => /[:(@·,]$/.test(k) || / (от|на)$/.test(k) || k.length >= 18 || k === 'Вы с' || k === 'Ты репостнул' || k === 'Переслано от')
     .sort((a, b) => b.length - a.length);
 
+  /* ───────── правила для чисел, имён и составных фраз ───────── */
+  const PL = {
+    follower: { en: ['follower', 'followers'], es: ['seguidor', 'seguidores'], tr: ['takipçi', 'takipçi'], zh: ['位粉丝', '位粉丝'] },
+    member: { en: ['member', 'members'], es: ['miembro', 'miembros'], tr: ['üye', 'üye'], zh: ['位成员', '位成员'] },
+    view: { en: ['view', 'views'], es: ['visualización', 'visualizaciones'], tr: ['görüntüleme', 'görüntüleme'], zh: ['次浏览', '次浏览'] },
+  };
+  const plural = (n, key) => { const a = PL[key][lang] || PL[key].en; return lang === 'zh' ? n + a[0] : n + ' ' + (+n === 1 ? a[0] : a[1]); };
+  const R = (re, o) => [re, (m) => { const f = o[lang] || o.en; return typeof f === 'function' ? f(m) : fmt(f, m.slice(1)); }];
+  const durTr = (s) => s.replace(/секунд[уы]?/g, look('секунду') || 'sec').replace(/минут[уы]?/g, look('минуту') || 'min');
+
   const RULES = [
-    [/^(\d+) ч осталось$/, (m) => m[1] + 'h left'],
-    [/^(\d+) подписчик(?:а|ов)?$/, (m) => plural(+m[1], 'follower', 'followers')],
-    [/^(\d+) участник(?:а|ов)?$/, (m) => plural(+m[1], 'member', 'members')],
-    [/^(\d+) дн\.$/, (m) => m[1] + ' d.'],
-    [/^(\d+) дней$/, (m) => m[1] + ' days'],
-    [/^был\(а\) (.+)$/, (m) => 'last seen ' + tr(m[1])],
-    [/^Новые запросы \((\d+)\)$/, (m) => 'New requests (' + m[1] + ')'],
-    [/^Действующие галочки \((\d+)\)$/, (m) => 'Active badges (' + m[1] + ')'],
-    [/^Удалить \((\d+)\)$/, (m) => 'Delete (' + m[1] + ')'],
-    [/^Галочка выдана на (\d+) дн\.$/, (m) => 'Badge granted for ' + m[1] + ' d.'],
-    [/^Выдана (\S+) · исчезнет (\S+)$/, (m) => 'Granted ' + m[1] + ' · expires ' + m[2]],
-    [/^Выдана (\S+) · навсегда$/, (m) => 'Granted ' + m[1] + ' · forever'],
-    [/^✓ одобрено на (\d+) дн\.$/, (m) => '✓ approved for ' + m[1] + ' d.'],
-    [/^✓ одобрено навсегда$/, () => '✓ approved forever'],
-    [/^@(\S+) — (.+?) · (\S+)$/, (m) => '@' + m[1] + ' — ' + tr(m[2]) + ' · ' + m[3]],
-    [/^«(.+)» больше (\d+) МБ$/, (m) => '“' + m[1] + '” is larger than ' + m[2] + ' MB'],
-    [/^(.+) подписался\(ась\) на вас$/, (m) => m[1] + ' started following you'],
-    [/^(.+) теперь друзья$/, (m) => m[1] + ' are now friends'],
-    [/^(.+) \(код (.+)\)$/, (m) => tr(m[1]) + ' (code ' + m[2] + ')'],
-    [/^Мы отправили код на (.+)$/, (m) => 'We sent a code to ' + m[1]],
-    [/^(\d+) КБ$/, (m) => m[1] + ' KB'],
-    [/^(.+) МБ$/, (m) => /^[\d.,]+$/.test(m[1]) ? m[1] + ' MB' : null],
+    R(/^(\d+) ч осталось$/, { en: '{0}h left', es: 'quedan {0} h', tr: '{0} sa kaldı', zh: '剩余 {0} 小时' }),
+    R(/^(\d+) подписчик(?:а|ов)?$/, { en: (m) => plural(m[1], 'follower'), es: (m) => plural(m[1], 'follower'), tr: (m) => plural(m[1], 'follower'), zh: (m) => plural(m[1], 'follower') }),
+    R(/^(\d+) участник(?:а|ов)?$/, { en: (m) => plural(m[1], 'member'), es: (m) => plural(m[1], 'member'), tr: (m) => plural(m[1], 'member'), zh: (m) => plural(m[1], 'member') }),
+    R(/^(\d+) просмотр(?:а|ов)?$/, { en: (m) => plural(m[1], 'view'), es: (m) => plural(m[1], 'view'), tr: (m) => plural(m[1], 'view'), zh: (m) => plural(m[1], 'view') }),
+    R(/^(\d+) дн\.$/, { en: '{0} d.', es: '{0} d.', tr: '{0} g.', zh: '{0} 天' }),
+    R(/^(\d+) дней$/, { en: '{0} days', es: '{0} días', tr: '{0} gün', zh: '{0} 天' }),
+    R(/^был\(а\) (.+)$/, { en: (m) => 'last seen ' + tr(m[1]), es: (m) => 'últ. vez ' + tr(m[1]), tr: (m) => 'son görülme ' + tr(m[1]), zh: (m) => '最后在线 ' + tr(m[1]) }),
+    R(/^Новые запросы \((\d+)\)$/, { en: 'New requests ({0})', es: 'Solicitudes nuevas ({0})', tr: 'Yeni istekler ({0})', zh: '新的申请（{0}）' }),
+    R(/^Действующие галочки \((\d+)\)$/, { en: 'Active badges ({0})', es: 'Insignias activas ({0})', tr: 'Geçerli rozetler ({0})', zh: '有效的认证标识（{0}）' }),
+    R(/^Удалить \((\d+)\)$/, { en: 'Delete ({0})', es: 'Eliminar ({0})', tr: 'Sil ({0})', zh: '删除（{0}）' }),
+    R(/^Галочка выдана на (\d+) дн\.$/, { en: 'Badge granted for {0} d.', es: 'Insignia concedida por {0} d.', tr: 'Rozet {0} gün için verildi', zh: '认证标识已授予 {0} 天' }),
+    R(/^Выдана (\S+) · исчезнет (\S+)$/, { en: 'Granted {0} · expires {1}', es: 'Concedida {0} · caduca {1}', tr: 'Verildi {0} · sona erer {1}', zh: '授予于 {0} · 到期 {1}' }),
+    R(/^Выдана (\S+) · навсегда$/, { en: 'Granted {0} · forever', es: 'Concedida {0} · para siempre', tr: 'Verildi {0} · süresiz', zh: '授予于 {0} · 永久' }),
+    R(/^✓ одобрено на (\d+) дн\.$/, { en: '✓ approved for {0} d.', es: '✓ aprobado por {0} d.', tr: '✓ {0} gün için onaylandı', zh: '✓ 已批准 {0} 天' }),
+    R(/^✓ одобрено навсегда$/, { en: '✓ approved forever', es: '✓ aprobado para siempre', tr: '✓ süresiz onaylandı', zh: '✓ 已永久批准' }),
+    R(/^@(\S+) — (.+?) · (\S+)$/, { en: (m) => '@' + m[1] + ' — ' + tr(m[2]) + ' · ' + m[3], es: (m) => '@' + m[1] + ' — ' + tr(m[2]) + ' · ' + m[3], tr: (m) => '@' + m[1] + ' — ' + tr(m[2]) + ' · ' + m[3], zh: (m) => '@' + m[1] + ' — ' + tr(m[2]) + ' · ' + m[3] }),
+    R(/^«(.+)» больше (\d+) МБ$/, { en: '“{0}” is larger than {1} MB', es: '«{0}» supera {1} MB', tr: '“{0}” {1} MB’tan büyük', zh: '“{0}”超过 {1} MB' }),
+    R(/^(.+) подписался\(ась\) на вас$/, { en: '{0} started following you', es: '{0} ha empezado a seguirte', tr: '{0} seni takip etmeye başladı', zh: '{0} 关注了你' }),
+    R(/^(.+) теперь друзья$/, { en: '{0} are now friends', es: '{0} ahora sois amigos', tr: '{0} artık arkadaşsınız', zh: '{0} 现在是好友' }),
+    R(/^(.+) теперь админ$/, { en: '{0} is now an admin', es: '{0} ahora es admin', tr: '{0} artık yönetici', zh: '{0} 现在是管理员' }),
+    R(/^(.+) \(код (.+)\)$/, { en: (m) => tr(m[1]) + ' (code ' + m[2] + ')', es: (m) => tr(m[1]) + ' (código ' + m[2] + ')', tr: (m) => tr(m[1]) + ' (kod ' + m[2] + ')', zh: (m) => tr(m[1]) + '（代码 ' + m[2] + '）' }),
+    R(/^Мы отправили код на (.+)$/, { en: 'We sent a code to {0}', es: 'Hemos enviado un código a {0}', tr: '{0} adresine bir kod gönderdik', zh: '我们已将验证码发送至 {0}' }),
+    R(/^Разговор длился (.+)$/, { en: (m) => 'Call lasted ' + durTr(m[1]), es: (m) => 'La llamada duró ' + durTr(m[1]), tr: (m) => 'Arama süresi ' + durTr(m[1]), zh: (m) => '通话时长 ' + durTr(m[1]) }),
+    R(/^(\d+) КБ$/, { en: '{0} KB', es: '{0} KB', tr: '{0} KB', zh: '{0} KB' }),
+    R(/^(.+) МБ$/, { en: (m) => (/^[\d.,]+$/.test(m[1]) ? m[1] + ' MB' : null), es: (m) => (/^[\d.,]+$/.test(m[1]) ? m[1] + ' MB' : null), tr: (m) => (/^[\d.,]+$/.test(m[1]) ? m[1] + ' MB' : null), zh: (m) => (/^[\d.,]+$/.test(m[1]) ? m[1] + ' MB' : null) }),
+    // подтверждения с именем чата/контакта
+    R(/^Удалить чат с «(.+)»\? Переписка исчезнет только у вас — у собеседника останется\.$/, {
+      en: 'Delete chat with “{0}”? The conversation will disappear only for you — the other person keeps it.',
+      es: '¿Eliminar el chat con «{0}»? La conversación desaparecerá solo para ti; la otra persona la conservará.',
+      tr: '“{0}” ile olan sohbet silinsin mi? Yazışma yalnızca sende silinir — karşı tarafta kalır.',
+      zh: '删除与“{0}”的聊天？对话只会在你这里消失，对方仍会保留。' }),
+    R(/^Удалить «(.+)» из контактов\?$/, {
+      en: 'Remove “{0}” from contacts?', es: '¿Quitar a «{0}» de tus contactos?', tr: '“{0}” kişilerden kaldırılsın mı?', zh: '将“{0}”从联系人中移除？' }),
+    R(/^«(.+)» исчезнет из вашего списка\.$/, {
+      en: '“{0}” will disappear from your list.', es: '«{0}» desaparecerá de tu lista.', tr: '“{0}” listenden kaldırılacak.', zh: '“{0}”将从你的列表中消失。' }),
+    R(/^Удалить (канал|группу) «(.+)» навсегда для всех участников\? Все сообщения и файлы будут стёрты\.$/, {
+      en: (m) => 'Delete ' + (m[1] === 'канал' ? 'channel' : 'group') + ' “' + m[2] + '” permanently for all members? All messages and files will be erased.',
+      es: (m) => '¿Eliminar ' + (m[1] === 'канал' ? 'el canal' : 'el grupo') + ' «' + m[2] + '» para siempre para todos los miembros? Se borrarán todos los mensajes y archivos.',
+      tr: (m) => '“' + m[2] + '” ' + (m[1] === 'канал' ? 'kanalı' : 'grubu') + ' tüm üyeler için kalıcı olarak silinsin mi? Tüm mesajlar ve dosyalar silinecek.',
+      zh: (m) => '为所有成员永久删除' + (m[1] === 'канал' ? '频道' : '群组') + '“' + m[2] + '”？所有消息和文件都将被清除。' }),
   ];
 
   function translateCore(core) {
-    if (DICT[core] !== undefined) return DICT[core];
+    const v = look(core);
+    if (v !== undefined) return v;
     for (const [re, fn] of RULES) { const m = core.match(re); if (m) { const r = fn(m); if (r != null) return r; } }
     for (const k of PREFIX_KEYS) {
       if (core.length > k.length && core.startsWith(k)) {
         const rest = core.slice(k.length);
-        if (!CY.test(rest.charAt(0))) return DICT[k] + rest;      // «Ключ: Имя», «Ключ (код 5)»
+        if (!CY.test(rest.charAt(0))) { const t = look(k); if (t !== undefined) return t + rest; }   // «Ключ: Имя», «Ключ (код 5)»
       }
     }
     return null;
@@ -613,22 +907,24 @@
     return r == null ? null : lead + r + trail;
   }
 
-  // Для системных сообщений (тосты/ошибки): если целиком не нашли — заменяем известные фразы внутри строки (только целые слова)
-  let SUBS = null;
+  // Для системных сообщений (тосты/ошибки): если целиком не нашли — заменяем известные фразы внутри строки (только целые слова).
+  // Один проход по объединённому регулярному выражению; для DOM-текста (посты, имена) это НЕ используется.
+  let SUBS = null, SUBS_LANG = null;
   function subs() {
-    if (SUBS) return SUBS;
+    if (SUBS && SUBS_LANG === lang) return SUBS;
     const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    SUBS = Object.keys(DICT).filter((k) => k.length >= 3).sort((a, b) => b.length - a.length)
-      .map((k) => [new RegExp('(?<![А-Яа-яЁё])' + esc(k) + '(?![А-Яа-яЁё])', 'g'), DICT[k]]);
+    const keys = Object.keys(DICT).filter((k) => k.length >= 3 && look(k)).sort((a, b) => b.length - a.length);
+    const part = (k) => (CY.test(k.charAt(0)) ? '(?<![А-Яа-яЁё])' : '') + esc(k) + (CY.test(k.charAt(k.length - 1)) ? '(?![А-Яа-яЁё])' : '');
+    SUBS = { re: new RegExp(keys.map(part).join('|'), 'g') }; SUBS_LANG = lang;
     return SUBS;
   }
   function tx(s) {
     s = String(s);
-    if (I18N.lang !== 'en' || !CY.test(s)) return s;
+    if (lang === 'ru' || !CY.test(s)) return s;
     const full = tr(s);
     if (full != null && !CY.test(full)) return full;
     let out = full != null ? full : s;
-    for (const [re, en] of subs()) { if (!CY.test(out)) break; out = out.replace(re, en); }
+    try { out = out.replace(subs().re, (m) => { const v = look(m); return v !== undefined ? v : m; }); } catch (e) { /* noop */ }
     return out;
   }
 
@@ -641,7 +937,7 @@
 
   function doText(node) {
     const v = node.nodeValue;
-    if (I18N.lang === 'en') {
+    if (lang !== 'ru') {
       if (!CY.test(v) || skip(node.parentElement)) return;
       const r = tr(v);
       if (r != null && r !== v) { ORIG.set(node, v); node.nodeValue = r; }
@@ -655,7 +951,7 @@
       if (!el.hasAttribute || !el.hasAttribute(a)) continue;
       const v = el.getAttribute(a);
       const store = el.__mxOrig || (el.__mxOrig = {});
-      if (I18N.lang === 'en') {
+      if (lang !== 'ru') {
         if (!CY.test(v)) continue;
         const r = tr(v);
         if (r != null && r !== v) { store[a] = v; el.setAttribute(a, r); }
@@ -676,7 +972,7 @@
   function startObserver() {
     if (observer || !document.body) return;
     observer = new MutationObserver((muts) => {
-      if (I18N.lang !== 'en' || busy) return;
+      if (lang === 'ru' || busy) return;
       busy = true;
       try {
         for (const m of muts) {
@@ -689,15 +985,61 @@
     observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS });
   }
 
+  const loading = {};
+  function loadPack(l, cb) {
+    if (PACKS[l] || l === 'ru' || l === 'en') { cb(); return; }
+    if (loading[l]) { loading[l].push(cb); return; }
+    loading[l] = [cb];
+    const done = () => { const q = loading[l] || []; delete loading[l]; q.forEach((f) => { try { f(); } catch (e) { /* noop */ } }); };
+    const s = document.createElement('script');
+    s.src = 'i18n-' + l + '.js'; s.async = true; s.onload = done; s.onerror = done;
+    document.head.appendChild(s);
+  }
+  const retranslate = () => {
+    busy = true;
+    try {
+      const keep = lang; lang = 'ru';                // 1) вернуть русские оригиналы
+      if (document.body) walk(document.body);
+      lang = keep;                                   // 2) перевести на выбранный язык
+      if (lang !== 'ru' && document.body) walk(document.body);
+    } finally { busy = false; }
+  };
+
   const I18N = {
-    lang: (function () { try { return localStorage.getItem('mchat_lang') === 'en' ? 'en' : 'ru'; } catch (e) { return 'ru'; } })(),
-    t: tr, tx,
-    set(lang) {
-      this.lang = lang === 'en' ? 'en' : 'ru';
-      try { localStorage.setItem('mchat_lang', this.lang); } catch (e) {}
-      document.documentElement.lang = this.lang;
-      if (document.body) { busy = true; try { walk(document.body); } finally { busy = false; } }
-      startObserver();
+    get lang() { return lang; },
+    t: tr, tx, LANGS,
+    locale() { return (LANGS[lang] || LANGS.ru).locale; },
+    set(l) {
+      l = LANGS[l] ? l : 'ru';
+      lang = l; SUBS = null;
+      try { localStorage.setItem('mchat_lang', l); } catch (e) { /* noop */ }
+      document.documentElement.lang = l;
+      retranslate(); startObserver();
+      if (!PACKS[l] && l !== 'ru' && l !== 'en') loadPack(l, () => { if (lang === l) { SUBS = null; retranslate(); this.refresh(); } });
+    },
+    /** Перерисовать то, что строится JS-ом из дат/локали (названия дней и т.п.). */
+    refresh() {
+      try { if (typeof renderChats === 'function') renderChats(''); } catch (e) { /* noop */ }
+      try { if (typeof currentChatId !== 'undefined' && currentChatId && typeof renderMessages === 'function') renderMessages(currentChatId); } catch (e) { /* noop */ }
+    },
+    /** Окно выбора языка. */
+    openPicker() {
+      const old = document.getElementById('mx-lang-sheet'); if (old) old.remove();
+      const wrap = document.createElement('div');
+      wrap.id = 'mx-lang-sheet'; wrap.className = 'mx-rl-scrim';
+      wrap.onclick = (e) => { if (e.target === wrap) wrap.remove(); };
+      const rows = Object.keys(LANGS).map((k) => '<button type="button" class="mx-lang-row' + (k === lang ? ' on' : '') + '" data-l="' + k + '"><span data-notr="1">' + LANGS[k].name + '</span>'
+        + (k === lang ? '<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>' : '') + '</button>').join('');
+      wrap.innerHTML = '<div class="mx-rl"><div class="mx-rl-grip"></div><div class="mx-stk-sh-t">Язык</div>' + rows + '</div>';
+      wrap.querySelectorAll('.mx-lang-row').forEach((b) => { b.onclick = () => { I18N.choose(b.dataset.l); wrap.remove(); }; });
+      (document.getElementById('app') || document.body).appendChild(wrap);
+    },
+    choose(l) {
+      I18N.set(l);
+      try { currentLanguage = l; } catch (e) { /* noop */ }
+      const lbl = document.getElementById('current-language');
+      if (lbl) { lbl.setAttribute('data-notr', '1'); lbl.textContent = LANGS[l].name; }
+      I18N.refresh();
     },
     /** Вызывается после загрузки script.js: подключаем перевод к тостам, ошибкам и переключателю языка. */
     install() {
@@ -706,19 +1048,14 @@
       if (window.MchatAPI && MchatAPI.errorText && !MchatAPI.errorText.__i18n) {
         const et = MchatAPI.errorText; const w = function (e) { return I18N.tx(et.call(this, e)); }; w.__i18n = true; MchatAPI.errorText = w;
       }
-      window.switchLanguage = function () {
-        currentLanguage = I18N.lang === 'ru' ? 'en' : 'ru';
-        I18N.set(currentLanguage);
-        const lbl = document.getElementById('current-language');
-        if (lbl) lbl.textContent = currentLanguage === 'en' ? 'English' : 'Русский';
-      };
-      currentLanguage = I18N.lang;
+      window.switchLanguage = function () { I18N.openPicker(); };
+      try { currentLanguage = lang; } catch (e) { /* noop */ }
       const lbl = document.getElementById('current-language');
-      if (lbl) lbl.textContent = I18N.lang === 'en' ? 'English' : 'Русский';
-      I18N.set(I18N.lang);
+      if (lbl) { lbl.setAttribute('data-notr', '1'); lbl.textContent = LANGS[lang].name; }
+      I18N.set(lang);
     },
   };
   window.I18N = I18N;
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { document.documentElement.lang = I18N.lang; startObserver(); });
-  else { document.documentElement.lang = I18N.lang; startObserver(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { document.documentElement.lang = lang; startObserver(); });
+  else { document.documentElement.lang = lang; startObserver(); }
 })();

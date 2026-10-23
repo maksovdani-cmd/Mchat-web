@@ -1303,7 +1303,8 @@
     if (G.chatId === id) { const im = $('mx-info-modal'); if (im) im.remove(); window.goTo('s-chats'); }
   }
 
-  window.mxChatMenuExtra = function (ch) {
+  const _featExtra = window.mxChatMenuExtra; // «Уведомления» / «Очистка 24 ч» из mchat-features.js
+  const ownExtra = function (ch) {
     const id = esc(ch.id), del = MX_ICO.del;
     if (ch.type === 'DIRECT') {
       let h = window.mxCtxItem(del, 'Удалить чат', `mxDeleteDirectChat('${id}')`, true);
@@ -1315,6 +1316,13 @@
       return window.mxCtxItem(del, ch.role === 'OWNER' ? `Выйти из ${ch1}…` : (ch.type === 'CHANNEL' ? 'Покинуть канал' : 'Покинуть группу'), `mxLeaveChatFlow('${id}')`, true);
     }
     return '';
+  };
+  window.mxChatMenuExtra = function (ch) {
+    if (ch) return ownExtra(ch);                       // долгое нажатие на чат в списке → строка HTML
+    const cur = G.chats.find((c) => c.id === G.chatId); // меню ⋮ внутри чата вызывается без аргумента → массив пунктов
+    let base = [];
+    try { base = _featExtra ? _featExtra() : []; } catch (e) { base = []; }
+    return cur ? base.concat([ownExtra(cur)]) : base;
   };
 
   window.mxDeleteDirectChat = function (id) {

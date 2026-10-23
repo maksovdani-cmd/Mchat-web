@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
   addMembers, createGroupOrChannel, getChannelPreview, listShared, getChatDTO, getOrCreateDirectChat, getOrCreateSavedChat, joinByInvite, joinPublicChannel, listChats, listContacts,
-  hideChat, leaveChat, listMembers, listMessages, removeMember, searchPublicChannels, setChatAutoDelete, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
+  clearChatForMe, hideChat, leaveChat, listMembers, listMessages, removeMember, searchPublicChannels, setChatAutoDelete, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
 } from '../services/chat';
 import { emitToChat, emitToUser, leaveUserFromChat } from '../realtime/hub';
 import { joinAllToChat, pinAndDispatch, readAndBroadcast, sendAndDispatch } from '../services/messaging';
@@ -199,6 +199,12 @@ chatsRouter.post('/:id/members', wrap(async (req, res) => {
   added.forEach((u) => emitToUser(u, 'chat:changed', { chatId })); // новичку — чат появится в списке
   changed(chatId);
   res.json({ added: added.length, members: await listMembers(userId, chatId) });
+}));
+
+/** Очистить переписку (только у меня), чат остаётся в списке. */
+chatsRouter.post('/:id/clear', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  res.json(await clearChatForMe(userId, String(req.params.id)));
 }));
 
 /** Удалить личный чат из моего списка (у собеседника останется). */

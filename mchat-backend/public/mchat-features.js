@@ -71,7 +71,7 @@
     if (d.toDateString() === now.toDateString()) return clock;
     const y = new Date(now); y.setDate(now.getDate() - 1);
     if (d.toDateString() === y.toDateString()) return 'вчера, ' + clock;
-    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ', ' + clock;
+    return d.toLocaleDateString((window.I18N ? I18N.locale() : 'ru-RU'), { day: 'numeric', month: 'short' }) + ', ' + clock;
   };
 
   /* ───────── 1. ПЛАВАЮЩАЯ ДАТА + КНОПКА «ВНИЗ» ───────── */
@@ -102,7 +102,7 @@
   }
   const dayFromKey = (key) => {
     const p = String(key || '').split('-').map(Number);
-    return new Date(p[0], (p[1] || 1) - 1, p[2] || 1).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+    return new Date(p[0], (p[1] || 1) - 1, p[2] || 1).toLocaleDateString((window.I18N ? I18N.locale() : 'ru-RU'), { day: 'numeric', month: 'long', year: 'numeric' });
   };
   function updateFloaters() {
     const c = $('messages-container');
