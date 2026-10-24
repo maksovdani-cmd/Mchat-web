@@ -2,16 +2,39 @@ import { prisma } from '../db';
 import { HttpError } from '../utils/errors';
 import { gcMedia, mediaUrl } from './media';
 import { generalOf } from './titles';
+import { sendPushToUser } from './push';
 
 const authorSelect = { id: true, username: true, name: true, avatarUrl: true, verified: true, generalTitle: true, generalStyle: true } as const;
 
 const postInclude = (_viewerId: string) => ({
   author: { select: authorSelect },
   likes: { select: { userId: true } },
-  comments: { orderBy: { createdAt: 'asc' as const }, include: { user: { select: { username: true } } } },
+  comments: { orderBy: { createdAt: 'asc' as const }, include: { user: { select: { username: true, name: true, avatarUrl: true } }, likes: { select: { userId: true } } } },
   reposts: { select: { user: { select: { username: true } } } },
   _count: { select: { likes: true } },
 });
+
+
+type CommentRow = {
+  id: number; text: string; createdAt: Date; replyToId: number | null; replyToUsername: string | null; replyToText: string | null;
+  user: { username: string; name: string; avatarUrl: string | null }; likes?: { userId: string }[];
+};
+const MENTION_RE = /(^|[^a-z0-9_])@([a-z0-9_]{3,20})/gi;
+export const mentionsIn = (text: string): string[] => {
+  const out = new Set<string>();
+  for (const m of text.matchAll(MENTION_RE)) out.add(m[2].toLowerCase());
+  return [...out].slice(0, 10);
+};
+/** Комментарий в формате клиента: автор, лайки (с моим состоянием), ответ на другой комментарий. */
+export function commentDTO(c: CommentRow, viewerId: string, mentions?: string[]) {
+  const likes = c.likes ?? [];
+  return {
+    id: c.id, username: c.user.username, name: c.user.name, avatar: c.user.avatarUrl, text: c.text, createdAt: c.createdAt.toISOString(),
+    likes: likes.length, liked: likes.some((l) => l.userId === viewerId),
+    replyTo: c.replyToUsername ? { id: c.replyToId, username: c.replyToUsername, text: c.replyToText ?? '', deleted: c.replyToId == null } : null,
+    mentions: mentions ?? mentionsIn(c.text),
+  };
+}
 
 type PostRow = Awaited<ReturnType<typeof loadPosts>>[number];
 
@@ -36,7 +59,7 @@ export function toPostDTO(p: PostRow, viewerId: string, storyAuthors?: Set<strin
     createdAt: p.createdAt.toISOString(),
     likes: p._count.likes,
     liked: p.likes.some((l) => l.userId === viewerId),
-    comments: p.comments.map((c) => ({ id: c.id, username: c.user.username, text: c.text, createdAt: c.createdAt.toISOString() })),
+    comments: p.comments.map((c) => commentDTO(c, viewerId)),
     mediaType: p.mediaType,
     mediaUrl: p.mediaId ? mediaUrl(p.mediaId) : null,
     thumbnail: p.thumbId ? mediaUrl(p.thumbId) : null,
@@ -125,10 +148,65 @@ export async function setLike(userId: string, id: number, liked: boolean) {
   return { likes: await prisma.postLike.count({ where: { postId: id } }), liked };
 }
 
-export async function addComment(userId: string, id: number, text: string) {
-  await visiblePost(userId, id);
-  const c = await prisma.postComment.create({ data: { postId: id, userId, text }, include: { user: { select: { username: true } } } });
-  return { id: c.id, username: c.user.username, text: c.text, createdAt: c.createdAt.toISOString() };
+export async function addComment(userId: string, id: number, text: string, replyToId?: number | null) {
+  const post = await visiblePost(userId, id);
+  let reply: { id: number; userId: string; text: string; user: { username: string } } | null = null;
+  if (replyToId != null) {
+    reply = await prisma.postComment.findFirst({ where: { id: replyToId, postId: id }, select: { id: true, userId: true, text: true, user: { select: { username: true } } } });
+    if (!reply) throw new HttpError(404, 'comment_not_found');
+  }
+  const c = await prisma.postComment.create({
+    data: {
+      postId: id, userId, text, replyToId: reply ? reply.id : null,
+      replyToUsername: reply ? reply.user.username : null, replyToText: reply ? reply.text.slice(0, 160) : null,
+    },
+    include: { user: { select: { username: true, name: true, avatarUrl: true } }, likes: { select: { userId: true } } },
+  });
+  // упоминания: только реально существующие пользователи
+  const names = mentionsIn(text);
+  const found = names.length ? await prisma.user.findMany({ where: { username: { in: names } }, select: { id: true, username: true } }) : [];
+  void notifyComment(userId, c.user.username, id, text, found, reply ? reply.userId : null, post.authorId);
+  return commentDTO(c, userId, found.map((u) => u.username));
+}
+
+/** Push: упомянутым пользователям и автору комментария, на который ответили. Ошибки доставки не влияют на сам комментарий. */
+async function notifyComment(actorId: string, actorName: string, postId: number, text: string, mentioned: { id: string; username: string }[], replyOwner: string | null, _postAuthor: string) {
+  try {
+    const sent = new Set<string>([actorId]);
+    for (const u of mentioned) {
+      if (sent.has(u.id)) continue; sent.add(u.id);
+      await sendPushToUser(u.id, { title: '@' + actorName + ' упомянул(а) вас', body: text.slice(0, 120), tag: 'mention-' + postId, data: { type: 'mention', postId }, urgency: 'normal' });
+    }
+    if (replyOwner && !sent.has(replyOwner)) await sendPushToUser(replyOwner, { title: '@' + actorName + ' ответил(а) на ваш комментарий', body: text.slice(0, 120), tag: 'reply-' + postId, data: { type: 'reply', postId }, urgency: 'normal' });
+  } catch (e) { console.error('comment notify', e); }
+}
+
+/** Лайк/снятие лайка комментария: идемпотентно, счётчик считается по таблице (повторный запрос ничего не накручивает). */
+export async function setCommentLike(userId: string, postId: number, commentId: number, liked: boolean) {
+  await visiblePost(userId, postId);
+  const c = await prisma.postComment.findFirst({ where: { id: commentId, postId }, select: { id: true } });
+  if (!c) throw new HttpError(404, 'comment_not_found');
+  if (liked) await prisma.postCommentLike.upsert({ where: { commentId_userId: { commentId, userId } }, create: { commentId, userId }, update: {} });
+  else await prisma.postCommentLike.deleteMany({ where: { commentId, userId } });
+  return { id: commentId, likes: await prisma.postCommentLike.count({ where: { commentId } }), liked };
+}
+
+/** Кого можно упомянуть под постом: автор, участники обсуждения и мои друзья. Посторонние не предлагаются. */
+export async function mentionCandidates(userId: string, postId: number, q: string) {
+  const post = await visiblePost(userId, postId);
+  const [commenters, author, friends] = await Promise.all([
+    prisma.postComment.findMany({ where: { postId }, distinct: ['userId'], select: { user: { select: { id: true, username: true, name: true, avatarUrl: true } } } }),
+    prisma.user.findUnique({ where: { id: post.authorId }, select: { id: true, username: true, name: true, avatarUrl: true } }),
+    prisma.friendship.findMany({ where: { status: 'ACCEPTED', OR: [{ requesterId: userId }, { addresseeId: userId }] }, take: 100,
+      select: { requesterId: true, requester: { select: { id: true, username: true, name: true, avatarUrl: true } }, addressee: { select: { id: true, username: true, name: true, avatarUrl: true } } } }),
+  ]);
+  const map = new Map<string, { id: string; username: string; name: string; avatar: string | null }>();
+  const add = (u: { id: string; username: string; name: string; avatarUrl: string | null } | null | undefined) => {
+    if (u && u.id !== userId && !map.has(u.id)) map.set(u.id, { id: u.id, username: u.username, name: u.name, avatar: u.avatarUrl });
+  };
+  add(author); commenters.forEach((c) => add(c.user)); friends.forEach((f) => add(f.requesterId === userId ? f.addressee : f.requester));
+  const needle = q.trim().replace(/^@/, '').toLowerCase();
+  return [...map.values()].filter((u) => !needle || u.username.includes(needle) || u.name.toLowerCase().includes(needle)).slice(0, 8);
 }
 
 export async function addRepost(userId: string, id: number) {

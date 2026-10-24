@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="mchat-features.css">
 <link rel="stylesheet" href="mchat-fixes.css">
 <link rel="stylesheet" href="mchat-series4.css">
+<link rel="stylesheet" href="mchat-series5.css">
 </head>
 <body>
 <div class="phone" id="app">
@@ -148,13 +149,15 @@
       <button class="ib ghost" onclick="mxCancelCompose()" title="Отмена"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="mir" id="mx-input-row">
-      <button class="ib ghost" id="mx-cam-btn" onclick="mxCameraOpen()" title="Камера"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
-      <button class="ib ghost" id="mx-clip-btn" onclick="mxAttachOpen()" title="Прикрепить файл"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></button>
+      <div class="mx-field" id="mx-field">
+        <button class="ib ghost mx-fbtn" id="mx-emoji-btn" type="button" onclick="mxComposerEmoji()" title="Эмодзи" aria-label="Эмодзи"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M8.2 14.2s1.2 2 3.8 2 3.8-2 3.8-2"/><path d="M9 9.6h.01M15 9.6h.01" stroke-width="2.6"/></svg></button>
+        <textarea class="mi2" id="message-input" rows="1" placeholder="Сообщение..." autocomplete="off" autocapitalize="sentences" enterkeyhint="enter" onkeydown="mxComposeKey(event)" oninput="mxOnComposeInput()"></textarea>
+        <button class="ib ghost mx-fbtn" id="mx-clip-btn" type="button" onclick="mxAttachOpen()" title="Прикрепить файл" aria-label="Прикрепить файл"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></button>
+      </div>
       <input type="file" id="mx-file-input" multiple style="display:none" onchange="mxAttachChosen(event)">
       <input type="file" id="mx-bg-input" accept="image/*" style="display:none" onchange="mxBgChosen(event)">
       <input type="file" id="mx-gavatar-input" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="mxGroupAvatarChosen(event)">
-      <textarea class="mi2" id="message-input" rows="1" placeholder="Сообщение..." autocomplete="off" autocapitalize="sentences" enterkeyhint="enter" onkeydown="mxComposeKey(event)" oninput="mxOnComposeInput()"></textarea>
-      <button class="ib ghost" id="mx-mic-btn" onclick="mxVoiceStart()" title="Голосовое сообщение"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1M12 18v4M8 22h8"/></svg></button>
+      <button class="ib mx-recbtn" id="mx-mic-btn" type="button" data-mode="voice" title="Голосовое сообщение" aria-label="Голосовое сообщение"><svg class="mx-ic mx-ic-mic" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1M12 18v4M8 22h8"/></svg><svg class="mx-ic mx-ic-circle" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="3.6"/></svg></button>
       <button class="sb2" id="mx-send-btn" onclick="sendMessage()" style="display:none"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
     </div>
     <div class="mir mx-rec" id="mx-rec" style="display:none">
@@ -890,5 +893,6 @@
 <script src="mchat-features.js"></script>
 <script src="mchat-fixes.js"></script>
 <script src="mchat-series4.js"></script>
+<script src="mchat-series5.js"></script>
 </body>
 </html>

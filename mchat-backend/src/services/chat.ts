@@ -330,6 +330,12 @@ export async function getChatDTO(userId: string, chatId: string) {
     chat.type === 'DIRECT' ? directAccess(userId, chatId) : null,
   ]);
 
+  // группа: «прочитано» = хотя бы один другой участник (без скрытого статуса прочтения) дошёл до этого сообщения
+  let groupReadAt: string | null = null;
+  if (chat.type === 'GROUP') {
+    const others = await prisma.chatMember.findMany({ where: { chatId, userId: { not: userId }, user: { hideRead: false } }, select: { lastReadAt: true } });
+    if (others.length) groupReadAt = new Date(Math.max(...others.map((o) => o.lastReadAt.getTime()))).toISOString();
+  }
   const peer = peerMember?.user ?? null;
   const isDirect = chat.type === 'DIRECT';
   const isSaved = chat.type === 'SAVED';
@@ -342,7 +348,7 @@ export async function getChatDTO(userId: string, chatId: string) {
     description: chat.description,
     avatar: isDirect ? peer?.avatarUrl ?? null : chat.avatarMediaId ? mediaUrl(chat.avatarMediaId) : null,
     /** до какого момента собеседник прочитал чат (null — скрыл статус или это не личный чат) */
-    peerReadAt: isDirect && peerMember && !peerMember.user.hideRead ? peerMember.lastReadAt.toISOString() : null,
+    peerReadAt: isDirect ? (peerMember && !peerMember.user.hideRead ? peerMember.lastReadAt.toISOString() : null) : chat.type === 'GROUP' ? groupReadAt : null,
     role: m.role,
     canPost: canPost(chat.type, m.role) && (dm ? dm.ok : true),
     canModerate: canModerate(chat.type, m.role),
@@ -403,7 +409,10 @@ export async function listMessages(userId: string, chatId: string, before: strin
   });
   const hasMore = rows.length > limit;
   const page = rows.slice(0, limit).reverse(); // клиенту удобнее от старых к новым
-  return { messages: page.map(toMessageDTO), hasMore };
+  // одноразовые медиа: «открыто» — это состояние именно этого зрителя (в группе у каждого получателя своё)
+  const onceIds = page.filter((m) => m.viewOnce).map((m) => m.id);
+  const opened = onceIds.length ? new Set((await prisma.viewOnceView.findMany({ where: { userId, messageId: { in: onceIds } }, select: { messageId: true } })).map((v) => v.messageId)) : null;
+  return { messages: page.map((m) => { const d = toMessageDTO(m); if (opened && m.viewOnce && m.senderId !== userId) d.viewOnceOpened = opened.has(m.id) || m.viewOnceOpenedBy === userId; return d; }), hasMore };
 }
 
 // ───────────────────────── сообщения ─────────────────────────
@@ -418,7 +427,7 @@ export interface CreateInput {
   forwardedFromName?: string | null;
   /** true — медиа принадлежит не отправителю (пересылка); права уже проверены */
   trustedMedia?: boolean;
-  /** одноразовое медиа (только личные чаты; фото, видео, голосовое, кружок) */
+  /** одноразовое медиа (личные и групповые чаты; фото, видео, голосовое, кружок) */
   viewOnce?: boolean;
 }
 
@@ -436,7 +445,7 @@ export async function createMessage(userId: string, chatId: string, input: Creat
   if (kind === 'TEXT' && !text) throw new HttpError(400, 'empty_message');
   if (text.length > MAX_TEXT) throw new HttpError(400, 'message_too_long');
 
-  if (input.viewOnce && (member.chat.type !== 'DIRECT' || !['IMAGE', 'VIDEO', 'VOICE', 'VIDEO_NOTE'].includes(kind))) throw new HttpError(400, 'view_once_not_allowed');
+  if (input.viewOnce && (!['DIRECT', 'GROUP'].includes(member.chat.type) || !['IMAGE', 'VIDEO', 'VOICE', 'VIDEO_NOTE'].includes(kind))) throw new HttpError(400, 'view_once_not_allowed');
   let mediaId: string | null = null;
   let durationSec: number | null = null;
   if (kind !== 'TEXT') {

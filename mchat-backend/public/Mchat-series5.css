@@ -1,0 +1,109 @@
+/* ============================================================
+   Mchat · серия 5 — стили (подключается после mchat-series4.css)
+   ============================================================ */
+
+/* ── Статусы доставки ── */
+.mx-tick{display:inline-flex;align-items:center;margin-left:4px;vertical-align:-1px;line-height:1;color:rgba(255,255,255,.62);transition:color .2s;}
+.mx-tick.pend{opacity:.7;}
+.mx-tick.read{color:#8be0ff;}
+.mx-tick svg{display:block;}
+
+/* ── Стикеры и крупные эмодзи: без рамки и фона баббла ── */
+.msg.mx-sticker{background:transparent !important;box-shadow:none !important;border:none !important;padding:0 !important;max-width:190px;}
+.msg.mx-sticker .mx-img{max-width:180px;max-height:180px;width:auto;height:auto;border-radius:0;background:none;cursor:default;object-fit:contain;}
+.msg.mx-sticker .mt,.msg.mx-emoji-only .mt{background:rgba(0,0,0,.38);color:#fff;border-radius:10px;padding:1px 7px;margin-top:2px;display:inline-block;float:right;}
+.msg.mx-sticker .mx-tick,.msg.mx-emoji-only .mx-tick{color:rgba(255,255,255,.85);}
+.msg.mx-emoji-only{background:transparent !important;box-shadow:none !important;border:none !important;padding:2px 4px !important;}
+.msg.mx-emoji-only .mx-txt.mx-bigemoji{display:block;line-height:1.15;white-space:nowrap;padding:0;}
+.msg.mx-emoji-only .mx-bigemoji.mx-be1{font-size:min(76px,19vw);}
+.msg.mx-emoji-only .mx-bigemoji.mx-be2{font-size:min(60px,15vw);}
+.msg.mx-emoji-only .mx-bigemoji.mx-be3{font-size:min(50px,12.5vw);}
+.msg.mx-emoji-only .mx-bigemoji.mx-be4{font-size:min(42px,10.5vw);}
+.msg.mx-emoji-only .mx-bigemoji.mx-be5{font-size:min(36px,9vw);}
+.msg.mx-emoji-only .mx-reactions{margin-top:2px;}
+
+/* ── Мультивыделение ── */
+.mx-selbar{position:absolute;left:10px;right:10px;top:calc(var(--sat,0px) + 8px);z-index:935;display:none;align-items:center;gap:4px;padding:6px 8px;border-radius:26px;background:rgba(28,28,40,.92);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);box-shadow:0 8px 28px rgba(0,0,0,.5);border:1px solid var(--border);}
+.mx-selbar.on{display:flex;animation:fu .16s ease;}
+.mx-sb-x{width:38px;height:38px;border-radius:50%;border:none;background:var(--surf);color:var(--text);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;}
+.mx-sb-cnt{flex:1;min-width:0;font-weight:700;font-size:15px;padding:0 8px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.mx-sb-act{display:flex;align-items:center;gap:6px;border:none;background:var(--surf);color:var(--text);height:38px;padding:0 12px;border-radius:19px;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;flex:none;}
+.mx-sb-act.danger{color:#ff6b81;}
+@media (max-width:430px){.mx-sb-act span{display:none;}.mx-sb-act{width:38px;padding:0;justify-content:center;}}
+.mx-selmode .msg,.mx-selmode .mx-alb-tile{cursor:pointer;}
+.mx-selmode .msg video,.mx-selmode .msg audio,.mx-selmode .msg a,.mx-selmode .mx-vplay,.mx-selmode .mx-prog{pointer-events:none;}
+.msg.mx-sel{outline:2px solid #34c759;outline-offset:1px;}
+.msg.mx-sel::after,.mx-alb-tile.mx-sel::after{content:"";position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;background:#34c759 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center/14px no-repeat;box-shadow:0 2px 6px rgba(0,0,0,.4);z-index:3;animation:mxPop .18s ease-out;}
+.mx-alb-tile.mx-sel{outline:2px solid #34c759;outline-offset:-2px;}
+.mx-alb-tile.mx-sel::after{top:6px;right:6px;}
+.msg.mx-sticker.mx-sel,.msg.mx-emoji-only.mx-sel{outline-offset:3px;border-radius:14px;}
+@keyframes mxPop{from{transform:scale(.3);opacity:0}to{transform:scale(1);opacity:1}}
+.mx-del-btns{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
+.mx-del-btns button{padding:13px;border-radius:12px;border:none;font-family:var(--font);font-size:14px;font-weight:600;cursor:pointer;}
+.mx-del-btns .btn-danger{background:#f43f5e;color:#fff;}
+.mx-del-btns .btn-sec{background:var(--surf);color:var(--text);}
+
+/* ── Панель ввода (Telegram-стиль) ── */
+.mir{gap:8px;padding-left:8px;padding-right:8px;}
+.mx-field{flex:1;min-width:0;display:flex;align-items:flex-end;background:var(--surf);border-radius:24px;padding:0 2px;}
+.mx-field #message-input.mi2{background:transparent;border-radius:0;padding:12px 4px;flex:1;min-width:0;width:auto;}
+.mx-fbtn{width:40px;height:44px;border-radius:50%;color:var(--text2);margin-bottom:0 !important;}
+.mx-fbtn:active{color:var(--accent2,#8b8bff);}
+.mx-recbtn{position:relative;overflow:hidden;width:44px;height:44px;background:var(--accent);color:#fff;touch-action:none;}
+.mx-recbtn .mx-ic{position:absolute;left:50%;top:50%;margin:-11px 0 0 -11px;transition:transform .3s cubic-bezier(.3,1.4,.5,1),opacity .22s;}
+.mx-recbtn[data-mode="voice"] .mx-ic-mic{transform:none;opacity:1;}
+.mx-recbtn[data-mode="voice"] .mx-ic-circle{transform:rotate(-90deg) scale(.4);opacity:0;}
+.mx-recbtn[data-mode="circle"] .mx-ic-mic{transform:rotate(90deg) scale(.4);opacity:0;}
+.mx-recbtn[data-mode="circle"] .mx-ic-circle{transform:none;opacity:1;}
+.mx-recbtn.flip{animation:mxFlipBtn .3s ease;}
+@keyframes mxFlipBtn{0%{transform:scale(1)}45%{transform:scale(.82)}100%{transform:scale(1)}}
+.mx-cemoji{position:relative !important;left:auto;right:auto;bottom:auto;z-index:auto;border-radius:0;box-shadow:none;max-height:240px;flex-shrink:0;border-top:1px solid var(--border);padding-bottom:calc(10px + env(safe-area-inset-bottom));}
+.mx-cemoji .mx-emoji-grid{overflow-y:auto;}
+
+/* ── Камера кружка: на весь экран, панели не отнимают место ── */
+.mx-cam .mx-cam-stage{position:absolute;inset:0;width:100%;height:100%;}
+.mx-cam .mx-cam-top{position:absolute;top:0;left:0;right:0;background:linear-gradient(rgba(0,0,0,.45),transparent);}
+.mx-cam .mx-cam-bottom{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.5));}
+.mx-cam:not(.photo) .mx-cam-stage video,.mx-cam:not(.photo) .mx-cam-stage img.mx-still{width:min(88vw,62vh,460px);height:min(88vw,62vh,460px);}
+.mx-cam #mx-cam-hd{display:none !important;}
+
+/* ── Одноразовое медиа: защита просмотра ── */
+.mx-secure,.mx-secure *{-webkit-user-select:none !important;user-select:none !important;-webkit-touch-callout:none !important;}
+.mx-secure img,.mx-secure video{-webkit-user-drag:none;pointer-events:auto;}
+.mx-secure.mx-blank #mx-once-media,.mx-secure.mx-blank video,.mx-secure.mx-blank img{visibility:hidden !important;}
+.mx-secure.mx-blank::before{content:"Содержимое скрыто";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.7);font-size:15px;z-index:5;}
+.mx-wm{position:absolute;inset:-20%;display:flex;flex-wrap:wrap;gap:34px 46px;align-content:center;justify-content:center;transform:rotate(-24deg);pointer-events:none;z-index:4;opacity:.11;color:#fff;font-size:15px;font-weight:700;font-family:var(--font);overflow:hidden;}
+@media print{#mx-once-viewer{display:none !important;}}
+
+/* ── Комментарии: ответы, лайки, упоминания ── */
+.mx-cm{display:flex;gap:10px;align-items:flex-start;padding:2px 0;border-radius:12px;transition:background .3s;}
+.mx-cm.mx-flash{background:rgba(139,139,255,.18);}
+.mx-cm-av{width:34px;height:34px;border-radius:50%;overflow:hidden;flex:none;background:linear-gradient(135deg,#6c6cf5,#9b5cf6);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;}
+.mx-cm-av img{width:100%;height:100%;object-fit:cover;display:block;}
+.mx-cm-body{flex:1;min-width:0;background:var(--surf);border-radius:14px;padding:8px 12px;}
+.mx-cm-user{font-size:12px;font-weight:700;color:var(--accent2,#8b8bff);margin-bottom:2px;}
+.mx-cm-quote{display:flex;flex-direction:column;gap:1px;border-left:3px solid var(--accent2,#8b8bff);background:rgba(139,139,255,.1);border-radius:0 8px 8px 0;padding:4px 8px;margin:3px 0 5px;font-size:12px;cursor:pointer;min-width:0;}
+.mx-cm-quote b{color:var(--accent2,#8b8bff);font-weight:700;}
+.mx-cm-quote span{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mx-cm-quote.gone{cursor:default;color:var(--text2);font-style:italic;}
+.mx-cm-text{font-size:14px;line-height:1.45;word-break:break-word;overflow-wrap:anywhere;white-space:pre-wrap;}
+.mx-mention{color:var(--accent2,#8b8bff);font-weight:600;cursor:pointer;}
+.mx-cm-meta{display:flex;align-items:center;gap:14px;margin-top:4px;font-size:11px;color:var(--text2);}
+.mx-cm-reply{background:none;border:none;padding:0;color:var(--text2);font-family:var(--font);font-size:12px;cursor:pointer;}
+.mx-cm-reply:active{color:var(--text);}
+.mx-cm-like{display:flex;flex-direction:column;align-items:center;gap:1px;background:none;border:none;color:var(--text2);cursor:pointer;padding:4px 2px;min-width:26px;flex:none;font-family:var(--font);}
+.mx-cm-like svg{fill:none;transition:transform .15s,fill .15s,color .15s;}
+.mx-cm-like b{font-size:11px;font-weight:600;min-height:13px;}
+.mx-cm-like.on{color:#ff4d6d;}
+.mx-cm-like.on svg{fill:#ff4d6d;transform:scale(1.1);}
+.mx-cm-replybar{align-items:center;gap:8px;padding:6px 12px;background:var(--bg2);border-top:1px solid var(--border);}
+.mx-cm-replybar .mx-rb-txt{flex:1;min-width:0;display:flex;flex-direction:column;border-left:3px solid var(--accent2,#8b8bff);padding-left:8px;font-size:12px;}
+.mx-cm-replybar .mx-rb-txt b{color:var(--accent2,#8b8bff);}
+.mx-cm-replybar .mx-rb-txt span{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mx-cm-replybar button{width:30px;height:30px;border-radius:50%;border:none;background:var(--surf);color:var(--text);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;}
+.mx-mention-list{position:absolute;left:12px;right:60px;bottom:calc(100% + 4px);max-height:230px;overflow-y:auto;background:var(--bg2);border:1px solid var(--border);border-radius:14px;box-shadow:0 -8px 28px rgba(0,0,0,.45);z-index:50;padding:4px;}
+.mx-mn{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:10px;cursor:pointer;}
+.mx-mn.on,.mx-mn:active{background:var(--surf);}
+.mx-mn .mx-cm-av{width:30px;height:30px;font-size:12px;}
+.mx-mn-who{display:flex;flex-direction:column;min-width:0;font-size:13px;}
+.mx-mn-who span{font-size:11px;color:var(--text2);}

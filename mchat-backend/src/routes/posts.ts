@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
-  addComment, addRepost, addStoryComment, createPost, createStory, deletePost, deleteStory, getPost, listFeed, listReposts,
+  addComment, setCommentLike, mentionCandidates, addRepost, addStoryComment, createPost, createStory, deletePost, deleteStory, getPost, listFeed, listReposts,
   listStoriesFeed, listUserPosts, listUserStories, searchPosts, setLike, setStoryLike,
 } from '../services/posts';
 import { wrap } from '../utils/errors';
@@ -56,8 +56,18 @@ postsRouter.put('/:id/like', wrap(async (req, res) => {
 }));
 
 postsRouter.post('/:id/comments', wrap(async (req, res) => {
-  const { text } = z.object({ text: clean.pipe(z.string().min(1).max(500)) }).parse(req.body);
-  res.json({ comment: await addComment(authOf(req).userId, intId.parse(req.params.id), text) });
+  const { text, replyToId } = z.object({ text: clean.pipe(z.string().min(1).max(500)), replyToId: z.number().int().positive().nullish() }).parse(req.body);
+  res.json({ comment: await addComment(authOf(req).userId, intId.parse(req.params.id), text, replyToId ?? null) });
+}));
+
+postsRouter.put('/:id/comments/:cid/like', wrap(async (req, res) => {
+  const { liked } = z.object({ liked: z.boolean() }).parse(req.body);
+  res.json(await setCommentLike(authOf(req).userId, intId.parse(req.params.id), intId.parse(req.params.cid), liked));
+}));
+
+postsRouter.get('/:id/mention-candidates', wrap(async (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 30) : '';
+  res.json({ users: await mentionCandidates(authOf(req).userId, intId.parse(req.params.id), q) });
 }));
 
 postsRouter.post('/:id/repost', wrap(async (req, res) => {

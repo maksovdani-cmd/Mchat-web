@@ -3,13 +3,13 @@
  *  2) Web Push: сообщения и ВХОДЯЩИЕ ЗВОНКИ (долгая вибрация, кнопки «Ответить/Отклонить», уведомление не исчезает само). */
 'use strict';
 
-const VERSION = 'v7';
+const VERSION = 'v8';
 const STATIC_CACHE = 'mchat-static-' + VERSION;
 const RUNTIME_CACHE = 'mchat-runtime-' + VERSION;
 const MP_CACHE = 'mchat-mediapipe-1'; // wasm и модель масок — тяжёлые, меняются редко
 
 const PRECACHE = [
-  '/', '/style.css', '/script.js', '/mchat-api.js', '/i18n.js', '/mchat-ext.js', '/mchat-features.js', '/mchat-features.css', '/mchat-fixes.js', '/mchat-fixes.css', '/mchat-series4.js', '/mchat-series4.css', '/i18n-es.js', '/i18n-tr.js', '/i18n-zh.js', '/masks.js',
+  '/', '/style.css', '/script.js', '/mchat-api.js', '/i18n.js', '/mchat-ext.js', '/mchat-features.js', '/mchat-features.css', '/mchat-fixes.js', '/mchat-fixes.css', '/mchat-series4.js', '/mchat-series4.css', '/mchat-series5.js', '/mchat-series5.css', '/i18n-es.js', '/i18n-tr.js', '/i18n-zh.js', '/masks.js',
   '/manifest.webmanifest',
   '/img/mchat.jpg', '/img/icon-96.png', '/img/icon-192.png', '/img/icon-512.png', '/img/apple-touch-icon.png',
   '/sounds/ringtone.wav',

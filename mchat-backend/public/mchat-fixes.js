@@ -1412,12 +1412,12 @@
   let once = false;
   const KINDS = ['IMAGE', 'VIDEO', 'VOICE', 'VIDEO_NOTE'];
   const ONCE_ICO = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3.2 3"/><path d="M10.3 9.6L12.4 8.2v7.6" stroke-width="2.2"/></svg>';
-  const directNow = () => { const m = G.meta || (G.chats || []).find((c) => c.id === G.chatId); return !!m && m.type === 'DIRECT'; };
+  const directNow = () => { const m = G.meta || (G.chats || []).find((c) => c.id === G.chatId); return !!m && (m.type === 'DIRECT' || m.type === 'GROUP'); };   // личные и групповые чаты
   function syncOnceUi() {
     document.querySelectorAll('.mx-once-chip').forEach((b) => { b.classList.toggle('on', once); b.classList.toggle('hidden', !directNow()); });
   }
   function setOnce(v) { once = !!v; syncOnceUi(); }
-  window.mxToggleOnce = function () { setOnce(!once); toast(once ? 'Одноразовое: получатель откроет один раз' : 'Обычная отправка'); };
+  window.mxToggleOnce = function () { setOnce(!once); toast(once ? (G.meta && G.meta.type === 'GROUP' ? 'Одноразовое: каждый участник откроет один раз' : 'Одноразовое: получатель откроет один раз') : 'Обычная отправка'); };
   function mkChip(extraClass, html) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'mx-once-chip ' + extraClass; b.title = 'Одноразовый просмотр (1 раз)'; b.innerHTML = html;

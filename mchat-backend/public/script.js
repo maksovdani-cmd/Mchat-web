@@ -2997,7 +2997,7 @@ function chatFromServer(c) {
     id: c.id, type: c.type, name: c.name, description: c.description, avatar: c.avatar, peer: c.peer,
     unread: c.unread || 0, role: c.role, canPost: c.canPost !== false, canModerate: !!c.canModerate, muted: !!c.muted, isPublic: !!c.isPublic,
     memberCount: c.memberCount || 0, inviteCode: c.inviteCode || null, pinned: c.pinned || null, background: c.background || null,
-    dm: c.dm || null, autoDeleteSec: c.autoDeleteSec || null, mutedUntil: c.mutedUntil || null,
+    dm: c.dm || null, autoDeleteSec: c.autoDeleteSec || null, mutedUntil: c.mutedUntil || null, peerReadAt: c.peerReadAt || null,
     lastMessage: c.lastMessage ? c.lastMessage.text : '',
     time: c.lastMessage ? fmtChatTime(c.lastMessage.createdAt) : '',
     lastMessageAt: c.lastMessageAt
@@ -3151,7 +3151,7 @@ async function openChat(id) {
   if (!ch) return;
   currentChatId = id;
   currentChatPeer = ch.peer || null;
-  currentChatMeta = { type: ch.type, canPost: ch.canPost !== false, canModerate: !!ch.canModerate, dm: ch.dm || null, autoDeleteSec: ch.autoDeleteSec || null };
+  currentChatMeta = { type: ch.type, canPost: ch.canPost !== false, canModerate: !!ch.canModerate, dm: ch.dm || null, autoDeleteSec: ch.autoDeleteSec || null, peerReadAt: ch.peerReadAt || null };
   mxCancelCompose();
   document.getElementById('chat-name').innerHTML = esc(ch.name) + (ch.type === 'DIRECT' && ch.peer ? mxStarHtml(ch.peer.general) : '');
   document.getElementById('chat-open-av').innerHTML = ch.type === 'SAVED' ? MX_SAVED_AV : ch.avatar
@@ -3177,7 +3177,7 @@ async function openChat(id) {
  */
 function mxApplyChatInputState(ch) {
   if (!ch) return;
-  currentChatMeta = Object.assign(currentChatMeta || {}, { type: ch.type, canPost: ch.canPost !== false, canModerate: !!ch.canModerate, dm: ch.dm || null, autoDeleteSec: ch.autoDeleteSec || null });
+  currentChatMeta = Object.assign(currentChatMeta || {}, { type: ch.type, canPost: ch.canPost !== false, canModerate: !!ch.canModerate, dm: ch.dm || null, autoDeleteSec: ch.autoDeleteSec || null, peerReadAt: ch.peerReadAt || (currentChatMeta && currentChatMeta.peerReadAt) || null });
   const callsOk = ch.type === 'DIRECT' ? !(ch.dm && !ch.dm.canSend) : ch.type === 'GROUP' ? !!ch.canModerate : false;
   ['mx-call-btn','mx-vcall-btn'].forEach(bid => { const b = document.getElementById(bid); if (b) b.style.display = callsOk ? '' : 'none'; });
   const inputRow = document.getElementById('mx-input-row');
@@ -3240,9 +3240,9 @@ function replyQuoteHtml(m) {
 const MX_EMOJI_RE = /(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|(?![\u00A9\u00AE\u2122])\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?)*)/gu;
 function mxBigEmojiCount(text) {
   const t = String(text || '').replace(/\s+/g, '');
-  if (!t || t.length > 24) return 0;
+  if (!t || t.length > 48) return 0;
   const found = t.match(MX_EMOJI_RE);
-  if (!found || found.length > 2) return 0;
+  if (!found || found.length > 5) return 0;
   return t.replace(MX_EMOJI_RE, '') === '' ? found.length : 0;
 }
 function mxDayKey(iso) { const d = iso ? new Date(iso) : new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
@@ -3315,6 +3315,25 @@ function mxMediaLost(el) {
   box.textContent = 'Файл недоступен';
   el.replaceWith(box);
 }
+/** Стикер — картинка, отправленная из редактора стикеров (clientId начинается с «stk_»): без рамки и фона баббла. */
+function mxIsSticker(m) { return !!(m && m.kind === 'IMAGE' && !m.viewOnce && typeof m.clientId === 'string' && m.clientId.indexOf('stk_') === 0); }
+const MX_TICK_SVG = {
+  clock: '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.8V8l2.2 1.4"/></svg>',
+  one: '<svg viewBox="0 0 18 12" width="16" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l3.4 3.4L12 2.5"/></svg>',
+  two: '<svg viewBox="0 0 22 12" width="20" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 6.5l3.4 3.4L11.5 2.5"/><path d="M8.2 8.6l1.3 1.3L16 2.5"/></svg>'
+};
+/** Статус своего сообщения: часы — отправляется; одна галочка — сервер принял и сохранил; две — прочитано (по серверному lastReadAt собеседника). */
+function mxMsgIsRead(m) {
+  const meta = (typeof currentChatMeta !== 'undefined' && currentChatMeta) || null;
+  const at = meta && meta.peerReadAt ? Date.parse(meta.peerReadAt) : NaN;
+  return !isNaN(at) && !!m.createdAt && Date.parse(m.createdAt) <= at;
+}
+function mxTickHtml(m) {
+  if (!m.outgoing || m.kind === 'CALL') return '';
+  if (m.pending) return '<span class="mx-tick pend" title="Отправляется">' + MX_TICK_SVG.clock + '</span>';
+  const read = mxMsgIsRead(m);
+  return '<span class="mx-tick ' + (read ? 'read' : 'sent') + '" title="' + (read ? 'Прочитано' : 'Отправлено') + '">' + (read ? MX_TICK_SVG.two : MX_TICK_SVG.one) + '</span>';
+}
 function renderMessages(id) {
   const c = document.getElementById('messages-container');
   const msgs = messages[id]||[];
@@ -3328,14 +3347,14 @@ function renderMessages(id) {
     const cls = ['msg', m.outgoing?'mo':'mi'];
     if (m.kind === 'TEXT' && mxBigEmojiCount(m.text)) cls.push('mx-emoji-only');
     if (m.kind === 'VIDEO_NOTE' && !m.viewOnce) cls.push('mx-vn');
-    if (m.kind === 'IMAGE' && !m.viewOnce) cls.push('mx-photo');
+    if (m.kind === 'IMAGE' && !m.viewOnce) cls.push(mxIsSticker(m) ? 'mx-sticker' : 'mx-photo');
     if (m.kind === 'VIDEO' && !m.viewOnce) cls.push('mx-media');
     if (m.viewOnce) cls.push('mx-once-msg');
     if (m.kind === 'TEXT') cls.push('mx-tm');   // текст + время в одном потоке (Telegram)
     const senderHtml = (isGroup && !m.outgoing && m.senderName) ? `<div class="mx-sender">${esc(m.senderName)}</div>` : '';
     const fwdHtml = m.forwardedFrom ? `<div class="mx-fwd">Переслано от ${esc(m.forwardedFrom)}</div>` : '';
     const editedHtml = m.editedAt ? '<span class="mx-edited">ред.</span>' : '';
-    return `${daySep}<div class="${cls.join(' ')}" data-id="${esc(m.id)}" data-day="${day}"${m.pending?' style="opacity:.6"':''} onclick="mxOpenReactions('${esc(m.id)}', event)" oncontextmenu="event.preventDefault();mxOpenContextMenu('${esc(m.id)}', event)">${senderHtml}${fwdHtml}${replyQuoteHtml(m)}${bubbleBodyHtml(m)}${reactionsHtml(m)}${mxCommentBtnHtml(m)}<div class="mt">${editedHtml}${esc(m.time)}</div></div>`;
+    return `${daySep}<div class="${cls.join(' ')}" data-id="${esc(m.id)}" data-day="${day}"${m.pending?' style="opacity:.6"':''} onclick="mxOpenReactions('${esc(m.id)}', event)" oncontextmenu="event.preventDefault();mxOpenContextMenu('${esc(m.id)}', event)">${senderHtml}${fwdHtml}${replyQuoteHtml(m)}${bubbleBodyHtml(m)}${reactionsHtml(m)}${mxCommentBtnHtml(m)}<div class="mt">${editedHtml}${esc(m.time)}${mxTickHtml(m)}</div></div>`;
   }).join('');
   c.scrollTop = c.scrollHeight;
   if (window.mxAfterRender) window.mxAfterRender(c, id); // плавающая дата и кнопка «вниз»
@@ -5592,7 +5611,7 @@ function mxVideoNoteToggle(wrap) {
 }
 async function mxCameraOpen() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { showToast('Камера недоступна в этом браузере'); return; }
-  mxCam = { facing: 'user', mode: 'circle', chunks: [], blob: null, photoBlob: null, recording: false, elapsed: 0, timer: null };
+  mxCam = { facing: 'user', deviceId: null, mode: 'circle', chunks: [], blob: null, photoBlob: null, recording: false, elapsed: 0, timer: null };
   document.getElementById('mx-camera').classList.add('active');
   document.getElementById('mx-camera').classList.remove('photo', 'recording');
   document.getElementById('mx-mode-circle').classList.add('on');
@@ -5601,15 +5620,39 @@ async function mxCameraOpen() {
   document.getElementById('mx-cam-review').style.display = 'none';
   await mxCameraStartStream();
 }
+/** Камера для кружка/фото: без ручного выбора HD — берём максимум, который отдаёт устройство, с каскадом запасных вариантов. */
 async function mxCameraStartStream() {
   if (!mxCam) return;
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: Object.assign({ facingMode: mxCam.facing }, mxHdPref() ? { width: { ideal: 1920 }, height: { ideal: 1080 } } : { width: { ideal: 640 }, height: { ideal: 480 } }), audio: mxCam.mode === 'circle' });
-    mxCam.stream = stream;
-    const video = document.getElementById('mx-cam-video');
-    video.srcObject = stream;
-    video.classList.toggle('mirror', mxCam.facing === 'user');
-  } catch (e) { showToast('Нет доступа к камере'); mxCameraClose(); }
+  const wantAudio = mxCam.mode === 'circle';
+  // слабые устройства (≤4 ядер или ≤2 ГБ памяти) не просим Full HD — запись плавнее и файл меньше
+  const weak = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) || (navigator.deviceMemory && navigator.deviceMemory <= 2);
+  const sizes = weak ? [[1280, 720], [960, 540], [640, 480]] : [[1920, 1080], [1280, 720], [960, 540], [640, 480]];
+  const open = (o) => (window.MxCamera ? MxCamera.open(o) : navigator.mediaDevices.getUserMedia({ video: { facingMode: o.facing, width: { ideal: o.width }, height: { ideal: o.height } }, audio: !!o.audio }));
+  let stream = null, err = null, noMic = false;
+  for (const [w, h] of sizes.concat([[0, 0]])) {
+    try { stream = await open({ facing: mxCam.facing, deviceId: mxCam.deviceId, width: w, height: h, fps: 30, audio: wantAudio }); break; }
+    catch (e) { err = e; if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) break; }
+  }
+  if (!stream && wantAudio && err && (err.name === 'NotAllowedError' || err.name === 'NotFoundError')) {
+    // не понять, чего не хватает — камеры или микрофона: пробуем без звука
+    try { stream = await open({ facing: mxCam.facing, deviceId: mxCam.deviceId, width: 1280, height: 720, fps: 30, audio: false }); noMic = true; } catch (e2) { err = err || e2; }
+  }
+  if (!mxCam) { if (stream) stream.getTracks().forEach(t => t.stop()); return; }   // пока ждали, окно закрыли
+  if (!stream) {
+    const n = err && err.name;
+    showToast(n === 'NotAllowedError' || n === 'SecurityError' ? 'Нет доступа к камере. Разрешите её в настройках браузера'
+      : n === 'NotFoundError' || n === 'OverconstrainedError' ? 'Камера не найдена'
+      : n === 'NotReadableError' ? 'Камера занята другим приложением' : 'Не удалось запустить камеру');
+    mxCameraClose(); return;
+  }
+  if (noMic) showToast('Нет доступа к микрофону — кружок запишется без звука');
+  mxCam.stream = stream;
+  const vt = stream.getVideoTracks()[0], st = (vt && vt.getSettings && vt.getSettings()) || {};
+  mxCam.deviceId = st.deviceId || mxCam.deviceId;
+  if (st.facingMode === 'user' || st.facingMode === 'environment') mxCam.facing = st.facingMode;
+  const video = document.getElementById('mx-cam-video');
+  video.srcObject = stream;
+  video.classList.toggle('mirror', mxCam.facing === 'user');
 }
 function mxCameraClose() {
   if (mxCam) {
@@ -5627,7 +5670,11 @@ function mxCameraClose() {
 }
 async function mxCameraFlip() {
   if (!mxCam || mxCam.recording) return;
-  mxCam.facing = mxCam.facing === 'user' ? 'environment' : 'user';
+  try {
+    const track = mxCam.stream && mxCam.stream.getVideoTracks()[0];
+    if (window.MxCamera) { const nx = await MxCamera.next(track, mxCam.facing); mxCam.facing = nx.facing; mxCam.deviceId = nx.deviceId || null; }
+    else { mxCam.facing = mxCam.facing === 'user' ? 'environment' : 'user'; mxCam.deviceId = null; }
+  } catch (e) { showToast(e && e.name === 'SingleCamera' ? 'Другой камеры на устройстве нет' : 'Не удалось переключить камеру'); return; }
   if (mxCam.stream) mxCam.stream.getTracks().forEach(t => t.stop());
   await mxCameraStartStream();
 }
@@ -5691,7 +5738,7 @@ function mxCameraStartRecording() {
     try { mxCam.mirror = mxMirroredStream(mxCam.stream, document.getElementById('mx-cam-video')); source = mxCam.mirror.stream; }
     catch (e) { mxCam.mirror = null; source = mxCam.stream; }
   }
-  try { recorder = new MediaRecorder(source, Object.assign(mime ? { mimeType: mime } : {}, mxRecorderBitrates(mxHdPref()))); }
+  try { recorder = new MediaRecorder(source, Object.assign(mime ? { mimeType: mime } : {}, mxRecorderBitrates(true))); }
   catch (e) { if (mxCam.mirror) { mxCam.mirror.stop(); mxCam.mirror = null; } showToast('Запись видео не поддерживается'); return; }
   mxCam.recorder = recorder; mxCam.chunks = []; mxCam.recording = true; mxCam.elapsed = 0;
   recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) mxCam.chunks.push(e.data); };
@@ -5747,7 +5794,7 @@ async function mxCameraSend() {
       const saved = await MchatAPI.sendMessage(chatId, '', MchatAPI.newClientId(), { kind: 'IMAGE', mediaId: media.id });
       onIncomingMessage(saved);
     } else if (mxCam.blob) {
-      const hd = mxHdPref();
+      const hd = true;   // кружок всегда в лучшем качестве, которое дала камера (в пределах лимита размера)
       showToast('Сжимаю видео…');
       const vn = await mxCompressVideoBlob(mxCam.blob, hd, mxCam.elapsed);
       const media = await MchatAPI.uploadMedia('videonote', vn, { duration: mxCam.elapsed, hd: hd });

@@ -179,20 +179,8 @@
     document.querySelectorAll('.mx-hd-btn[data-hd-toggle]').forEach((b) => b.classList.toggle('on', window.mxHdPref()));
   }
   function mountHdButtons() {
-    const top = document.querySelector('#mx-camera .mx-cam-top');
-    if (top && !$('mx-cam-hd')) {
-      const b = document.createElement('button');
-      b.id = 'mx-cam-hd'; b.type = 'button'; b.className = 'mx-hd-btn'; b.dataset.hdToggle = '1'; b.textContent = 'HD';
-      b.title = 'HD';
-      b.onclick = async () => {
-        if (mxCam && mxCam.recording) return;
-        mxSetHdPref(!mxHdPref());
-        toast(mxHdPref() ? 'HD: высокое качество, до 2 МБ' : 'Обычное качество: до 200 КБ');
-        if (mxCam && mxCam.stream) { mxCam.stream.getTracks().forEach((t) => t.stop()); await mxCameraStartStream(); }   // новое разрешение
-      };
-      const timer = top.querySelector('.mx-cam-timer');
-      top.insertBefore(b, timer ? timer.nextSibling : top.lastElementChild);
-    }
+    // В кружке/фото из чата выбор HD убран: качество подбирается автоматически под камеру и устройство
+    const oldHd = $('mx-cam-hd'); if (oldHd) oldHd.remove();
     const sc = $('sc-preview');
     if (sc && !$('sc-hd')) {
       const b = document.createElement('button');
@@ -486,6 +474,7 @@
     ['🐶', '🐶🐱🐭🐹🐰🦊🐻🐼🐨🐯🦁🐮🐷🐸🐵🙈🙉🙊🐔🐧🐦🐤🦆🦅🦉🦇🐺🐗🐴🦄🐝🐛🦋🐌🐞🐢🐍🦖🐙🦑🐠🐬🐳🦈'],
     ['🚗', '🚗🚕🚙🚌🏎️🚓🚑🚒🚜🏍️🚲✈️🚀🛸🚁⛵🚢🏠🏰🗼🗽🌋🗻🏖️🏝️⏰⌚📱💻🖥️📷🔋💡🔑🔒📌📎✏️📚'],
   ];
+  window.MX_EMOJI_SETS = EMOJI_SETS;   // та же панель эмодзи используется и в поле ввода
   const seg = (typeof Intl !== 'undefined' && Intl.Segmenter) ? new Intl.Segmenter('en', { granularity: 'grapheme' }) : null;
   const split = (s) => seg ? Array.from(seg.segment(s), (x) => x.segment) : Array.from(s);
 

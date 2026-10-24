@@ -166,7 +166,8 @@
       if (chip) window.mxReactionList(chip.dataset.mid, chip.dataset.emoji);
       else {
         const id = tile ? tile.dataset.mid : msgEl.dataset.id;
-        if (typeof window.mxOpenContextMenu === 'function') window.mxOpenContextMenu(id, { currentTarget: tile || msgEl, target: tile || msgEl });
+        if (typeof window.mxSelPress === 'function') window.mxSelPress(id);
+        else if (typeof window.mxOpenContextMenu === 'function') window.mxOpenContextMenu(id, { currentTarget: tile || msgEl, target: tile || msgEl });
       }
     }, 450);
     target._lp = true;
@@ -175,7 +176,7 @@
   ['pointerup', 'pointercancel', 'scroll'].forEach((t) => document.addEventListener(t, lpClear, true));
   // после срабатывания долгого нажатия «проглатываем» клик и системное контекстное меню
   ['click', 'contextmenu'].forEach((t) => document.addEventListener(t, (e) => {
-    if (Date.now() - lpFired < 700) { e.stopPropagation(); e.preventDefault(); return; }
+    if (Date.now() - lpFired < 700) { e.stopImmediatePropagation(); e.stopPropagation(); e.preventDefault(); return; }   // клик после долгого нажатия не должен сработать как короткий тап
     if (t === 'contextmenu') {
       const chip = e.target.closest && e.target.closest('.mx-chip[data-mid]');
       if (chip) { e.stopPropagation(); e.preventDefault(); window.mxReactionList(chip.dataset.mid, chip.dataset.emoji); }
@@ -392,7 +393,7 @@
     try {
       const file = new File([blob], 'sticker.' + (blob.type === 'image/webp' ? 'webp' : 'png'), { type: blob.type });
       const media = await MchatAPI.uploadMedia('image', file, { name: file.name });
-      const saved = await MchatAPI.sendMessage(chatId, '', MchatAPI.newClientId(), { kind: 'IMAGE', mediaId: media.id });
+      const saved = await MchatAPI.sendMessage(chatId, '', 'stk_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), { kind: 'IMAGE', mediaId: media.id });   // «stk_» — признак стикера (без рамки баббла)
       onIncomingMessage(saved);
       return true;
     } catch (e) { toast(MchatAPI.errorText(e)); return false; }
@@ -586,9 +587,10 @@
     const ui = document.createElement('div'); ui.id = 'mx-hold'; ui.className = 'mx-hold';
     ui.innerHTML = '<div class="mx-hold-lock">' + LOCK_OPEN + '</div><div class="mx-hold-arrow">⌃</div><div class="mx-hold-cancel">‹ Влево — отмена</div>';
     appEl().appendChild(ui);
-    const rec = $('mx-rec'); const ar = appEl().getBoundingClientRect();
-    const rr = rec ? rec.getBoundingClientRect() : { top: ar.bottom - 90 };
-    ui.style.bottom = Math.max(70, ar.bottom - rr.top + 8) + 'px';
+    const circle = hold && hold.mode === 'circle';
+    const ar = appEl().getBoundingClientRect();
+    if (circle && $('mx-camera')) { $('mx-camera').appendChild(ui); ui.style.bottom = '120px'; ui.style.zIndex = '9999'; }
+    else { const rec = $('mx-rec'); const rr = rec ? rec.getBoundingClientRect() : { top: ar.bottom - 90 }; ui.style.bottom = Math.max(70, ar.bottom - rr.top + 8) + 'px'; }
     hold.ui = ui;
   }
   function hideHoldUi() { const ui = $('mx-hold'); if (ui) { ui.classList.add('out'); setTimeout(() => ui.remove(), 260); } }
@@ -601,8 +603,7 @@
       ui.classList.add('locked');
       setTimeout(hideHoldUi, 700);
     }
-    const rec = $('mx-rec'); if (rec) rec.classList.add('locked');
-    const hint = document.querySelector('#mx-rec-live .mx-rec-hint'); if (hint) hint.textContent = 'Запись зафиксирована';
+    if (hold.mode !== 'circle') { const rec = $('mx-rec'); if (rec) rec.classList.add('locked'); const hint = document.querySelector('#mx-rec-live .mx-rec-hint'); if (hint) hint.textContent = 'Запись зафиксирована'; }
   }
   function holdMove(e) {
     if (!hold || hold.locked) return;
@@ -615,7 +616,7 @@
       cn.style.transform = 'translateX(' + (-Math.min(l, CANCEL_DX)).toFixed(1) + 'px)'; cn.style.opacity = String(1 - Math.min(1, l / CANCEL_DX) * 0.6);
     }
     if (-dy >= LOCK_DY) lockNow();
-    else if (-dx >= CANCEL_DX) { const h = hold; hold = null; endHoldListeners(); vibrate([15, 40, 15]); hideHoldUi(); if (mxRec) window.mxVoiceCancel(); h.cancelled = true; }
+    else if (-dx >= CANCEL_DX) { const h = hold; hold = null; endHoldListeners(); vibrate([15, 40, 15]); hideHoldUi(); if (h.mode === 'circle') window.mxCircleCancel(); else if (mxRec) window.mxVoiceCancel(); h.cancelled = true; }
   }
   function holdUp() {
     const h = hold; endHoldListeners();
@@ -624,11 +625,13 @@
     if (h.locked) return;                                     // зафиксировано — дальше кнопками «стоп / отправить»
     hideHoldUi();
     const finish = () => {
+      if (h.mode === 'circle') { window.mxCircleStop(); return; }
       if (!mxRec) return;
       if (mxRec.elapsed < 1 && Date.now() - mxRec.startedAt < 900) { window.mxVoiceCancel(); toast('Слишком короткое сообщение'); return; }
       window.mxVoiceStopToPreview();
     };
-    if (mxRec) finish(); else h.pendingRelease = finish;
+    const ready = h.mode === 'circle' ? (typeof mxCam !== 'undefined' && !!mxCam && !!mxCam.recording) : !!mxRec;
+    if (ready) finish(); else h.pendingRelease = finish;
   }
   function endHoldListeners() {
     document.removeEventListener('pointermove', holdMove, true);
@@ -641,15 +644,16 @@
     mic.addEventListener('pointerdown', (e) => {
       window.__mxHoldClick = false;
       if (e.button > 0 || mxRec) return;
-      const h = { x: e.clientX, y: e.clientY, locked: false, started: false, ui: null, t: null };
+      const h = { x: e.clientX, y: e.clientY, locked: false, started: false, ui: null, t: null, mode: mic.dataset.mode === 'circle' ? 'circle' : 'voice' };
       pend = h;
       h.t = setTimeout(async () => {
         pend = null; h.started = true; hold = h; window.__mxHoldClick = true;
         document.addEventListener('pointermove', holdMove, true);
         ['pointerup', 'pointercancel', 'touchend', 'touchcancel', 'mouseup'].forEach((t) => document.addEventListener(t, holdUp, true));
         vibrate(10);
-        await window.mxVoiceStart();
-        if (!mxRec) { hold = null; endHoldListeners(); return; }       // нет доступа к микрофону
+        let ok;
+        if (h.mode === 'circle') ok = await window.mxCircleStart(); else { await window.mxVoiceStart(); ok = !!mxRec; }
+        if (!ok) { hold = null; endHoldListeners(); hideHoldUi(); return; }       // нет доступа к микрофону/камере
         if (hold === h) showHoldUi();
         if (h.pendingRelease) h.pendingRelease();
       }, HOLD_MS);
@@ -658,7 +662,12 @@
     mic.addEventListener('pointerup', cancelPend); mic.addEventListener('pointercancel', cancelPend);
     mic.addEventListener('pointermove', (ev) => { if (pend && Math.hypot(ev.clientX - pend.x, ev.clientY - pend.y) > 12) cancelPend(); });
     // клик после удержания не должен второй раз запускать запись
-    mic.addEventListener('click', (e) => { if (window.__mxHoldClick) { window.__mxHoldClick = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+    // короткий тап (не удержание) — переключает режим «голосовое ⇄ кружок»; после удержания клик проглатывается
+    mic.addEventListener('click', (e) => {
+      e.stopImmediatePropagation(); e.preventDefault();
+      if (window.__mxHoldClick) { window.__mxHoldClick = false; return; }
+      if (typeof window.mxMicToggleMode === 'function') window.mxMicToggleMode();
+    }, true);
   }
 
   /* ═════════ 6. Альбомы (несколько фото/видео одним блоком) ═════════ */

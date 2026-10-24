@@ -810,7 +810,36 @@
 "Выйти из канала…": "Leave channel…",
 "Выйти из группы…": "Leave group…",
 "Покинуть канал?": "Leave channel?",
-"Покинуть группу?": "Leave group?"
+"Покинуть группу?": "Leave group?",
+"Нет доступа к камере. Разрешите её в настройках браузера": "No camera access. Allow it in your browser settings",
+"Камера занята другим приложением": "The camera is being used by another app",
+"Не удалось запустить камеру": "Could not start the camera",
+"Нет доступа к микрофону — кружок запишется без звука": "No microphone access — the circle will be recorded without sound",
+"Одноразовое: каждый участник откроет один раз": "View once: each member can open it one time",
+"Прочитано": "Read",
+"Отправлено": "Sent",
+"Нечего копировать": "Nothing to copy",
+"Эти сообщения нельзя переслать": "These messages can't be forwarded",
+"Переслано:": "Forwarded:",
+"Не удалось:": "Failed:",
+"Удалить сообщения (": "Delete messages (",
+"Удалить сообщение?": "Delete message?",
+"Не удалось удалить:": "Could not delete:",
+"Панель эмодзи недоступна": "Emoji panel is unavailable",
+"Видеосообщение (кружок)": "Video message (circle)",
+"Слишком короткое видео": "Video is too short",
+"Комментарий удалён": "Comment deleted",
+"Ответ @": "Reply to @",
+"Комментарий, на который вы отвечаете, больше не существует": "The comment you are replying to no longer exists",
+"Одноразовые медиа доступны только в личных и групповых чатах": "View-once media is only available in private and group chats",
+"Эмодзи": "Emoji",
+"Отменить ответ": "Cancel reply",
+"Нравится": "Like",
+"Вперёд": "Forward",
+"Отправляется": "Sending",
+"Содержимое скрыто": "Content hidden",
+"Все": "All",
+"Одноразовое": "View once"
 };
 
   const CY = /[А-Яа-яЁё]/;
@@ -845,6 +874,7 @@
   const durTr = (s) => s.replace(/секунд[уы]?/g, look('секунду') || 'sec').replace(/минут[уы]?/g, look('минуту') || 'min');
 
   const RULES = [
+    R(/^Выбрано (\d+)$/, { en: 'Selected {0}', es: 'Seleccionados: {0}', tr: 'Seçilen: {0}', zh: '已选择 {0}' }),
     R(/^(\d+) ч осталось$/, { en: '{0}h left', es: 'quedan {0} h', tr: '{0} sa kaldı', zh: '剩余 {0} 小时' }),
     R(/^(\d+) подписчик(?:а|ов)?$/, { en: (m) => plural(m[1], 'follower'), es: (m) => plural(m[1], 'follower'), tr: (m) => plural(m[1], 'follower'), zh: (m) => plural(m[1], 'follower') }),
     R(/^(\d+) участник(?:а|ов)?$/, { en: (m) => plural(m[1], 'member'), es: (m) => plural(m[1], 'member'), tr: (m) => plural(m[1], 'member'), zh: (m) => plural(m[1], 'member') }),
