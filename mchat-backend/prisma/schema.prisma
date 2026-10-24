@@ -104,6 +104,8 @@ model User {
   posts          Post[]
   postLikes      PostLike[]
   postComments   PostComment[]
+  postCommentLikes PostCommentLike[]
+  viewOnceViews  ViewOnceView[]
   postReposts    PostRepost[]
   stories        Story[]
   verifyRequests VerifyRequest[]
@@ -248,6 +250,7 @@ model Message {
 
   reactions Reaction[]
   hides     MessageHide[]
+  viewOnceViews ViewOnceView[]
   comments  ChannelComment[]
 
   @@unique([senderId, clientId])
@@ -376,6 +379,13 @@ model PostComment {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   text      String
   createdAt DateTime @default(now())
+  /// ответ на другой комментарий; если оригинал удалят — ссылка обнулится, а снимок автора и текста останется
+  replyToId       Int?
+  replyTo         PostComment?  @relation("CommentReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies         PostComment[] @relation("CommentReplies")
+  replyToUsername String?
+  replyToText     String?
+  likes           PostCommentLike[]
 
   @@index([postId, createdAt])
 }
@@ -419,6 +429,29 @@ model StoryLike {
   user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([storyId, userId])
+}
+
+model PostCommentLike {
+  commentId Int
+  comment   PostComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  @@id([commentId, userId])
+}
+
+/// Одноразовое медиа: у каждого получателя своё состояние просмотра (в группах получателей много)
+model ViewOnceView {
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  openedAt  DateTime @default(now())
+  closedAt  DateTime?
+
+  @@id([messageId, userId])
+  @@index([messageId])
 }
 
 model StoryComment {
