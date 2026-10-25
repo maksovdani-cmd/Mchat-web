@@ -144,6 +144,7 @@
   if (typeof window.goTo === 'function') { const _g = window.goTo; window.goTo = function () { if (sel.on) selExit(); return _g.apply(this, arguments); }; }
 
   async function selCopy() {
+    if (window.mxIsProtectedChat && window.mxIsProtectedChat()) { toast('Копирование запрещено в приватном чате'); return; }
     const parts = orderedSel().map((m) => (m.kind === 'TEXT' ? m.text : (m.kind === 'IMAGE' || m.kind === 'VIDEO' || m.kind === 'FILE') && m.text ? m.text : '')).filter(Boolean);
     if (!parts.length) { toast('Нечего копировать'); return; }
     const text = parts.join('\n');
@@ -154,6 +155,7 @@
     } catch (e) { toast('Не удалось скопировать'); }
   }
   function selForward() {
+    if (window.mxIsProtectedChat && window.mxIsProtectedChat()) { toast('Пересылка запрещена в приватном чате'); return; }
     const list = orderedSel().filter((m) => !m.viewOnce && m.kind !== 'CALL');
     if (!list.length) { toast('Эти сообщения нельзя переслать'); return; }
     const skipped = sel.ids.size - list.length;

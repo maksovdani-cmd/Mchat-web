@@ -1,0 +1,90 @@
+/* Mchat · серия 6 — приватные каналы, заявки, коллекции стикеров, @упоминания. Палитра и шрифты — из :root проекта. */
+
+/* ── Стикер в чате: компактный, квадратный, средний, без рамки баббла ── */
+.msg.mx-sticker{max-width:136px !important;}
+.msg.mx-sticker .mx-img,.mx-stk-img{width:128px !important;height:128px !important;max-width:128px !important;max-height:128px !important;object-fit:contain !important;border-radius:0 !important;background:none !important;-webkit-user-drag:none;user-select:none;-webkit-touch-callout:none;pointer-events:none;}
+
+/* ── Панель смайликов: переключатель «Эмодзи | Стикеры» ── */
+.mx6-seg{display:flex;gap:4px;background:var(--surf);border-radius:12px;padding:3px;margin-bottom:8px;flex-shrink:0;}
+.mx6-seg button{flex:1;border:none;background:none;color:var(--text2);font-family:var(--font);font-size:13px;font-weight:700;padding:7px 0;border-radius:9px;cursor:pointer;}
+.mx6-seg button.on{background:var(--bg2);color:var(--text);}
+.mx-cemoji.mx6-stk-open{max-height:min(46vh,380px);}
+.mx6-st{display:none;flex-direction:column;min-height:0;flex:1;gap:6px;}
+.mx6-st-chips{display:flex;gap:6px;overflow-x:auto;flex-shrink:0;padding-bottom:2px;scrollbar-width:none;}
+.mx6-st-chips::-webkit-scrollbar{display:none;}
+.mx6-chip{flex-shrink:0;border:none;background:var(--surf);color:var(--text2);font-family:var(--font);font-size:12.5px;font-weight:700;padding:7px 12px;border-radius:14px;cursor:pointer;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.mx6-chip.on{background:var(--accent);color:#fff;}
+.mx6-chip.plus{font-size:16px;line-height:1;padding:6px 12px;}
+.mx6-st-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--text2);flex-shrink:0;}
+.mx6-st-bar>span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.mx6-st-act{display:flex;gap:10px;flex-shrink:0;}
+.mx6-st-act button{border:none;background:none;color:var(--accent2);font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer;padding:2px 0;}
+.mx6-st-act button.danger{color:#f43f5e;}
+.mx6-st-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:6px;overflow-y:auto;min-height:0;flex:1;touch-action:pan-y;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;padding:2px;}
+.mx6-st-grid.pack{max-height:46vh;flex:none;}
+.mx6-st-it{position:relative;aspect-ratio:1/1;border-radius:12px;background:var(--surf);display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:pan-y;}
+.mx6-st-it img{width:88%;height:88%;object-fit:contain;pointer-events:none;-webkit-user-drag:none;}
+.mx6-st-it .x{position:absolute;top:2px;right:2px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,.65);color:#fff;font-size:11px;cursor:pointer;}
+.mx6-st-grid.edit .mx6-st-it{animation:mx6wob .5s ease-in-out infinite alternate;}
+@keyframes mx6wob{from{transform:rotate(-1.4deg)}to{transform:rotate(1.4deg)}}
+/* лупа: копии стикеров поверх всего, чтобы увеличение не обрезалось */
+.mx6-loupe{position:fixed;inset:0;z-index:3500;pointer-events:none;}
+.mx6-loupe img{position:fixed;object-fit:contain;transform-origin:center center;will-change:transform;filter:drop-shadow(0 6px 14px rgba(0,0,0,.45));-webkit-user-drag:none;}
+
+/* ── Карточка приглашения, окна выбора ── */
+.mx6-join{z-index:2400 !important;}
+.mx6-join-box{background:var(--bg);border-radius:26px;padding:22px 20px 16px;width:min(340px,92vw);display:flex;flex-direction:column;align-items:center;gap:8px;box-shadow:0 20px 60px rgba(0,0,0,.55);max-height:88vh;overflow-y:auto;}
+.mx6-av{border-radius:50%;background:var(--surf2);display:inline-flex;align-items:center;justify-content:center;font-weight:800;color:var(--text);overflow:hidden;flex-shrink:0;}
+.mx6-av img{width:100%;height:100%;object-fit:cover;display:block;}
+.mx6-join-name{font-family:var(--font);font-size:19px;font-weight:800;color:var(--text);text-align:center;word-break:break-word;}
+.mx6-join-sub{font-size:13px;color:var(--text2);text-align:center;}
+.mx6-lock{display:inline-flex;align-items:center;gap:4px;color:var(--accent2);font-weight:700;}
+.mx6-join-desc{font-size:13.5px;color:var(--text);opacity:.85;text-align:center;line-height:1.4;word-break:break-word;}
+.mx6-join-note{font-size:12.5px;color:var(--text2);text-align:center;line-height:1.4;}
+.mx6-btn{width:100%;border:none;background:var(--surf);color:var(--text);font-family:var(--font);font-size:14.5px;font-weight:700;padding:12px;border-radius:14px;cursor:pointer;}
+.mx6-btn.pri{background:var(--accent);color:#fff;}
+.mx6-btn:disabled{opacity:.55;cursor:default;}
+.mx6-row{display:flex;gap:8px;width:100%;}
+.mx6-inp{width:100%;box-sizing:border-box;background:var(--surf);border:none;outline:none;border-radius:12px;padding:12px 14px;color:var(--text);font-family:var(--font);font-size:14px;display:none;}
+.mx6-ask-list{display:flex;flex-direction:column;gap:4px;max-height:36vh;overflow-y:auto;}
+.mx6-ask-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:var(--surf);cursor:pointer;font-size:14px;color:var(--text);}
+.mx6-ask-row.on{outline:2px solid var(--accent);}
+.mx6-ask-row input{accent-color:var(--accent);}
+.mx6-ask-row span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mx6-ask-row small{color:var(--text2);}
+.mx6-empty{padding:16px 10px;text-align:center;color:var(--text2);font-size:13px;line-height:1.5;grid-column:1/-1;}
+
+/* ── Плашка-уведомление о заявке (вверху, как «остров») ── */
+#mx6-reqs{position:absolute;left:10px;right:10px;top:calc(8px + env(safe-area-inset-top));z-index:2300;pointer-events:none;display:flex;justify-content:center;}
+.mx6-req{pointer-events:auto;width:min(440px,100%);background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:10px 12px;box-shadow:0 10px 34px rgba(0,0,0,.5);animation:mx6in .22s ease-out;}
+@keyframes mx6in{from{transform:translateY(-14px);opacity:0}to{transform:none;opacity:1}}
+.mx6-req-h{display:flex;align-items:center;gap:10px;}
+.mx6-req-t{display:flex;flex-direction:column;min-width:0;flex:1;}
+.mx6-req-t b{font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.mx6-req-t small{font-size:12px;color:var(--text2);line-height:1.3;}
+.mx6-req-n{font-size:12px;font-weight:800;color:#fff;background:var(--accent);border-radius:10px;padding:2px 8px;cursor:pointer;}
+.mx6-req-a{display:flex;gap:8px;margin-top:9px;}
+.mx6-req-a button{flex:1;border:none;background:var(--surf);color:var(--text);font-family:var(--font);font-size:13.5px;font-weight:700;padding:9px;border-radius:12px;cursor:pointer;}
+.mx6-req-a button.pri{background:var(--accent);color:#fff;}
+.mx6-req-a button:disabled{opacity:.5;}
+.mx6-rq-list{display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto;}
+.mx6-rq-row{display:flex;align-items:center;gap:10px;padding:8px 6px;border-radius:12px;background:var(--surf);}
+.mx6-mini{width:34px;height:34px;border-radius:50%;border:none;background:var(--surf2);color:var(--text);font-size:15px;cursor:pointer;flex-shrink:0;}
+.mx6-mini.pri{background:var(--accent);color:#fff;}
+
+/* ── @упоминания: список в поле ввода ── */
+.mx6-mi{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:10px;cursor:pointer;}
+.mx6-mi.on,.mx6-mi:active{background:var(--surf);}
+.mx6-mi-t{display:flex;flex-direction:column;min-width:0;}
+.mx6-mi-t b{font-size:13.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.mx6-mi-t small{font-size:11.5px;color:var(--text2);}
+#mx6-mention{right:12px;}
+
+/* ── Строгая приватность: нельзя выделять, копировать, скачивать; скриншот — пустой экран ── */
+.mx-prot #s-chat-open .msg,.mx-prot #s-chat-open .msg *,.mx-prot #avatar-fullscreen,.mx-prot #avatar-fullscreen *{-webkit-user-select:none !important;user-select:none !important;-webkit-touch-callout:none !important;}
+.mx-prot #messages-container img,.mx-prot #messages-container video,.mx-prot #avatar-fullscreen img{-webkit-user-drag:none;}
+.mx-prot .mx-vw-more,.mx-prot .mx-vw-menu,.mx-prot .mx-dl-btn{display:none !important;}
+.mx-prot-blank #messages-container,.mx-prot-blank #avatar-fullscreen,.mx-prot-blank #mx-once-viewer{visibility:hidden !important;}
+#mx6-wm{position:absolute;inset:0;z-index:600;pointer-events:none;overflow:hidden;display:flex;flex-wrap:wrap;align-content:space-around;justify-content:space-around;opacity:.07;transform:rotate(-24deg) scale(1.5);}
+#mx6-wm span{color:#fff;font-size:13px;font-weight:700;padding:18px 22px;white-space:nowrap;font-family:var(--font);}
+@media print{.mx-prot #app,.mx-prot #messages-container{display:none !important;}}

@@ -101,6 +101,9 @@ model User {
   following       Follow[]     @relation("Follower")
   followers       Follow[]     @relation("Following")
   channelComments ChannelComment[]
+  joinRequests    ChatJoinRequest[] @relation("JoinRequestUser")
+  stickerPacks    StickerPack[]     @relation("StickerPackOwner")
+  stickerPackSaves StickerPackSave[] @relation("StickerPackSaver")
   posts          Post[]
   postLikes      PostLike[]
   postComments   PostComment[]
@@ -184,6 +187,8 @@ model Chat {
   inviteCode    String?      @unique
   /// публичный канал: находится глобальным поиском, вступить можно одной кнопкой
   isPublic      Boolean      @default(false)
+  /// приватный канал/группа: вход по ссылке только через заявку, содержимое защищено (нельзя пересылать, копировать, скачивать)
+  isPrivate     Boolean      @default(false)
   /// закреплённое сообщение (одно на чат)
   pinnedMessageId String?
   /// исчезающие сообщения: через сколько секунд удалять (null — выключено). Сейчас используется значение 86400 (24 часа)
@@ -195,8 +200,72 @@ model Chat {
 
   members       ChatMember[]
   messages      Message[]
+  joinRequests  ChatJoinRequest[]
 
   @@index([lastMessageAt])
+}
+
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  DECLINED
+}
+
+/// Заявка на вступление в приватный канал/группу: пользователь перешёл по ссылке-приглашению и нажал «Отправить заявку».
+model ChatJoinRequest {
+  id          String            @id @default(cuid())
+  chatId      String
+  chat        Chat              @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User              @relation("JoinRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  status      JoinRequestStatus @default(PENDING)
+  createdAt   DateTime          @default(now())
+  decidedAt   DateTime?
+  decidedById String?
+
+  @@unique([chatId, userId])
+  @@index([chatId, status])
+}
+
+/// Коллекция (набор) стикеров. Принадлежит автору; любой пользователь может сохранить её себе целиком.
+model StickerPack {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation("StickerPackOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  stickers  Sticker[]
+  saves     StickerPackSave[]
+
+  @@index([ownerId])
+}
+
+model Sticker {
+  id        String      @id @default(cuid())
+  packId    String
+  pack      StickerPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+  mediaId   String
+  media     Media       @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  messages  Message[]
+
+  @@index([packId, createdAt])
+  @@index([mediaId])
+}
+
+/// «Скачал коллекцию целиком»: набор появился в личной библиотеке пользователя.
+model StickerPackSave {
+  userId    String
+  user      User        @relation("StickerPackSaver", fields: [userId], references: [id], onDelete: Cascade)
+  packId    String
+  pack      StickerPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  @@id([userId, packId])
+  @@index([packId])
 }
 
 model ChatMember {
@@ -237,6 +306,9 @@ model Message {
   viewOnce         Boolean   @default(false)
   viewOnceOpenedAt DateTime?
   viewOnceOpenedBy String?
+  /// стикер (картинка из коллекции стикеров) — рисуется без рамки баббла
+  stickerId String?
+  sticker   Sticker?  @relation(fields: [stickerId], references: [id], onDelete: SetNull)
   replyToId String?
   replyTo   Message?  @relation("Replies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies   Message[] @relation("Replies")
@@ -283,6 +355,7 @@ model Media {
   momentsMedia Moment[] @relation("MomentMedia")
   momentsTrack Moment[] @relation("MomentTrack")
   savedBy     SavedTrack[]
+  stickers    Sticker[]
 
   @@index([ownerId, kind])
 }

@@ -378,13 +378,17 @@
       let blob;
       try { blob = await toBlob(); } catch (er) { blob = null; }
       if (!blob) { toast('Не удалось создать стикер'); return; }
-      if (a.dataset.a === 'save') { try { await stkPut(blob); toast('Стикер сохранён'); } catch (er) { toast('Не удалось сохранить стикер'); } }
+      if (a.dataset.a === 'save') {
+        // коллекции стикеров (series6): спрашиваем, в какую коллекцию положить, и сохраняем на сервере
+        if (window.mxStickerSaveBlob) { a.disabled = true; const ok = await window.mxStickerSaveBlob(blob); a.disabled = false; if (ok) ov.remove(); }
+        else { try { await stkPut(blob); toast('Стикер сохранён'); } catch (er) { toast('Не удалось сохранить стикер'); } }
+      }
       else if (a.dataset.a === 'dl') {
         const f = new File([blob], 'sticker-' + Date.now() + '.' + (blob.type === 'image/webp' ? 'webp' : 'png'), { type: blob.type });
         const url = URL.createObjectURL(f);
         if (window.mxDownloadMedia) await window.mxDownloadMedia(url, f.name); else { const l = document.createElement('a'); l.href = url; l.download = f.name; l.click(); }
         setTimeout(() => URL.revokeObjectURL(url), 8000);
-      } else if (a.dataset.a === 'send') { a.disabled = true; const ok = await sendStickerBlob(blob); a.disabled = false; if (ok) ov.remove(); }
+      } else if (a.dataset.a === 'send') { a.disabled = true; const ok = window.mxStickerSendBlob ? await window.mxStickerSendBlob(blob) : await sendStickerBlob(blob); a.disabled = false; if (ok) ov.remove(); }
     });
   }
   window.mxMakeSticker = openSticker;

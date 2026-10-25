@@ -28,23 +28,36 @@ const preview = (d: MessageDTO) =>
   d.viewOnce ? '🔥 Одноразовое ' + (d.kind === 'VOICE' ? 'голосовое' : d.kind === 'IMAGE' ? 'фото' : 'видео') :
   d.kind !== 'TEXT' ? previewOf(d.kind, d.text) : d.text.length > 140 ? d.text.slice(0, 137) + '…' : d.text;
 
+const MENTION_RE = /(?:^|[^a-z0-9_])@([a-z0-9_]{3,20})(?![a-z0-9_])/gi;
+
 async function notifyRecipients(senderId: string, chatId: string, dto: MessageDTO) {
   const [sender, chat, others] = await Promise.all([
     prisma.user.findUnique({ where: { id: senderId }, select: { name: true } }),
     prisma.chat.findUnique({ where: { id: chatId }, select: { type: true, title: true } }),
     prisma.chatMember.findMany({
       where: { chatId, userId: { not: senderId } },
-      include: { user: { select: { id: true, notifyMessages: true } } },
+      include: { user: { select: { id: true, username: true, notifyMessages: true } } },
     }),
   ]);
   const direct = chat?.type === 'DIRECT';
   const title = direct ? sender?.name ?? 'Mchat' : chat?.title ?? 'Mchat';
   const body = direct ? preview(dto) : `${sender?.name ?? ''}: ${preview(dto)}`;
+  // @упоминания: в группе упомянутый получает уведомление, даже если чат заглушён (как в Telegram)
+  const mentioned = new Set<string>();
+  if (chat?.type === 'GROUP' && dto.kind === 'TEXT' && !dto.viewOnce) {
+    for (const m of dto.text.matchAll(MENTION_RE)) mentioned.add(m[1].toLowerCase());
+  }
   for (const m of others) {
-    if (isMutedNow(m)) continue; // уведомления этого чата/канала выключены (навсегда или на выбранное время)
+    const pinged = mentioned.has(m.user.username);
+    if (isMutedNow(m) && !pinged) continue; // уведомления этого чата/канала выключены (навсегда или на выбранное время)
     if (!m.user.notifyMessages) continue; // человек выключил уведомления о сообщениях
     if (isActive(m.userId)) continue; // смотрит в приложение — пуш не нужен
-    await sendPushToUser(m.userId, { title, body, tag: `chat:${chatId}`, data: { kind: 'message', chatId } });
+    await sendPushToUser(m.userId, {
+      title: pinged ? `${sender?.name ?? ''} упомянул(а) вас` : title,
+      body: pinged ? `${title}: ${preview(dto)}` : body,
+      tag: `chat:${chatId}`,
+      data: { kind: 'message', chatId },
+    });
   }
 }
 

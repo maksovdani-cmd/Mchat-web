@@ -22,6 +22,7 @@ import { purgeExpiredStories } from './services/posts';
 import { verificationRouter } from './routes/verification';
 import { callsRouter } from './routes/calls';
 import { supportRouter } from './routes/support';
+import { stickersRouter } from './routes/stickers';
 import { expireVerifications } from './services/verification';
 import { pushRouter } from './routes/push';
 import { titlesRouter } from './routes/titles';
@@ -124,6 +125,7 @@ app.use('/api/moments', momentsRouter);
 app.use('/api/verification', verificationRouter);
 app.use('/api/calls', callsRouter);
 app.use('/api/support', supportRouter);
+app.use('/api/stickers', stickersRouter);
 app.use('/api/titles', titlesRouter);
 app.use('/api', usersRouter); // /api/me, /api/users/*, /api/me/devices
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
@@ -132,7 +134,7 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
 app.use(
   express.static(path.join(__dirname, '..', 'public'), {
     setHeaders(res, filePath) {
-      if (/(sw\.js|index\.html|manifest\.webmanifest|mchat-api\.js|mchat-ext\.js|mchat-fixes\.js|mchat-fixes\.css|mchat-features\.js|mchat-features\.css|i18n\.js|masks\.js|script\.js|style\.css)$/.test(filePath)) {
+      if (/(sw\.js|index\.html|manifest\.webmanifest|mchat-api\.js|mchat-ext\.js|mchat-fixes\.js|mchat-fixes\.css|mchat-features\.js|mchat-features\.css|mchat-series[0-9]\.(js|css)|Mchat-series[0-9]\.(js|css)|i18n\.js|masks\.js|script\.js|style\.css)$/.test(filePath)) {
         res.setHeader('Cache-Control', 'no-cache');
       }
       if (filePath.endsWith('sw.js')) res.setHeader('Service-Worker-Allowed', '/');

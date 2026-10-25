@@ -27,6 +27,7 @@ const sendSchema = z.object({
   durationSec: z.number().min(0).max(3600).optional(),
   replyToId: id.optional(),
   viewOnce: z.boolean().optional(),
+  stickerId: id.optional(),
 });
 const chatIdSchema = z.object({ chatId: id });
 const momentId = z.object({ id: z.number().int().positive() });

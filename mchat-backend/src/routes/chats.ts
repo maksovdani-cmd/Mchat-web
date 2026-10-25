@@ -2,11 +2,12 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
-  addMembers, createGroupOrChannel, getChannelPreview, listShared, getChatDTO, getOrCreateDirectChat, getOrCreateSavedChat, joinByInvite, joinPublicChannel, listChats, listContacts,
+  addMembers, createGroupOrChannel, getChannelPreview, listShared, getChatDTO, getOrCreateDirectChat, getOrCreateSavedChat, joinPublicChannel, listChats, listContacts, mentionCandidatesForChat,
   clearChatForMe, hideChat, leaveChat, listMembers, listMessages, removeMember, searchPublicChannels, setChatAutoDelete, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
 } from '../services/chat';
 import { emitToChat, emitToUser, leaveUserFromChat } from '../realtime/hub';
 import { joinAllToChat, pinAndDispatch, readAndBroadcast, sendAndDispatch } from '../services/messaging';
+import { decideRequest, invitePreview, listAllPending, listRequests, requestJoin } from '../services/joinRequests';
 import { wrap } from '../utils/errors';
 
 export const chatsRouter = Router();
@@ -103,19 +104,62 @@ chatsRouter.post('/group', wrap(async (req, res) => {
     description: z.string().trim().max(200).regex(/^[^<>]*$/).optional(),
     usernames: z.array(z.string().max(40)).max(200).default([]),
     isPublic: z.boolean().optional(),
+    /** «Приватный канал/группа»: вход только по заявке, содержимое защищено */
+    isPrivate: z.boolean().optional(),
   }).parse(req.body);
-  const { chatId, memberIds } = await createGroupOrChannel(userId, b.type, b.title, b.description, b.usernames, b.isPublic ?? b.type === 'CHANNEL');
+  const { chatId, memberIds } = await createGroupOrChannel(userId, b.type, b.title, b.description, b.usernames, b.isPublic ?? b.type === 'CHANNEL', !!b.isPrivate);
   joinAllToChat(memberIds, chatId);
   res.json({ chat: await getChatDTO(userId, chatId) });
 }));
 
-/** Вход по ссылке-приглашению /join/<код>. */
+/** Карточка чата по ссылке-приглашению /join/<код>: что видит человек до вступления и какая кнопка ему нужна. */
+chatsRouter.get('/invite/:code', wrap(async (req, res) => {
+  const code = z.string().min(6).max(64).parse(req.params.code);
+  res.json(await invitePreview(authOf(req).userId, code));
+}));
+
+/**
+ * Вход по ссылке-приглашению. Обычная группа/канал — вступаем сразу ({status:'joined'}).
+ * Приватная — создаётся заявка ({status:'pending'}), чат откроется после решения владельца/админа.
+ */
 chatsRouter.post('/join', wrap(async (req, res) => {
   const { userId } = authOf(req);
   const { code } = z.object({ code: z.string().min(6).max(64) }).parse(req.body);
-  const chatId = await joinByInvite(userId, code);
-  joinAllToChat([userId], chatId);
-  res.json({ chat: await getChatDTO(userId, chatId) });
+  const r = await requestJoin(userId, code);
+  if (r.status === 'pending') return void res.json({ status: 'pending' });
+  joinAllToChat([userId], r.chatId);
+  if (r.status === 'joined') changed(r.chatId);
+  res.json({ status: r.status, chat: await getChatDTO(userId, r.chatId) });
+}));
+
+/** Все ожидающие заявки по моим каналам и группам (для владельца/админа). */
+chatsRouter.get('/requests', wrap(async (req, res) => {
+  res.json({ requests: await listAllPending(authOf(req).userId) });
+}));
+
+chatsRouter.get('/:id/requests', wrap(async (req, res) => {
+  res.json({ requests: await listRequests(authOf(req).userId, String(req.params.id)) });
+}));
+
+/** Принять / отклонить заявку на вступление. */
+chatsRouter.post('/:id/requests/:rid/:action(approve|decline)', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const chatId = String(req.params.id);
+  const approve = String(req.params.action) === 'approve';
+  const r = await decideRequest(userId, chatId, String(req.params.rid), approve);
+  if (approve && !r.already) {
+    joinAllToChat([r.requesterId], chatId);                       // сокеты заявителя → в комнату чата
+    emitToUser(r.requesterId, 'chat:join-approved', { chatId });   // заявителю — чат появится в списке
+    emitToUser(r.requesterId, 'chat:changed', { chatId });
+    changed(chatId);
+  }
+  res.json({ ok: true, approved: r.approved });
+}));
+
+/** Автодополнение @упоминаний в поле ввода сообщения. */
+chatsRouter.get('/:id/mention-candidates', wrap(async (req, res) => {
+  const q = z.string().max(40).default('').parse(typeof req.query.q === 'string' ? req.query.q : '');
+  res.json({ users: await mentionCandidatesForChat(authOf(req).userId, String(req.params.id), q) });
 }));
 
 chatsRouter.get('/:id/messages', wrap(async (req, res) => {
@@ -136,6 +180,7 @@ chatsRouter.post('/:id/messages', wrap(async (req, res) => {
     durationSec: z.number().min(0).max(3600).optional(),
     replyToId: id.optional(),
     viewOnce: z.boolean().optional(),
+    stickerId: id.optional(),
   }).parse(req.body);
   res.json({ message: await sendAndDispatch(authOf(req).userId, String(req.params.id), b) });
 }));

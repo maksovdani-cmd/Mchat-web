@@ -404,6 +404,22 @@
     openSavedChat: () => api('/chats/saved', { method: 'POST', body: {} }),
     createGroup: (b) => api('/chats/group', { method: 'POST', body: b }),
     joinChat: (code) => api('/chats/join', { method: 'POST', body: { code: code } }),
+    // ссылки-приглашения и заявки на вступление в приватные каналы/группы
+    invitePreview: (code) => api('/chats/invite/' + encodeURIComponent(code)),
+    joinRequests: () => api('/chats/requests'),
+    chatJoinRequests: (id) => api('/chats/' + encodeURIComponent(id) + '/requests'),
+    decideJoinRequest: (chatId, rid, approve) => api('/chats/' + encodeURIComponent(chatId) + '/requests/' + encodeURIComponent(rid) + '/' + (approve ? 'approve' : 'decline'), { method: 'POST', body: {} }),
+    chatMentionCandidates: (id, q) => api('/chats/' + encodeURIComponent(id) + '/mention-candidates?q=' + encodeURIComponent(q || '')),
+    // коллекции стикеров
+    stickerPacks: () => api('/stickers'),
+    stickerPack: (id) => api('/stickers/packs/' + encodeURIComponent(id)),
+    createStickerPack: (title) => api('/stickers/packs', { method: 'POST', body: { title: title } }),
+    renameStickerPack: (id, title) => api('/stickers/packs/' + encodeURIComponent(id), { method: 'PATCH', body: { title: title } }),
+    deleteStickerPack: (id) => api('/stickers/packs/' + encodeURIComponent(id), { method: 'DELETE' }),
+    saveStickerPack: (id) => api('/stickers/packs/' + encodeURIComponent(id) + '/save', { method: 'PUT', body: {} }),
+    unsaveStickerPack: (id) => api('/stickers/packs/' + encodeURIComponent(id) + '/save', { method: 'DELETE' }),
+    addSticker: (body) => api('/stickers', { method: 'POST', body: body }),
+    deleteSticker: (id) => api('/stickers/' + encodeURIComponent(id), { method: 'DELETE' }),
 
     // друзья
     setChatBackground: (id, background) => api('/chats/' + encodeURIComponent(id) + '/background', { method: 'PUT', body: { background: background } }),

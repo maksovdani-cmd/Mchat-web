@@ -2995,7 +2995,7 @@ function chatFromServer(c) {
   return {
     pinnedChat: !!c.pinnedChat, pinnedChatAt: c.pinnedChatAt || null,
     id: c.id, type: c.type, name: c.name, description: c.description, avatar: c.avatar, peer: c.peer,
-    unread: c.unread || 0, role: c.role, canPost: c.canPost !== false, canModerate: !!c.canModerate, muted: !!c.muted, isPublic: !!c.isPublic,
+    unread: c.unread || 0, role: c.role, canPost: c.canPost !== false, canModerate: !!c.canModerate, muted: !!c.muted, isPublic: !!c.isPublic, isPrivate: !!c.isPrivate,
     memberCount: c.memberCount || 0, inviteCode: c.inviteCode || null, pinned: c.pinned || null, background: c.background || null,
     dm: c.dm || null, autoDeleteSec: c.autoDeleteSec || null, mutedUntil: c.mutedUntil || null, peerReadAt: c.peerReadAt || null,
     lastMessage: c.lastMessage ? c.lastMessage.text : '',
@@ -3009,7 +3009,7 @@ function msgFromServer(m) {
     senderName: m.senderName, senderUsername: m.senderUsername,
     kind: m.kind || 'TEXT', text: m.text, mediaUrl: m.mediaUrl, fileName: m.fileName, fileSize: m.fileSize, durationSec: m.durationSec,
     replyTo: m.replyTo, forwardedFrom: m.forwardedFrom, call: m.call || null,
-    viewOnce: !!m.viewOnce, viewOnceOpened: !!m.viewOnceOpened,
+    viewOnce: !!m.viewOnce, viewOnceOpened: !!m.viewOnceOpened, sticker: m.sticker || null,
     reactions: m.reactions || [], editedAt: m.editedAt,
     time: fmtClock(m.createdAt), createdAt: m.createdAt,
     outgoing: !!currentUser && m.senderId === currentUser.id, pending: false
@@ -3151,7 +3151,7 @@ async function openChat(id) {
   if (!ch) return;
   currentChatId = id;
   currentChatPeer = ch.peer || null;
-  currentChatMeta = { type: ch.type, canPost: ch.canPost !== false, canModerate: !!ch.canModerate, dm: ch.dm || null, autoDeleteSec: ch.autoDeleteSec || null, peerReadAt: ch.peerReadAt || null };
+  currentChatMeta = { type: ch.type, isPrivate: !!ch.isPrivate, canPost: ch.canPost !== false, canModerate: !!ch.canModerate, dm: ch.dm || null, autoDeleteSec: ch.autoDeleteSec || null, peerReadAt: ch.peerReadAt || null };
   mxCancelCompose();
   document.getElementById('chat-name').innerHTML = esc(ch.name) + (ch.type === 'DIRECT' && ch.peer ? mxStarHtml(ch.peer.general) : '');
   document.getElementById('chat-open-av').innerHTML = ch.type === 'SAVED' ? MX_SAVED_AV : ch.avatar
@@ -3177,7 +3177,7 @@ async function openChat(id) {
  */
 function mxApplyChatInputState(ch) {
   if (!ch) return;
-  currentChatMeta = Object.assign(currentChatMeta || {}, { type: ch.type, canPost: ch.canPost !== false, canModerate: !!ch.canModerate, dm: ch.dm || null, autoDeleteSec: ch.autoDeleteSec || null, peerReadAt: ch.peerReadAt || (currentChatMeta && currentChatMeta.peerReadAt) || null });
+  currentChatMeta = Object.assign(currentChatMeta || {}, { type: ch.type, isPrivate: !!ch.isPrivate, canPost: ch.canPost !== false, canModerate: !!ch.canModerate, dm: ch.dm || null, autoDeleteSec: ch.autoDeleteSec || null, peerReadAt: ch.peerReadAt || (currentChatMeta && currentChatMeta.peerReadAt) || null });
   const callsOk = ch.type === 'DIRECT' ? !(ch.dm && !ch.dm.canSend) : ch.type === 'GROUP' ? !!ch.canModerate : false;
   ['mx-call-btn','mx-vcall-btn'].forEach(bid => { const b = document.getElementById(bid); if (b) b.style.display = callsOk ? '' : 'none'; });
   const inputRow = document.getElementById('mx-input-row');
@@ -3287,6 +3287,10 @@ function bubbleBodyHtml(m) {
       <div class="mx-vn-dur">${esc(fmtDur(m.durationSec))}</div>
     </div>`;
   }
+  if (m.kind === 'IMAGE' && mxIsSticker(m)) {
+    // стикер: без рамки баббла; тап открывает меню сообщения (там же «Коллекция»), а не просмотрщик фото
+    return `<img class="mx-img mx-stk-img" src="${esc(m.mediaUrl||'')}" draggable="false" alt="" onerror="mxMediaLost(this)">${mxUploadBar(m)}`;
+  }
   if (m.kind === 'IMAGE') {
     return `<img class="mx-img" src="${esc(m.mediaUrl||'')}" onerror="mxMediaLost(this)" onclick="event.stopPropagation();mxOpenImage('${esc(m.mediaUrl||'')}')">${mxUploadBar(m)}${m.text ? `<div class="mx-txt" style="padding:6px 8px 2px">${esc(m.text)}</div>` : ''}`;
   }
@@ -3316,7 +3320,7 @@ function mxMediaLost(el) {
   el.replaceWith(box);
 }
 /** Стикер — картинка, отправленная из редактора стикеров (clientId начинается с «stk_»): без рамки и фона баббла. */
-function mxIsSticker(m) { return !!(m && m.kind === 'IMAGE' && !m.viewOnce && typeof m.clientId === 'string' && m.clientId.indexOf('stk_') === 0); }
+function mxIsSticker(m) { return !!(m && m.kind === 'IMAGE' && !m.viewOnce && (m.sticker || (typeof m.clientId === 'string' && m.clientId.indexOf('stk_') === 0))); }
 const MX_TICK_SVG = {
   clock: '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.8V8l2.2 1.4"/></svg>',
   one: '<svg viewBox="0 0 18 12" width="16" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l3.4 3.4L12 2.5"/></svg>',
@@ -4409,7 +4413,8 @@ function mxRenderChatInfo() {
       ${third}
       ${ch.preview ? '' : act(mxInfoSvg('leave'), 'Покинуть', 'mxLeaveChat()', true)}
     </div>
-    ${staff && !isChannel && ch.inviteCode ? `<div style="padding:0 14px 12px"><button class="mx-btn" style="width:100%" onclick="mxCopyInvite()">Скопировать ссылку-приглашение</button></div>` : ''}
+    ${staff && (!isChannel || ch.isPrivate) && ch.inviteCode ? `<div style="padding:0 14px 12px"><button class="mx-btn" style="width:100%" onclick="mxCopyInvite()">Скопировать ссылку-приглашение</button></div>` : ''}
+    ${staff && ch.isPrivate ? `<div style="padding:0 14px 12px"><button class="mx-btn" style="width:100%" onclick="mxOpenJoinRequests('${esc(ch.id)}')">Заявки на вступление</button></div>` : ''}
     ${staff && !isChannel ? `<div style="padding:0 14px 6px"><button onclick="mxOpenAddMembers()" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px;border:none;border-radius:14px;background:var(--surf);color:var(--accent);font-family:var(--font);font-size:14px;font-weight:700;cursor:pointer">${mxInfoSvg('plus', 20)} Добавить участников</button></div>` : ''}
     ${members ? `<div style="padding:4px 14px 10px"><div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin:8px 0 2px">${isChannel ? 'Подписчики' : 'Участники'}</div>${members}</div>` : ''}
     <div style="display:flex;border-bottom:1px solid var(--border);margin-top:6px">${tab('media', 'Медиа')}${tab('links', 'Ссылки')}${tab('music', 'Музыка')}${tab('voice', 'Голосовые')}</div>
@@ -5208,9 +5213,10 @@ function mxOpenContextMenu(id, evt) {
   const canModerate = currentChatMeta && currentChatMeta.canModerate;
   const buttons = [];
   buttons.push(mxCtxItem(MX_ICO.reply, 'Ответить', `mxReplyTo('${esc(id)}')`));
-  if (msg.kind === 'TEXT' && msg.text) buttons.push(mxCtxItem(MX_ICO.copy, 'Копировать', `mxCopyMessage('${esc(id)}')`));
-  buttons.push(mxCtxItem(MX_ICO.fwd, 'Переслать', `mxForwardMessage('${esc(id)}')`));
-  if (currentChatMeta && currentChatMeta.type !== 'SAVED') buttons.push(mxCtxItem(MX_SAVE_ICO, 'В избранное', `mxSaveToFavorites('${esc(id)}')`));
+  const prot = !!(currentChatMeta && currentChatMeta.isPrivate); // приватный канал/группа: копировать и пересылать нельзя
+  if (!prot && msg.kind === 'TEXT' && msg.text) buttons.push(mxCtxItem(MX_ICO.copy, 'Копировать', `mxCopyMessage('${esc(id)}')`));
+  if (!prot) buttons.push(mxCtxItem(MX_ICO.fwd, 'Переслать', `mxForwardMessage('${esc(id)}')`));
+  if (!prot && currentChatMeta && currentChatMeta.type !== 'SAVED') buttons.push(mxCtxItem(MX_SAVE_ICO, 'В избранное', `mxSaveToFavorites('${esc(id)}')`));
   if (mine || canModerate) buttons.push(mxCtxItem(MX_ICO.pin, 'Закрепить', `mxPin('${esc(id)}')`));
   if (mine && msg.kind === 'TEXT') buttons.push(mxCtxItem(MX_ICO.edit, 'Изменить', `mxEditMessage('${esc(id)}')`));
   buttons.push(mxCtxItem(MX_ICO.del, mine ? 'Удалить у всех' : 'Удалить у меня', `mxDeleteMessage('${esc(id)}')`, true));
@@ -5251,6 +5257,7 @@ function mxCancelCompose() {
 }
 function mxCopyMessage(id) {
   mxCloseFloating();
+  if (currentChatMeta && currentChatMeta.isPrivate) { showToast('Копирование запрещено в приватном чате'); return; }
   const msg = (messages[currentChatId] || []).find(m => m.id === id);
   if (!msg) return;
   const text = msg.kind === 'TEXT' ? msg.text : msgPreview(msg);
@@ -5258,6 +5265,7 @@ function mxCopyMessage(id) {
 }
 function mxForwardMessage(id) {
   mxCloseFloating();
+  if (currentChatMeta && currentChatMeta.isPrivate) { showToast('Пересылка запрещена в приватном чате'); return; }
   const msg = (messages[currentChatId] || []).find(m => m.id === id);
   if (!msg) return;
   if (chats.length === 0) { showToast('Нет чатов для пересылки'); return; }
@@ -5363,6 +5371,11 @@ function mxContactRowsHtml(list, onToggle) {
 function mxToggleCreatePick(id, on) { if (on) mxPick.add(id); else mxPick.delete(id); mxUpdateCreateCount(); }
 function mxUpdateCreateCount() { const el = document.getElementById('mx-create-count'); if (el) el.textContent = mxPick.size ? 'Выбрано: ' + mxPick.size : ''; }
 
+function mxCreatePrivateToggle(on) {
+  const hint = document.getElementById('mx-create-private-hint'); if (hint) hint.style.display = on ? 'block' : 'none';
+  const pub = document.getElementById('mx-create-public');
+  if (pub) { if (on) pub.checked = false; pub.disabled = !!on; }
+}
 async function mxOpenCreate(type) {
   mxFabClose();
   mxCreateType = type === 'channel' ? 'CHANNEL' : 'GROUP';
@@ -5377,6 +5390,8 @@ async function mxOpenCreate(type) {
     <input class="mx-input" id="mx-create-title" placeholder="${isChannel ? 'Название канала' : 'Название группы'}" maxlength="60" style="margin-bottom:10px">
     <textarea class="mx-input" id="mx-create-desc" placeholder="Описание (необязательно)" maxlength="200" style="margin-bottom:10px;min-height:60px;resize:vertical"></textarea>
     ${isChannel ? `<label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:pointer;font-size:14px"><input type="checkbox" id="mx-create-public" checked style="width:18px;height:18px;accent-color:var(--accent)"> Публичный канал (его можно найти в поиске)</label>` : ''}
+    <label style="display:flex;align-items:center;gap:10px;margin-bottom:4px;cursor:pointer;font-size:14px"><input type="checkbox" id="mx-create-private" onchange="mxCreatePrivateToggle(this.checked)" style="width:18px;height:18px;accent-color:var(--accent)"> Приватн${isChannel ? 'ый канал' : 'ая группа'}</label>
+    <div class="mx-hint" id="mx-create-private-hint" style="margin:0 0 10px 28px;display:none">Вход только по заявке, которую одобряет админ. Посты нельзя пересылать, копировать и скачивать, скриншоты блокируются.</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin:4px 0"><div class="mx-hint" style="margin:0">Участники из контактов</div><div class="mx-hint" style="margin:0" id="mx-create-count"></div></div>
     <div id="mx-create-contacts" style="max-height:200px;overflow-y:auto;background:var(--surf);border-radius:12px;padding:4px 10px;margin-bottom:10px"><div style="padding:14px;text-align:center;color:var(--text2);font-size:13px">Загрузка…</div></div>
     <div class="mx-hint" style="margin-bottom:14px">${isChannel ? 'Вы станете администратором: публиковать посты сможете только вы, остальные — читать.' : 'Других людей можно добавить позже, в настройках группы.'}</div>
@@ -5402,7 +5417,7 @@ async function mxSubmitCreate() {
   const btn = document.getElementById('mx-create-submit');
   btn.disabled = true;
   try {
-    const r = await MchatAPI.createGroup({ type: mxCreateType, title, description: description || undefined, usernames, isPublic: pub ? pub.checked : undefined });
+    const r = await MchatAPI.createGroup({ type: mxCreateType, title, description: description || undefined, usernames, isPublic: pub ? pub.checked : undefined, isPrivate: !!(document.getElementById('mx-create-private') || {}).checked });
     const modal = document.getElementById('mx-create-modal');
     if (modal) modal.remove();
     const ch = chatFromServer(r.chat);

@@ -6,7 +6,7 @@ import { viewOnceMediaAllowed } from '../services/viewonce';
 import { prisma } from '../db';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
-  canAccessMedia, cleanFileName, cleanTitle, FILE_EXTS, fileExt, MAX_TRACKS_PER_USER, MEDIA_RULES, toMediaDTO,
+  canAccessMedia, cleanFileName, cleanTitle, FILE_EXTS, fileExt, isProtectedMedia, MAX_TRACKS_PER_USER, MEDIA_RULES, toMediaDTO,
 } from '../services/media';
 import { ensureUploadDir, publicUrlFor, removeFile, saveUpload, sendFile, storageMode } from '../services/storage';
 import { HttpError, wrap } from '../utils/errors';
@@ -75,10 +75,20 @@ mediaRouter.get('/:id', wrap(async (req, res) => {
   // Одноразовое медиа: только по временной ссылке, выданной получателю при открытии; никаких кэшей и редиректов на публичное облако
   const vo = await viewOnceMediaAllowed(authOf(req).userId, m.id, typeof req.query.vo === 'string' ? req.query.vo : undefined);
   if (vo === 'deny') throw new HttpError(404, 'media_not_found');
+  // Приватный канал/группа: никакого скачивания. Прямое открытие файла в адресной строке/новой вкладке/как документа — отказ;
+  // в самом приложении картинки и видео идут как image/video/audio и работают. Кэш браузера выключен, редиректа на публичное облако нет.
+  const prot = vo !== 'ok' && (await isProtectedMedia(m.id));
+  if (prot) {
+    const dest = String(req.get('sec-fetch-dest') ?? '').toLowerCase();
+    if (m.kind === 'FILE' || ['document', 'iframe', 'embed', 'object', 'frame', 'fencedframe'].includes(dest) || req.query.download !== undefined) {
+      throw new HttpError(403, 'content_protected');
+    }
+  }
   const headers: Record<string, string> = {
     'Content-Type': m.mime, // тип берём из нашей БД (белый список), а не «угадываем» по файлу
-    'Cache-Control': vo === 'ok' ? 'no-store' : 'private, max-age=86400',
+    'Cache-Control': vo === 'ok' || prot ? 'no-store, private' : 'private, max-age=86400',
     'Content-Disposition': 'inline',
+    ...(prot ? { 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin' } : {}),
   };
   if (m.kind === 'FILE') {
     // документы — только скачивание, никогда не открываются в браузере; песочница закрывает любые скрипты
@@ -88,7 +98,7 @@ mediaRouter.get('/:id', wrap(async (req, res) => {
   }
   // Файл лежит в облаке с публичным адресом: после проверки доступа отправляем прямо туда — трафик не идёт через сервер.
   // Документы (FILE) отдаём только через сервер: им нужны заголовки «attachment» и sandbox.
-  if (storageMode === 's3' && m.url && m.kind !== 'FILE' && vo !== 'ok') {
+  if (storageMode === 's3' && m.url && m.kind !== 'FILE' && vo !== 'ok' && !prot) {
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.redirect(302, publicUrlFor(m.file) ?? m.url); // адрес считаем от текущих настроек: смена S3_PUBLIC_URL не ломает старые файлы
     return;

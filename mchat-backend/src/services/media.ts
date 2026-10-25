@@ -60,10 +60,14 @@ export const cleanTitle = (raw: string) =>
 export async function canAccessMedia(userId: string, m: Pick<Media, 'id' | 'ownerId' | 'kind'>): Promise<boolean> {
   if (m.ownerId === userId || m.kind === 'TRACK') return true;
   if (m.kind === 'IMAGE') {
+    // стикер из коллекции: коллекции открыты всем (любой может сохранить её себе целиком)
+    if (await prisma.sticker.findFirst({ where: { mediaId: m.id }, select: { id: true } })) return true;
+    // аватарка группы/канала: участникам, у публичного — всем, а у приватного — ещё и тем, кто пришёл по ссылке-приглашению
+    // (карточка «Отправить заявку» показывает аватарку до вступления; id файла выдаётся только по коду приглашения)
     const av = await prisma.chat.findFirst({
-      where: { avatarMediaId: m.id, OR: [{ isPublic: true }, { members: { some: { userId } } }] }, select: { id: true },
+      where: { avatarMediaId: m.id, OR: [{ isPublic: true }, { isPrivate: true }, { members: { some: { userId } } }] }, select: { id: true },
     });
-    if (av) return true; // аватарка группы/канала видна её участникам
+    if (av) return true;
     // аватар / обложка профиля видны всем вошедшим пользователям
     const url = mediaUrl(m.id);
     const prof = await prisma.user.findFirst({ where: { OR: [{ avatarUrl: { endsWith: url } }, { bannerUrl: { endsWith: url } }] }, select: { id: true } });
@@ -94,7 +98,7 @@ export async function canAccessMedia(userId: string, m: Pick<Media, 'id' | 'owne
 /** Файл ещё нужен, если на него ссылается сообщение, пост, история или профиль. */
 async function isMediaReferenced(mediaId: string): Promise<boolean> {
   const url = mediaUrl(mediaId);
-  const [msgs, posts, stories, profiles, chats, moments] = await Promise.all([
+  const [msgs, posts, stories, profiles, chats, moments, stickers] = await Promise.all([
     prisma.message.count({ where: { mediaId, deletedAt: null } }),
     prisma.post.count({ where: { OR: [{ mediaId }, { thumbId: mediaId }] } }),
     prisma.story.count({ where: { mediaId } }),
@@ -102,8 +106,9 @@ async function isMediaReferenced(mediaId: string): Promise<boolean> {
     prisma.user.count({ where: { OR: [{ avatarUrl: { endsWith: url } }, { bannerUrl: { endsWith: url } }] } }),
     prisma.chat.count({ where: { avatarMediaId: mediaId } }),
     prisma.moment.count({ where: { mediaId } }),
+    prisma.sticker.count({ where: { mediaId } }),
   ]);
-  return msgs + posts + stories + profiles + chats + moments > 0;
+  return msgs + posts + stories + profiles + chats + moments + stickers > 0;
 }
 
 /** Удаляет файл, если на него больше ничто не ссылается (треки профиля не трогаем). */
@@ -129,4 +134,16 @@ export async function checkMediaIntegrity() {
   console.error(`[storage] ⚠️ НЕ НАЙДЕНО ${missing.length} из ${rows.length} файлов в ${config.uploadDir}: ${JSON.stringify(byKind)}.\n` +
     '          Папка uploads была стёрта или смонтирована не туда. Подключи постоянный том (docker-compose: volume uploads:/app/uploads)\n' +
     '          либо облако S3_* — иначе аватарки, музыка, фото, видео и голосовые будут пропадать после каждого деплоя.');
+}
+
+/**
+ * Файл лежит в приватном канале/группе (строгая приватность): такие файлы не отдаются «для скачивания»,
+ * не кэшируются и не открываются прямой ссылкой. Стикеры из коллекций не защищаются — коллекции открыты всем.
+ */
+export async function isProtectedMedia(mediaId: string): Promise<boolean> {
+  const ref = await prisma.message.findFirst({
+    where: { mediaId, deletedAt: null, chat: { isPrivate: true } }, select: { id: true },
+  });
+  if (!ref) return false;
+  return !(await prisma.sticker.findFirst({ where: { mediaId }, select: { id: true } }));
 }

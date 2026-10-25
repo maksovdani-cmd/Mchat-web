@@ -331,7 +331,8 @@
     },
     /** Параметры записи под устройство и режим качества (SD ≤200 КБ / HD ≤2 МБ, как и раньше). */
     profile() {
-      const hd = typeof mxHdPref === 'function' && mxHdPref();
+      // Кружок и камера в чате: выбора HD в интерфейсе больше нет — всегда максимум, который тянет устройство (уровень tier подбирается автоматически)
+      const hd = true;
       const t = this.detect().tier;
       if (!hd) return { tier: t, hd, capW: 640, capH: 480, side: 360, fps: t === 'low' ? 20 : 25, videoBps: t === 'low' ? 180000 : 250000, audioBps: 16000 };
       if (t === 'high') return { tier: t, hd, capW: 1280, capH: 720, side: 720, fps: 30, videoBps: 2500000, audioBps: 64000 };
@@ -1442,7 +1443,7 @@
   const origSend = MchatAPI.sendMessage;
   let onceTimer = null;
   MchatAPI.sendMessage = function (chatId, text, clientId, extra) {
-    if (once && extra && KINDS.includes(extra.kind) && directNow()) {
+    if (once && extra && !extra.stickerId && KINDS.includes(extra.kind) && directNow()) {
       extra = Object.assign({}, extra, { viewOnce: true });
       clearTimeout(onceTimer); onceTimer = setTimeout(() => setOnce(false), 1500);   // флажок снимается после отправки (серия файлов успевает)
     }
