@@ -335,9 +335,9 @@
       const hd = true;
       const t = this.detect().tier;
       if (!hd) return { tier: t, hd, capW: 640, capH: 480, side: 360, fps: t === 'low' ? 20 : 25, videoBps: t === 'low' ? 180000 : 250000, audioBps: 16000 };
-      if (t === 'high') return { tier: t, hd, capW: 1280, capH: 720, side: 720, fps: 30, videoBps: 2500000, audioBps: 64000 };
-      if (t === 'mid') return { tier: t, hd, capW: 960, capH: 540, side: 540, fps: 30, videoBps: 1600000, audioBps: 64000 };
-      return { tier: t, hd, capW: 640, capH: 480, side: 420, fps: 24, videoBps: 900000, audioBps: 48000 };
+      if (t === 'high') return { tier: t, hd, capW: 1280, capH: 720, side: 720, fps: 30, videoBps: 1650000, audioBps: 96000 };   // 60 с ≈ 15 МБ
+      if (t === 'mid') return { tier: t, hd, capW: 960, capH: 540, side: 540, fps: 30, videoBps: 1300000, audioBps: 64000 };
+      return { tier: t, hd, capW: 640, capH: 480, side: 420, fps: 24, videoBps: 800000, audioBps: 48000 };
     },
   };
   window.MxPerf = MxPerf;
@@ -1411,7 +1411,7 @@
 
   /* ═════════ 7. Одноразовые медиа (фото, видео, голосовые, кружки) ═════════ */
   let once = false;
-  const KINDS = ['IMAGE', 'VIDEO', 'VOICE', 'VIDEO_NOTE'];
+  const KINDS = ['IMAGE', 'VIDEO', 'VOICE'];   // кружки (VIDEO_NOTE) одноразовыми не бывают
   const ONCE_ICO = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3.2 3"/><path d="M10.3 9.6L12.4 8.2v7.6" stroke-width="2.2"/></svg>';
   const directNow = () => { const m = G.meta || (G.chats || []).find((c) => c.id === G.chatId); return !!m && (m.type === 'DIRECT' || m.type === 'GROUP'); };   // личные и групповые чаты
   function syncOnceUi() {
@@ -1426,8 +1426,7 @@
     return b;
   }
   function injectOnceChips() {
-    const mic = $('mx-mic-btn');
-    if (mic && !$('mx-once-btn')) { const b = mkChip('ib ghost mx-once-composer', ONCE_ICO); b.id = 'mx-once-btn'; mic.parentNode.insertBefore(b, mic); }
+    const oldC = $('mx-once-btn'); if (oldC) oldC.remove();   // в обычной панели ввода кнопки «1 раз» нет
     const hd = $('mx-pv-hd');
     if (hd && !$('mx-once-pv')) { const b = mkChip('ib ghost mx-once-pv', '1 раз'); b.id = 'mx-once-pv'; hd.parentNode.insertBefore(b, hd); }
     const rp = $('mx-rec-prev');

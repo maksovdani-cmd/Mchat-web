@@ -1578,7 +1578,7 @@ async function scStartCamera() {
   try {
     if (scCameraStream) scCameraStream.getTracks().forEach(t=>t.stop());
     scCameraStream = await navigator.mediaDevices.getUserMedia({
-      video: mxHdPref() ? { facingMode: scCameraFacing, width:{ideal:1920}, height:{ideal:1080} } : { facingMode: scCameraFacing, width:{ideal:640}, height:{ideal:480} },
+      video: window.mx7StoryVideo ? window.mx7StoryVideo(scCameraFacing) : { facingMode: scCameraFacing, width:{ideal:1280}, height:{ideal:720} },
       audio: true
     });
     const cam = document.getElementById('sc-camera');
@@ -1656,7 +1656,7 @@ function scStartRecord(e) {
   }
 
   try {
-    scMediaRecorder = new MediaRecorder(recordStream, Object.assign({mimeType:'video/webm;codecs=vp8,opus'}, mxRecorderBitrates(mxHdPref())));
+    scMediaRecorder = new MediaRecorder(recordStream, Object.assign({mimeType:'video/webm;codecs=vp8,opus'}, mxRecorderBitrates(true, 20)));
   } catch(e) {
     scMediaRecorder = new MediaRecorder(recordStream);
   }

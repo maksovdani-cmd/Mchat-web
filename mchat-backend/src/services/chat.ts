@@ -467,7 +467,7 @@ export async function createMessage(userId: string, chatId: string, input: Creat
   if (kind === 'TEXT' && !text) throw new HttpError(400, 'empty_message');
   if (text.length > MAX_TEXT) throw new HttpError(400, 'message_too_long');
 
-  if (input.viewOnce && (!['DIRECT', 'GROUP'].includes(member.chat.type) || !['IMAGE', 'VIDEO', 'VOICE', 'VIDEO_NOTE'].includes(kind))) throw new HttpError(400, 'view_once_not_allowed');
+  if (input.viewOnce && (!['DIRECT', 'GROUP'].includes(member.chat.type) || !['IMAGE', 'VIDEO', 'VOICE'].includes(kind))) throw new HttpError(400, 'view_once_not_allowed');   // кружки одноразовыми не бывают
   let mediaId: string | null = null;
   let durationSec: number | null = null;
   let stickerId: string | null = null;

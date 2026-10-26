@@ -10,7 +10,7 @@ import { removeFile } from './storage';
 /** Сколько минут после открытия получатель может смотреть/слушать. Потом файл удаляется сервером, даже если приложение закрыли. */
 export const VIEW_ONCE_WINDOW_MIN = 20;
 export const VIEW_ONCE_GROUP_TTL_DAYS = 14;
-export const VIEW_ONCE_KINDS = ['IMAGE', 'VIDEO', 'VOICE', 'VIDEO_NOTE'] as const;
+export const VIEW_ONCE_KINDS = ['IMAGE', 'VIDEO', 'VOICE'] as const;   // кружки (VIDEO_NOTE) — никогда не одноразовые
 
 const sign = (messageId: string, mediaId: string, userId: string, exp: number) =>
   crypto.createHmac('sha256', config.JWT_SECRET).update(`vo|${messageId}|${mediaId}|${userId}|${exp}`).digest('hex').slice(0, 40);

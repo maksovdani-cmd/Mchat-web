@@ -469,7 +469,7 @@
     let host = btn.querySelector('.mx-rip-host');
     if (!host) { host = document.createElement('span'); host.className = 'mx-rip-host'; btn.appendChild(host); }
     const r = document.createElement('span'); r.className = 'mx-rip'; host.appendChild(r);
-    const a = r.animate([{ transform: 'scale(1)', opacity: 0.55 }, { transform: 'scale(' + (1.7 + lvl * 2.1).toFixed(2) + ')', opacity: 0 }], { duration: 950, easing: 'cubic-bezier(.2,.6,.3,1)' });
+    const a = r.animate([{ transform: 'scale(1)', opacity: 0.55 }, { transform: 'scale(' + Math.min(2.1, 1.25 + lvl * 0.85).toFixed(2) + ')', opacity: 0 }], { duration: 950, easing: 'cubic-bezier(.2,.6,.3,1)' });
     a.onfinish = () => r.remove();
   }
   function peaksFromLevels(levels) {

@@ -52,7 +52,7 @@
     w.innerHTML = Array.from({ length: 40 }, () => '<span>' + E(label) + '</span>').join('');
     appEl().appendChild(w);
   }
-  setInterval(syncProt, 350);
+  setInterval(() => { if (!document.hidden) syncProt(); }, 900);
   ['openChat', 'goTo'].forEach((n) => { if (typeof window[n] === 'function') { const o = window[n]; window[n] = function () { const r = o.apply(this, arguments); setTimeout(syncProt, 30); return r; }; } });
 
   const inField = (t) => !!(t && t.closest && t.closest('input, textarea, [contenteditable="true"]'));
