@@ -1,0 +1,93 @@
+/* ═══════════ Mchat · серия 8 ═══════════ */
+
+/* ── 1. Шапка чата: компактная, острова из стекла ── */
+#s-chat-open .coh{
+  gap:8px; align-items:center;
+  padding:calc(env(safe-area-inset-top,0px) + 8px) 10px 6px;     /* было max(56px, …+16px) — шапка была почти вдвое выше */
+  background:transparent; border:none;
+}
+.mx8-isl{
+  display:flex; align-items:center; flex:none; min-width:0; height:44px;
+  border-radius:22px;
+  background:rgba(40,40,56,.55);
+  -webkit-backdrop-filter:blur(16px) saturate(150%); backdrop-filter:blur(16px) saturate(150%);
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:0 4px 16px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.05);
+}
+.mx8-isl-back{ width:44px; justify-content:center; }
+.mx8-isl-back .ib{ width:44px; height:44px; background:none; }
+.mx8-isl-main{ flex:1 1 auto; gap:10px; padding:0 14px 0 5px; cursor:pointer; }
+.mx8-isl-main #chat-open-av{ width:34px !important; height:34px !important; }
+.mx8-isl-main #chat-open-av svg{ width:18px; height:18px; }
+.mx8-isl-main > div:last-child{ flex:1; min-width:0; line-height:1.15; }
+.mx8-isl-main #chat-name{ font-size:15px !important; }
+.mx8-isl-main #chat-status{ font-size:11.5px !important; margin-top:1px; }
+.mx8-isl-act{ padding:0 4px; gap:0; }
+.mx8-isl-act .ib{ width:36px; height:40px; border-radius:50%; background:none; }
+.mx8-isl-act.mx8-nocall .ib:not(#mx-chat-menu-btn){ display:none !important; }
+/* без «квадратов» вокруг иконок: у кнопок в островах нет собственной подложки и нет рамки фокуса-прямоугольника */
+.mx8-isl .ib:focus,.mx8-isl .ib:focus-visible{ outline:none; }
+.mx8-isl .ib:active{ background:rgba(255,255,255,.1); }
+/* на узких экранах остров с именем не вытесняет кнопки */
+@media (max-width:360px){ .mx8-isl-act .ib{ width:32px; } .mx8-isl-main{ padding-right:8px; } }
+
+/* ── 2. Оформление пузырей ── */
+.mx8-bubbles{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.mx8-bb{ border:2px solid var(--border); background:var(--surf); color:var(--text); border-radius:14px; padding:8px 6px 6px; cursor:pointer; font-family:var(--font); font-size:12px; display:flex; flex-direction:column; gap:6px; align-items:stretch; }
+.mx8-bb.on{ border-color:var(--accent); }
+.mx8-bb-prev{ display:flex; flex-direction:column; gap:4px; padding:6px; background:var(--bg); border-radius:10px; }
+.mx8-bb-prev i{ display:block; height:12px; width:62%; background:var(--surf2); border-radius:8px; }
+.mx8-bb-prev i.mo{ align-self:flex-end; background:var(--accent); }
+.mx8-bb-name{ font-weight:600; }
+.mx8-bb-prev[data-mx-prev="soft"] i{ border-radius:10px; }
+.mx8-bb-prev[data-mx-prev="sharp"] i{ border-radius:3px; }
+.mx8-bb-prev[data-mx-prev="glass"] i{ background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.2); } .mx8-bb-prev[data-mx-prev="glass"] i.mo{ background:rgba(74,74,240,.55); }
+.mx8-bb-prev[data-mx-prev="gradient"] i.mo{ background:linear-gradient(135deg,#4a4af0,#9333ea); }
+.mx8-bb-prev[data-mx-prev="outline"] i{ background:transparent; border:1.5px solid var(--text2); } .mx8-bb-prev[data-mx-prev="outline"] i.mo{ border-color:var(--accent); }
+
+html[data-mx-bubble="soft"] .msg{ border-radius:22px; padding:9px 14px; box-shadow:0 2px 8px rgba(0,0,0,.18); }
+html[data-mx-bubble="soft"] .msg.mo{ border-bottom-right-radius:8px; background:linear-gradient(160deg,var(--accent2),var(--accent)); }
+html[data-mx-bubble="soft"] .msg.mi{ border-bottom-left-radius:8px; }
+
+html[data-mx-bubble="sharp"] .msg{ border-radius:6px; }
+html[data-mx-bubble="sharp"] .msg.mo{ border-bottom-right-radius:0; }
+html[data-mx-bubble="sharp"] .msg.mi{ border-bottom-left-radius:0; }
+
+html[data-mx-bubble="glass"] .msg{ -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,.14); border-radius:18px; }
+html[data-mx-bubble="glass"] .msg.mi{ background:rgba(255,255,255,.08); }
+html[data-mx-bubble="glass"] .msg.mo{ background:rgba(74,74,240,.5); }
+
+html[data-mx-bubble="gradient"] .msg.mo{ background:linear-gradient(135deg,#4a4af0 0%,#9333ea 100%); }
+html[data-mx-bubble="gradient"] .msg.mi{ background:linear-gradient(135deg,var(--surf) 0%,var(--surf2) 100%); }
+
+html[data-mx-bubble="outline"] .msg{ background:transparent !important; border:1.5px solid var(--text2); color:var(--text); }
+html[data-mx-bubble="outline"] .msg.mo{ border-color:var(--accent2); }
+
+/* ── 3. Черновики ── */
+.chat-last .mx8-draft{ color:#ef4444; font-weight:600; }
+
+/* ── 5. Панель записи: «ОТМЕНА» — настоящая кнопка по центру; корзина слева; «Одноразовое медиа» над отправкой ── */
+#mx7-cancel{ pointer-events:auto !important; cursor:pointer; display:flex !important; padding:7px 18px; background:var(--surf2); color:var(--text); letter-spacing:1.1px; }
+#mx7-cancel:active{ background:var(--accent); color:#fff; }
+#mx7-cancel svg{ display:none; }
+#mx-rec .mx-live-bars{ opacity:0; }                                            /* вместо волны — кнопка по центру */
+#mx-rec:has(#mx-rec-prev[style*="display: flex"]) #mx7-cancel{ display:none !important; }   /* в предпросмотре есть плеер, удалить — корзиной */
+#mx7-sendcol #mx-once-rec{ left:auto !important; right:0; transform:none !important; width:auto !important; height:30px; padding:0 12px; border-radius:15px; white-space:nowrap; gap:6px; font-size:12px; font-weight:700; }
+#mx7-sendcol #mx-once-rec span{ display:inline !important; }
+
+/* ── 8. Скорость на слабых устройствах ── */
+.chat-item{ content-visibility:auto; contain-intrinsic-size:auto 72px; }
+html.mx8-lite .mx8-isl{ -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); box-shadow:none; }
+html.mx8-lite[data-mx-bubble="glass"] .msg{ -webkit-backdrop-filter:none; backdrop-filter:none; }
+html.mx8-lite .general-star::before{ animation:none !important; }
+@media (prefers-reduced-transparency:reduce){ .mx8-isl{ -webkit-backdrop-filter:none; backdrop-filter:none; background:var(--surf); } }
+@media (prefers-reduced-motion:reduce){ .mx8-bb,.mx8-isl{ transition:none !important; } }
+
+/* ── 10.3 Блок установки на экране входа ── */
+.mx8-install{ margin-top:16px; display:flex; flex-direction:column; gap:8px; font-size:13px; }
+.mx8-apk{ display:block; text-align:center; text-decoration:none; padding:12px 16px; border-radius:14px; background:var(--accent); color:#fff; font-weight:700; }
+.mx8-ios{ background:var(--surf); border-radius:12px; padding:10px 14px; color:var(--text2); }
+.mx8-ios summary{ cursor:pointer; font-weight:600; color:var(--text); }
+.mx8-ios ol{ margin:8px 0 0 18px; padding:0; line-height:1.6; }
+
+.mx8-install[hidden],.mx8-apk[hidden]{ display:none !important; }

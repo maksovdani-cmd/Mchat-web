@@ -421,6 +421,9 @@
     addSticker: (body) => api('/stickers', { method: 'POST', body: body }),
     deleteSticker: (id) => api('/stickers/' + encodeURIComponent(id), { method: 'DELETE' }),
 
+    // черновики (личные, по чатам)
+    listDrafts: () => api('/chats/drafts'),
+    saveDraft: (id, text) => api('/chats/' + encodeURIComponent(id) + '/draft', { method: 'PUT', body: { text: text } }),
     // друзья
     setChatBackground: (id, background) => api('/chats/' + encodeURIComponent(id) + '/background', { method: 'PUT', body: { background: background } }),
     // ── посты, истории, профиль ──

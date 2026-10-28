@@ -112,7 +112,7 @@ app.get('/healthz', async (_req, res) => {
 });
 
 // ── API ──
-app.use('/api', noStore, apiLimiter, originGuard);
+app.use('/api', (_req, res, next) => { res.setHeader('X-Robots-Tag', 'noindex, nofollow'); next(); }, noStore, apiLimiter, originGuard);
 app.use('/api/auth', authRouter);
 app.use('/api/push', pushRouter);
 app.use('/api/chats', chatsRouter);
@@ -134,7 +134,7 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
 app.use(
   express.static(path.join(__dirname, '..', 'public'), {
     setHeaders(res, filePath) {
-      if (/(sw\.js|index\.html|manifest\.webmanifest|mchat-api\.js|mchat-ext\.js|mchat-fixes\.js|mchat-fixes\.css|mchat-features\.js|mchat-features\.css|mchat-series[0-9]\.(js|css)|Mchat-series[0-9]\.(js|css)|i18n\.js|masks\.js|script\.js|style\.css)$/.test(filePath)) {
+      if (/(sw\.js|index\.html|mchat-textsplit\.js|mchat-drafts\.js|manifest\.webmanifest|mchat-api\.js|mchat-ext\.js|mchat-fixes\.js|mchat-fixes\.css|mchat-features\.js|mchat-features\.css|mchat-series[0-9]\.(js|css)|Mchat-series[0-9]\.(js|css)|i18n\.js|masks\.js|script\.js|style\.css)$/.test(filePath)) {
         res.setHeader('Cache-Control', 'no-cache');
       }
       if (filePath.endsWith('sw.js')) res.setHeader('Service-Worker-Allowed', '/');
@@ -146,6 +146,7 @@ app.use(
 // дальше по адресу решает script.js (открыть профиль / вступить в группу).
 app.get(['/profile/:username', '/join/:code'], (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow'); // профили и приглашения — приватные данные, в поиск не попадают
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
@@ -161,7 +162,7 @@ app.use(onError);
 
 ensureUploadDir();
 if (config.isProd && storageMode === 'disk') {
-  console.warn('[storage] Файлы хранятся на диске сервера и пропадут при следующем деплое. Задай S3_* (см. CHANGES-step4.md), чтобы они жили в облаке.');
+  console.warn('[storage] Файлы хранятся на диске сервера и пропадут при следующем деплое. Задай CLOUDINARY_* (рекомендуется) или S3_* (см. docs/STORAGE.md), чтобы они жили в облаке.');
 }
 sanitizeStoredNames(prisma as never).catch((e) => console.error('sanitize names', e));   // чистим «битые» имена, оставшиеся в базе
 checkMediaIntegrity().catch((e) => console.error('media integrity', e));                 // все ли файлы из БД на месте

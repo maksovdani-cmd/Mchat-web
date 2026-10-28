@@ -98,7 +98,7 @@ mediaRouter.get('/:id', wrap(async (req, res) => {
   }
   // Файл лежит в облаке с публичным адресом: после проверки доступа отправляем прямо туда — трафик не идёт через сервер.
   // Документы (FILE) отдаём только через сервер: им нужны заголовки «attachment» и sandbox.
-  if (storageMode === 's3' && m.url && m.kind !== 'FILE' && vo !== 'ok' && !prot) {
+  if (storageMode !== 'disk' && m.url && m.kind !== 'FILE' && vo !== 'ok' && !prot) {
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.redirect(302, publicUrlFor(m.file) ?? m.url); // адрес считаем от текущих настроек: смена S3_PUBLIC_URL не ломает старые файлы
     return;

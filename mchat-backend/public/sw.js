@@ -3,13 +3,13 @@
  *  2) Web Push: сообщения и ВХОДЯЩИЕ ЗВОНКИ (долгая вибрация, кнопки «Ответить/Отклонить», уведомление не исчезает само). */
 'use strict';
 
-const VERSION = 'v10';
+const VERSION = 'v11';
 const STATIC_CACHE = 'mchat-static-' + VERSION;
 const RUNTIME_CACHE = 'mchat-runtime-' + VERSION;
 const MP_CACHE = 'mchat-mediapipe-1'; // wasm и модель масок — тяжёлые, меняются редко
 
 const PRECACHE = [
-  '/', '/style.css', '/script.js', '/mchat-api.js', '/i18n.js', '/mchat-ext.js', '/mchat-features.js', '/mchat-features.css', '/mchat-fixes.js', '/mchat-fixes.css', '/mchat-series4.js', '/mchat-series4.css', '/mchat-series5.js', '/mchat-series5.css', '/mchat-series6.js', '/mchat-series6.css', '/mchat-series7.js', '/mchat-series7.css', '/i18n-es.js', '/i18n-tr.js', '/i18n-zh.js', '/masks.js',
+  '/', '/style.css', '/script.js', '/mchat-api.js', '/i18n.js', '/mchat-ext.js', '/mchat-features.js', '/mchat-features.css', '/mchat-fixes.js', '/mchat-fixes.css', '/mchat-series4.js', '/mchat-series4.css', '/mchat-series5.js', '/mchat-series5.css', '/mchat-series6.js', '/mchat-series6.css', '/mchat-series7.js', '/mchat-series7.css', '/mchat-series8.js', '/mchat-series8.css', '/mchat-textsplit.js', '/mchat-drafts.js', '/i18n-es.js', '/i18n-tr.js', '/i18n-zh.js', '/masks.js',
   '/manifest.webmanifest',
   '/img/mchat.jpg', '/img/icon-96.png', '/img/icon-192.png', '/img/icon-512.png', '/img/apple-touch-icon.png',
   '/sounds/ringtone.wav',
@@ -79,7 +79,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Остальная статика: stale-while-revalidate
+  // Код приложения (JS/CSS/JSON/manifest): СЕТЬ → кэш. Раньше было «сначала кэш»: после деплоя пользователь получал смесь
+  // старых и новых скриптов и ловил странные баги. Теперь свежая версия приходит сразу, кэш нужен только без сети.
+  // Авторизацию и данные это не затрагивает: /api и сокеты вообще не кэшируются (см. выше).
+  if (/\.(js|css|webmanifest|json)$/.test(url.pathname)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(STATIC_CACHE);
+      try {
+        const res = await fetch(req, { cache: 'no-cache' });
+        if (res && res.ok && res.type === 'basic') cache.put(req, res.clone()).catch(() => {});
+        return res;
+      } catch (e) {
+        return (await cache.match(req)) || new Response('', { status: 504 });
+      }
+    })());
+    return;
+  }
+
+  // Остальная статика (картинки, звуки): stale-while-revalidate
   event.respondWith((async () => {
     const cache = await caches.open(STATIC_CACHE);
     const hit = await cache.match(req);

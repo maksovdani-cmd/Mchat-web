@@ -987,3 +987,28 @@ export async function mentionCandidatesForChat(userId: string, chatId: string, r
     .slice(0, 8)
     .map((u) => ({ id: u.id, username: u.username, name: u.name, avatar: u.avatarUrl, verified: u.verified }));
 }
+
+
+/** Максимальная длина черновика: несколько «страниц» текста — отправка сама разобьёт его на части по MAX_TEXT. */
+export const MAX_DRAFT = 20000;
+
+/** Черновики текущего пользователя по всем чатам: { chatId, text, at }. Чужие черновики недоступны — выборка по userId. */
+export async function listDrafts(userId: string) {
+  const rows = await prisma.chatMember.findMany({
+    where: { userId, draft: { not: null } },
+    select: { chatId: true, draft: true, draftAt: true },
+  });
+  return rows.filter((r) => r.draft).map((r) => ({ chatId: r.chatId, text: r.draft as string, at: (r.draftAt ?? new Date(0)).toISOString() }));
+}
+
+/** Сохранить черновик (пустой текст — удалить). Только для чатов, где пользователь состоит. */
+export async function setDraft(userId: string, chatId: string, text: string) {
+  await assertMember(chatId, userId);
+  const clean = text.slice(0, MAX_DRAFT);
+  const empty = clean.trim() === '';
+  await prisma.chatMember.update({
+    where: { chatId_userId: { chatId, userId } },
+    data: empty ? { draft: null, draftAt: null } : { draft: clean, draftAt: new Date() },
+  });
+  return { chatId, text: empty ? '' : clean };
+}

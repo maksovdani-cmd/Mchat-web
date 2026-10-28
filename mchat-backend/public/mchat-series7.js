@@ -118,6 +118,8 @@
     throw lastErr || new Error('camera_failed');
   }
 
+  window.mx7OpenVerified = openVerified;   // используют и другие слои (запуск камеры кружков)
+
   window.mxCameraFlip = async function () {
     const cam = camState(); if (!cam || cam.switching || !cam.stream) return;
     cam.switching = true;

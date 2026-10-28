@@ -1,0 +1,19 @@
+{
+  "name": "mchat-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Android-оболочка Mchat (Capacitor). Загружает https://mchat-web.org внутри нативного WebView.",
+  "scripts": {
+    "sync": "cap sync android",
+    "open": "cap open android",
+    "build:debug": "cap sync android && cd android && ./gradlew assembleDebug",
+    "build:release": "cap sync android && cd android && ./gradlew assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.0",
+    "@capacitor/core": "^7.4.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.0"
+  }
+}

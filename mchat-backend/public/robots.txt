@@ -1,0 +1,12 @@
+# Mchat — публична только главная страница. Приватные разделы и API поисковикам не отдаём.
+User-agent: *
+Allow: /$
+Allow: /img/
+Allow: /manifest.webmanifest
+Disallow: /api/
+Disallow: /profile/
+Disallow: /join/
+Disallow: /socket.io/
+Disallow: /uploads/
+
+Sitemap: https://mchat-web.org/sitemap.xml

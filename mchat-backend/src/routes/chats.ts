@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
   addMembers, createGroupOrChannel, getChannelPreview, listShared, getChatDTO, getOrCreateDirectChat, getOrCreateSavedChat, joinPublicChannel, listChats, listContacts, mentionCandidatesForChat,
-  clearChatForMe, hideChat, leaveChat, listMembers, listMessages, removeMember, searchPublicChannels, setChatAutoDelete, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
+  clearChatForMe, hideChat, listDrafts, setDraft, MAX_DRAFT, leaveChat, listMembers, listMessages, removeMember, searchPublicChannels, setChatAutoDelete, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
 } from '../services/chat';
 import { emitToChat, emitToUser, leaveUserFromChat } from '../realtime/hub';
 import { joinAllToChat, pinAndDispatch, readAndBroadcast, sendAndDispatch } from '../services/messaging';
@@ -22,6 +22,11 @@ chatsRouter.get('/', wrap(async (req, res) => {
   const saved = list.find((c) => c.type === 'SAVED');
   if (saved) joinAllToChat([userId], saved.id);
   res.json({ chats: list });
+}));
+
+/** Мои черновики по всем чатам (личные: другим пользователям не видны). */
+chatsRouter.get('/drafts', wrap(async (req, res) => {
+  res.json({ drafts: await listDrafts(authOf(req).userId) });
 }));
 
 /** Контакты для выбора участников (друзья и собеседники личных чатов). */
@@ -204,6 +209,12 @@ chatsRouter.put('/:id/background', wrap(async (req, res) => {
   await setChatBackground(userId, chatId, background);
   emitToUser(userId, 'chat:changed', { chatId }); // синхронизируем свои устройства
   res.json({ chat: await getChatDTO(userId, chatId) });
+}));
+
+/** Сохранить черновик в чате; пустой текст удаляет его. */
+chatsRouter.put('/:id/draft', wrap(async (req, res) => {
+  const { text } = z.object({ text: z.string().max(MAX_DRAFT) }).parse(req.body);
+  res.json(await setDraft(authOf(req).userId, String(req.params.id), text));
 }));
 
 // ───────── профиль группы/канала, участники, роли ─────────

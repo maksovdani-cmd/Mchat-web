@@ -286,6 +286,9 @@ model ChatMember {
   pinnedAt   DateTime?
   /// «Удалить чат» из моего списка: сообщения до этого момента мне не показываем; новое сообщение вернёт чат в список
   hiddenAt   DateTime?
+  /// Черновик неотправленного сообщения ЭТОГО участника в ЭТОМ чате (личный: у каждого пользователя свой)
+  draft      String?   @db.Text
+  draftAt    DateTime?
 
   @@id([chatId, userId])
   @@index([userId])

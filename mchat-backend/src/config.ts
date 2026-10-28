@@ -46,6 +46,11 @@ const schema = z.object({
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   /** Публичный адрес бакета (например https://<проект>.supabase.co/storage/v1/object/public/<бакет>). Если задан — файлы отдаются прямо из облака. */
   S3_PUBLIC_URL: z.string().default(''),
+  /** Cloudinary — основное постоянное хранилище файлов (если заданы все три значения, оно главнее S3 и диска).
+   *  Значения: Cloudinary → Dashboard → «Product Environment Credentials». Секрет — ТОЛЬКО в переменных окружения сервера. */
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
   /** ZEGOCLOUD (звонки): AppID и ServerSecret (32 символа) из console.zegocloud.com → ваш проект. Без них звонки отключены. */
   ZEGO_APP_ID: z.coerce.number().int().positive().optional(),
   ZEGO_SERVER_SECRET: z.string().length(32, 'ZEGO_SERVER_SECRET должен быть ровно 32 символа').optional(),

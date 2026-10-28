@@ -1,0 +1,14 @@
+{
+  "appId": "com.mchat.app",
+  "appName": "Mchat",
+  "webDir": "www",
+  "server": {
+    "url": "https://mchat-web.org",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  }
+}
