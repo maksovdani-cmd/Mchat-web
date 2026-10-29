@@ -45,7 +45,9 @@
     applyAnim();
   }
   applyAnim();
-  const weak = (navigator.deviceMemory && navigator.deviceMemory <= 4) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4)
+  // Chrome округляет deviceMemory вниз до 0.25/0.5/1/2/4/8, поэтому телефон с 6 ГБ отдаёт «4» и раньше ошибочно считался слабым
+  // (размытие стекла отключалось везде). Слабыми считаем только устройства с ≤ 2 ГБ, ≤ 4 ядрами или режимом экономии трафика.
+  const weak = (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4)
     || (navigator.connection && navigator.connection.saveData);
   if (weak) root.classList.add('mx-lite');
   document.addEventListener('visibilitychange', () => root.classList.toggle('mx7-hidden', document.hidden));
