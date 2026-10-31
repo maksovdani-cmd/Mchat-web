@@ -338,7 +338,9 @@
     let r;
     try { r = _cleanup5.apply(this, arguments); } catch (e) { console.warn('[call] cleanup failed', e); } finally { cleaning = false; }
     try { resetCallUi(); } catch (e) { /* noop */ }
-    setTimeout(resetCallUi, 350);                                   // поздние события SDK (roomStateChanged и др.) не оставляют экран висеть
+    // поздние события SDK (roomStateChanged и др.) не оставляют экран висеть; но если за эти 350 мс уже начался новый
+    // звонок (повторный набор, входящий), сбрасывать нельзя — иначе таймер закроет экран нового звонка
+    setTimeout(() => { try { if (!(typeof mxCall !== 'undefined' && mxCall) && !(typeof mxIncoming !== 'undefined' && mxIncoming)) resetCallUi(); } catch (e) { /* noop */ } }, 350);
     return r;
   };
   window.addEventListener('pagehide', () => { try { if (typeof mxCall !== 'undefined' && mxCall) window.mxCallCleanup('Звонок завершён'); } catch (e) { /* noop */ } });

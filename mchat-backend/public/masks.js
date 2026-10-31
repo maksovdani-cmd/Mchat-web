@@ -74,7 +74,7 @@
 
   async function openRawCamera() {
     if (state.raw) state.raw.getTracks().forEach((t) => t.stop());
-    const hd = window.mxHdPref && window.mxHdPref();
+    const hd = true;   // камера масок, как и раньше после правки качества, — 1280×720 независимо от переключателя HD
     state.raw = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: state.facing, width: { ideal: hd ? 1280 : 640 }, height: { ideal: hd ? 720 : 480 } }, audio: false,
     });

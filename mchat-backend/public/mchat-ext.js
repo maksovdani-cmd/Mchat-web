@@ -46,20 +46,23 @@
   window.addEventListener('resize', autosize);
 
   /* ════════════════════════ 2. HD, сжатие, значок HD ════════════════════════ */
-  window.mxHdPref = () => true;   // выбора HD больше нет: всегда лучшее качество (потолок файла ≈ 15 МБ)
-  window.mxSetHdPref = () => { syncHdButtons(); };
+  window.mxHdPref = () => { try { return localStorage.getItem('mchat_hd') === '1'; } catch (e) { return false; } };
+  window.mxSetHdPref = (v) => { try { localStorage.setItem('mchat_hd', v ? '1' : '0'); } catch (e) {} syncHdButtons(); };
 
   const KB = 1024, MB = 1024 * 1024;
   // Без HD: фото/видео ужимаются до ~100–200 КБ. С HD: высокое качество, до ~1–2 МБ.
+  // 'best' — не выбор пользователя, а автоматический режим для кружков (лучшее качество камеры, потолок ≈ 15 МБ).
   const LIMITS = {
-    photo: { sd: { max: 200 * KB, side: 1280, q: 0.6 }, hd: { max: 15 * MB, side: 3072, q: 0.92 } },
-    video: { sd: { max: 200 * KB, side: 360, audio: 16000 }, hd: { max: 15 * MB, side: 1080, audio: 96000 } },
+    photo: { sd: { max: 200 * KB, side: 1280, q: 0.6 }, hd: { max: 2 * MB, side: 2560, q: 0.9 }, best: { max: 15 * MB, side: 3072, q: 0.92 } },
+    video: { sd: { max: 200 * KB, side: 360, audio: 16000 }, hd: { max: 2 * MB, side: 1080, audio: 64000 }, best: { max: 15 * MB, side: 1080, audio: 96000 } },
   };
+  const tier = (kind, hd) => LIMITS[kind][hd === 'best' ? 'best' : hd ? 'hd' : 'sd'];
 
   /** Битрейты MediaRecorder на «живой» записи (чтобы потом не пережимать лишний раз). */
   window.mxRecorderBitrates = function (hd, maxSec) {
     if (!hd) return { videoBitsPerSecond: 250000, audioBitsPerSecond: 16000 };
-    // подбираем битрейт так, чтобы запись максимальной длины весила ≈ 15 МБ (с запасом на контейнер)
+    if (hd === true) return { videoBitsPerSecond: 2500000, audioBitsPerSecond: 64000 };   // выбор пользователя «HD»
+    // 'best' (кружок): подбираем битрейт так, чтобы запись максимальной длины весила ≈ 15 МБ (с запасом на контейнер)
     const sec = Math.max(5, maxSec || 60), audio = 96000;
     const total = (15 * 1024 * 1024 * 8 * 0.86) / sec;
     return { videoBitsPerSecond: Math.round(Math.min(8000000, Math.max(700000, total - audio))), audioBitsPerSecond: audio };
@@ -76,7 +79,7 @@
   window.mxCompressImage = async function (file, hd) {
     const t = (file.type || '').toLowerCase();
     if (!/^image\/(jpeg|png|webp)$/.test(t)) return file;
-    const L = hd ? LIMITS.photo.hd : LIMITS.photo.sd;
+    const L = tier('photo', hd);
     try {
       const src = await loadBitmap(file);
       const w = src.width || src.naturalWidth, h = src.height || src.naturalHeight;
@@ -112,7 +115,7 @@
 
   /** Видео: перекодируем через canvas + MediaRecorder с битрейтом под целевой размер (по длительности). */
   async function transcodeVideo(blob, hd, knownDur) {
-    const L = hd ? LIMITS.video.hd : LIMITS.video.sd;
+    const L = tier('video', hd);
     if (!window.MediaRecorder) return blob;
     const mime = pickVideoMime();
     const url = URL.createObjectURL(blob);
@@ -166,7 +169,7 @@
   }
 
   window.mxCompressVideoBlob = async function (blob, hd, dur) {
-    const L = hd ? LIMITS.video.hd : LIMITS.video.sd;
+    const L = tier('video', hd);
     if (blob.size <= L.max * 1.05) return blob;
     return transcodeVideo(blob, hd, dur);
   };
@@ -185,8 +188,7 @@
   function mountHdButtons() {
     // В кружке/фото из чата выбор HD убран: качество подбирается автоматически под камеру и устройство
     const oldHd = $('mx-cam-hd'); if (oldHd) oldHd.remove();
-    const oldSc = $('sc-hd'); if (oldSc) oldSc.remove();
-    const sc = null;
+    const sc = $('sc-preview');
     if (sc && !$('sc-hd')) {
       const b = document.createElement('button');
       b.id = 'sc-hd'; b.type = 'button'; b.className = 'mx-hd-btn sc'; b.dataset.hdToggle = '1'; b.textContent = 'HD'; b.title = 'HD';

@@ -262,7 +262,10 @@
     new MutationObserver(() => {
       if (!scr.classList.contains('active')) {
         state.swapped = false; state.selfPos = null; state.pipPos = null;
-        scr.classList.remove('mx-swapped'); grid.classList.remove('mx-pip'); self.classList.remove('mx-fullscreen');
+        // классы снимаем только если они есть: пустой classList.remove() тоже порождает mutation-запись, и наблюдатель за class зацикливался бы
+        if (scr.classList.contains('mx-swapped')) scr.classList.remove('mx-swapped');
+        if (grid.classList.contains('mx-pip')) grid.classList.remove('mx-pip');
+        if (self.classList.contains('mx-fullscreen')) self.classList.remove('mx-fullscreen');
         resetGrid(); resetSelf();
         scr.scrollTop = 0;
       }
@@ -1143,18 +1146,18 @@
     streams.forEach(stopStream);
     document.querySelectorAll('#call-screen video, #call-screen audio, #call-grid video').forEach((el) => { try { el.pause(); } catch (e) { /* noop */ } el.srcObject = null; });
     if (call) {
-      try { if (call.zg) { try { call.zg.stopPublishingStream && call.zg.stopPublishingStream(call.streamId); } catch (e) { /* noop */ } try { call.zg.logoutRoom && call.zg.logoutRoom(); } catch (e) { /* noop */ } try { call.zg.destroyEngine && call.zg.destroyEngine(); } catch (e) { /* noop */ } } } catch (e) { /* noop */ }
-      if (call.id && !call._leftSent) { call._leftSent = true; try { MchatAPI.leaveCall(call.id).catch(() => {}); } catch (e) { /* noop */ } }
+      try { if (call.zg) { try { call.zg.stopPublishingStream && call.zg.stopPublishingStream(call.roomId + '_' + call.myUserId); } catch (e) { /* noop */ } try { call.zg.logoutRoom && call.zg.logoutRoom(call.roomId); } catch (e) { /* noop */ } try { call.zg.destroyEngine && call.zg.destroyEngine(); } catch (e) { /* noop */ } } } catch (e) { /* noop */ }
+      if (call.id && !call._leftSent && !call.leftSent) { call._leftSent = true; call.leftSent = true; try { MchatAPI.leaveCall(call.id).catch(() => {}); } catch (e) { /* noop */ } }
     }
     try { if (window.MxMasks && MxMasks.reset) MxMasks.reset(); } catch (e) { /* noop */ }
-    const scr = $('call-screen'); if (scr) { scr.classList.remove('active'); scr.classList.remove('mx-swapped'); }
-    const inc = $('call-incoming'); if (inc) inc.classList.remove('active');
+    const scr = $('call-screen'); if (scr) { if (scr.classList.contains('active')) scr.classList.remove('active'); if (scr.classList.contains('mx-swapped')) scr.classList.remove('mx-swapped'); }
+    const inc = $('call-incoming'); if (inc && inc.classList.contains('active')) inc.classList.remove('active');
     try { if (G.call === call) mxCall = null; } catch (e) { /* noop */ }
     return r;
   };
   // кнопка «Завершить»: интерфейс закрывается мгновенно, тяжёлая очистка идёт следом
   window.mxCallEnd = function () {
-    const scr = $('call-screen'); if (scr) scr.classList.remove('active');
+    const scr = $('call-screen'); if (scr && scr.classList.contains('active')) scr.classList.remove('active');
     window.mxCallCleanup('Звонок завершён');
   };
   // Закрыли вкладку/приложение во время звонка — сообщаем серверу, чтобы у собеседника звонок тоже завершился

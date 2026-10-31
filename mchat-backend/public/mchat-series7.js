@@ -73,8 +73,14 @@
   /* ═════════ 2. Камера ═════════ */
   const camState = () => gv(() => mxCam, null);
   const camVideo = () => $('mx-cam-video');
-  const camErr = (e) => (e && e.name === 'SingleCamera' ? 'Другой камеры на устройстве нет'
-    : e && e.name === 'NotAllowedError' ? 'Нет доступа к камере. Разрешите его в настройках браузера' : 'Не удалось переключить камеру');
+  const camErr = (e) => {
+    const n = e && e.name;
+    if (n === 'SingleCamera') return 'Другой камеры на устройстве нет';
+    if (n === 'NotAllowedError' || n === 'SecurityError') return 'Нет доступа к камере. Разрешите её в настройках браузера';
+    if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'Эта камера не найдена или не поддерживается браузером';
+    if (n === 'NotReadableError') return 'Камера занята другим приложением';
+    return 'Не удалось переключить камеру' + (n ? ' (' + n + ')' : '');
+  };
 
   // ждём реального кадра: «поток открыт, но экран чёрный» — именно этот случай ловим
   function waitFrame(v, ms) {
@@ -92,28 +98,39 @@
     const size = {};
     if (o.width) size.width = { ideal: o.width };
     if (o.height) size.height = { ideal: o.height };
-    if (o.fps) size.frameRate = { ideal: o.fps, max: o.fps + 5 };
+    if (o.fps) size.frameRate = { ideal: o.fps };      // без жёсткого max: на части Android-камер он даёт OverconstrainedError
+    // порядок: точный deviceId → facingMode «ideal» (мягко, с проверкой, что открылась нужная сторона) → facingMode «exact» → любая камера
     const tries = [];
-    if (o.deviceId) tries.push({ deviceId: { exact: o.deviceId } });
-    if (o.facing) { tries.push({ facingMode: { exact: o.facing } }); tries.push({ facingMode: { ideal: o.facing } }); }
-    tries.push({});
+    if (o.deviceId) tries.push({ c: { deviceId: { exact: o.deviceId } } });
+    if (o.facing) { tries.push({ c: { facingMode: { ideal: o.facing } }, want: o.facing }); tries.push({ c: { facingMode: { exact: o.facing } } }); }
+    tries.push({ c: {} });
+    const cancelled = () => !!(o.cancelled && o.cancelled());
+    const stopAll = (s) => { if (s) s.getTracks().forEach((x) => { try { x.stop(); } catch (er) { /* noop */ } }); };
     let lastErr = null;
     for (const t of tries) {
       let vs = null;
       try {
-        vs = await navigator.mediaDevices.getUserMedia({ video: Object.assign({}, t, size), audio: false });
+        if (cancelled()) { const c = new Error('cancelled'); c.name = 'Cancelled'; throw c; }
+        vs = await navigator.mediaDevices.getUserMedia({ video: Object.assign({}, t.c, size), audio: false });
+        if (cancelled()) { const c = new Error('cancelled'); c.name = 'Cancelled'; throw c; }
         const track = vs.getVideoTracks()[0];
+        if (t.want) {   // «ideal» мог вернуть ту же камеру — проверяем сторону, иначе идём к «exact»
+          const got = window.MxCamera && MxCamera.facingOf(track);
+          if (got && got !== t.want) { const m = new Error('wrong_facing'); m.name = 'WrongFacing'; throw m; }
+        }
         const vid = o.video;
         if (!vid) return vs;
         vid.srcObject = new MediaStream([track].concat(o.keepAudio || []));
         vid.muted = true; vid.playsInline = true;
-        try { await vid.play(); } catch (e) { /* автозапуск */ }
-        if (track.readyState === 'live' && (await waitFrame(vid, 2600))) return vs;
+        // play() у видео без кадров может висеть бесконечно — ждём не дольше 1.5 с, дальше решает проверка кадра
+        try { await Promise.race([vid.play(), sleep(1500)]); } catch (e) { /* автозапуск */ }
+        if (track.readyState === 'live' && (await waitFrame(vid, 3000))) return vs;
         throw new Error('no_frame');
       } catch (e) {
         lastErr = e;
-        if (vs) vs.getTracks().forEach((x) => { try { x.stop(); } catch (er) { /* noop */ } });
-        if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) throw e;
+        stopAll(vs);
+        try { console.warn('[camera] вариант не подошёл:', JSON.stringify(t.c), e && e.name, e && e.message); } catch (er) { /* noop */ }
+        if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'Cancelled')) throw e;
         await sleep(80);
       }
     }
@@ -150,7 +167,9 @@
       cam.facing = (window.MxCamera && MxCamera.facingOf(nt)) || st.facingMode || nx.facing;
       cam.deviceId = st.deviceId || nx.deviceId;
       if (v) { v.srcObject = cam.stream; v.classList.toggle('mirror', cam.facing === 'user'); v.play().catch(() => {}); }
+      try { if (window.mxCamOnTrack) window.mxCamOnTrack(); } catch (er) { /* вспышка/подсветка подстроится под новую камеру */ }
     } catch (e) {
+      console.warn('[camera] смена камеры:', e && e.name, e && e.message);
       toast(camErr(e));
       try { if (typeof mxCameraStartStream === 'function' && !cam.recording) await mxCameraStartStream(); } catch (er) { /* noop */ }
     } finally { cam.switching = false; if (btn) btn.disabled = false; }
@@ -342,7 +361,7 @@
     if (!el) return;
     new MutationObserver(() => {
       if (el.classList.contains('active')) {
-        if (callAlive()) el.classList.remove('mx7-closed');
+        if (callAlive()) { if (el.classList.contains('mx7-closed')) el.classList.remove('mx7-closed'); }   // меняем class только при реальной необходимости: иначе наблюдатель сам себя запускает в бесконечном цикле
         else setTimeout(() => { if (el.classList.contains('active') && !callAlive()) { el.classList.remove('active'); el.classList.add('mx7-closed'); document.querySelectorAll('#call-screen video,#call-screen audio').forEach(stopMedia); } }, 700);
       }
     }).observe(el, { attributes: true, attributeFilter: ['class'] });

@@ -1656,7 +1656,7 @@ function scStartRecord(e) {
   }
 
   try {
-    scMediaRecorder = new MediaRecorder(recordStream, Object.assign({mimeType:'video/webm;codecs=vp8,opus'}, mxRecorderBitrates(true, 20)));
+    scMediaRecorder = new MediaRecorder(recordStream, Object.assign({mimeType:'video/webm;codecs=vp8,opus'}, mxRecorderBitrates(mxHdPref() ? true : false, 20)));   // история: HD-переключатель снова определяет битрейт
   } catch(e) {
     scMediaRecorder = new MediaRecorder(recordStream);
   }
@@ -4748,6 +4748,11 @@ async function mxCallConnect(call, r) {
   try { await zg.loginRoom(r.roomId, r.token, { userID: r.userId, userName: r.userName }, { userUpdate: true }); }
   catch (e) { console.error('[call] loginRoom failed:', e); throw e; }
   console.info('[call] logged in to room', r.roomId, 'as', r.userId);
+  if (mxCall !== call) {   // пока подключались, звонок закрыли (таймаут/«Завершить»): не оживляем его, освобождаем движок
+    try { zg.logoutRoom(r.roomId); } catch (e) {}
+    try { zg.destroyEngine(); } catch (e) {}
+    return;
+  }
   call.connected = true;
   call.timer = setInterval(mxCallUpdateStatus, 1000);
 
@@ -5629,8 +5634,9 @@ async function mxCameraOpen() {
   mxCam = { facing: 'user', deviceId: null, mode: 'circle', chunks: [], blob: null, photoBlob: null, recording: false, elapsed: 0, timer: null };
   document.getElementById('mx-camera').classList.add('active');
   document.getElementById('mx-camera').classList.remove('photo', 'recording');
-  document.getElementById('mx-mode-circle').classList.add('on');
-  document.getElementById('mx-mode-photo').classList.remove('on');
+  // переключателя «Кружок/Фото» в разметке больше нет — его отсутствие не должно обрывать открытие камеры (раньше тут было исключение → чёрный экран)
+  const mxModeC = document.getElementById('mx-mode-circle'); if (mxModeC) mxModeC.classList.add('on');
+  const mxModeP = document.getElementById('mx-mode-photo'); if (mxModeP) mxModeP.classList.remove('on');
   document.getElementById('mx-cam-live').style.display = 'flex';
   document.getElementById('mx-cam-review').style.display = 'none';
   await mxCameraStartStream();
@@ -5697,8 +5703,8 @@ function mxCameraMode(mode) {
   if (!mxCam || mxCam.recording) return;
   mxCam.mode = mode;
   document.getElementById('mx-camera').classList.toggle('photo', mode === 'photo');
-  document.getElementById('mx-mode-circle').classList.toggle('on', mode === 'circle');
-  document.getElementById('mx-mode-photo').classList.toggle('on', mode === 'photo');
+  const mxModeC = document.getElementById('mx-mode-circle'); if (mxModeC) mxModeC.classList.toggle('on', mode === 'circle');
+  const mxModeP = document.getElementById('mx-mode-photo'); if (mxModeP) mxModeP.classList.toggle('on', mode === 'photo');
   mxCameraStartStream(); // фото не пишет звук — переоткрываем поток без аудио
 }
 function mxCameraShutter() {
@@ -5753,7 +5759,7 @@ function mxCameraStartRecording() {
     try { mxCam.mirror = mxMirroredStream(mxCam.stream, document.getElementById('mx-cam-video')); source = mxCam.mirror.stream; }
     catch (e) { mxCam.mirror = null; source = mxCam.stream; }
   }
-  try { recorder = new MediaRecorder(source, Object.assign(mime ? { mimeType: mime } : {}, mxRecorderBitrates(true))); }
+  try { recorder = new MediaRecorder(source, Object.assign(mime ? { mimeType: mime } : {}, mxRecorderBitrates('best'))); }
   catch (e) { if (mxCam.mirror) { mxCam.mirror.stop(); mxCam.mirror = null; } showToast('Запись видео не поддерживается'); return; }
   mxCam.recorder = recorder; mxCam.chunks = []; mxCam.recording = true; mxCam.elapsed = 0;
   recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) mxCam.chunks.push(e.data); };
@@ -5809,10 +5815,10 @@ async function mxCameraSend() {
       const saved = await MchatAPI.sendMessage(chatId, '', MchatAPI.newClientId(), { kind: 'IMAGE', mediaId: media.id });
       onIncomingMessage(saved);
     } else if (mxCam.blob) {
-      const hd = true;   // кружок всегда в лучшем качестве, которое дала камера (в пределах лимита размера)
+      const hd = 'best';   // кружок всегда в лучшем качестве, которое дала камера (в пределах лимита размера), без выбора HD
       showToast('Сжимаю видео…');
       const vn = await mxCompressVideoBlob(mxCam.blob, hd, mxCam.elapsed);
-      const media = await MchatAPI.uploadMedia('videonote', vn, { duration: mxCam.elapsed, hd: hd });
+      const media = await MchatAPI.uploadMedia('videonote', vn, { duration: mxCam.elapsed, hd: false });   // бейдж «HD» на кружках не нужен
       const saved = await MchatAPI.sendMessage(chatId, '', MchatAPI.newClientId(), { kind: 'VIDEO_NOTE', mediaId: media.id, durationSec: mxCam.elapsed });
       onIncomingMessage(saved);
     }

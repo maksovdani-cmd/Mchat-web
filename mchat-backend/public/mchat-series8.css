@@ -91,3 +91,22 @@ html.mx8-lite .general-star::before{ animation:none !important; }
 .mx8-ios ol{ margin:8px 0 0 18px; padding:0; line-height:1.6; }
 
 .mx8-install[hidden],.mx8-apk[hidden]{ display:none !important; }
+
+/* ───────── Камера кружка: превью внизу (на уровне пальцев), кнопки слева внизу, подсветка экраном ───────── */
+#mx-camera{ --mx-bar: calc(124px + env(safe-area-inset-bottom, 0px)); --mxp: min(88vw, 52vh, 400px); }
+#mx-camera .mx-cam-stage{ align-items:flex-end; justify-content:center; padding-bottom:var(--mx-bar); box-sizing:border-box; }
+#mx-camera:not(.photo) .mx-cam-stage video,
+#mx-camera:not(.photo) .mx-cam-stage img.mx-still{ width:var(--mxp); height:var(--mxp); }
+#mx-camera .mx-cam-spacer{ width:38px; height:38px; flex:none; }
+#mx-camera .mx-cam-tools{ position:absolute; left:14px; bottom:calc(env(safe-area-inset-bottom, 0px) + 20px); z-index:4; display:flex; flex-direction:column; gap:10px; }
+#mx-camera .mx-cam-tools .ib{ width:46px; height:46px; border-radius:50%; color:#fff; background:rgba(255,255,255,.16); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); display:flex!important; align-items:center; justify-content:center; }
+#mx-camera .mx-cam-tools .ib.on{ background:var(--accent); }
+#mx-camera .mx-cam-tools .ib[disabled]{ opacity:.45; pointer-events:none; }
+/* белая область сверху: доходит до середины круга превью, сам круг остаётся поверх и показывает камеру */
+#mx-camera .mx-cam-light{ position:absolute; left:0; right:0; top:0; height:calc(100% - var(--mx-bar) - var(--mxp) / 2); background:#fff; opacity:0; pointer-events:none; transition:opacity .15s ease; }
+#mx-camera.mx-light .mx-cam-light{ opacity:1; }
+#mx-camera.mx-light .mx-cam-top{ background:none; }
+#mx-camera.mx-light .mx-cam-top .ib{ color:#111; background:rgba(0,0,0,.08); }
+#mx-camera.mx-light .mx-cam-timer{ color:#111; }
+#mx-camera.mx-light .mx-cam-stage video{ box-shadow:0 0 0 4px #fff; }
+#mx-camera.mx-light.recording .mx-cam-stage video{ box-shadow:0 0 0 5px #ef4444; }

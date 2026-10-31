@@ -229,7 +229,7 @@
         if (sel === '__new') setTimeout(() => { const i = $('mx6-ask-name'); if (i) i.focus(); }, 30);
       };
       modal.onclick = (e) => { if (e.target === modal) { modal.remove(); resolve(null); } };
-      draw(); appEl().appendChild(modal);
+      appEl().appendChild(modal); draw();   // сначала вставляем окно в DOM: draw() ищет кнопки через getElementById
     });
   }
   async function uploadSticker(blob) {

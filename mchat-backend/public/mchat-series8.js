@@ -266,52 +266,117 @@
   bridgeNative();
 
   /* ═════════ 3.1 Видеокружки: запуск камеры без чёрного экрана ═════════
-     Причины чёрного экрана: (а) поток открыт, но кадров нет (камера занята/трек muted), (б) play() отклонён, (в) старые треки не освобождены.
-     Теперь: старые треки останавливаются, камера открывается каскадом deviceId → facingMode(exact) → ideal → любая, КАЖДЫЙ вариант
-     проверяется на реальный кадр; микрофон берётся отдельно; при неудаче — одна повторная попытка и понятная ошибка. */
-  let camStarting = false;
+     Что исправлено относительно прежней версии:
+       • не было отмены: если окно закрыли, пока камера открывалась (короткое нажатие, отмена), поток оставался включённым
+         и следующий запуск получал чёрный экран → теперь каждый запуск проверяет, что он ещё актуален, и освобождает треки;
+       • флаг camStarting мог «залипнуть» навсегда (play() без кадров не завершается) и блокировал все следующие открытия →
+         теперь новый запуск просто вытесняет старый (токен), а play() ограничен по времени;
+       • микрофон запрашивался ДО камеры и при отказе закрывал камеру → теперь сначала камера, микрофон — потом, без него кружок пишется без звука;
+       • ошибки показываются с понятным текстом и именем (для диагностики на устройстве). */
+  let camToken = 0;
+  const stopTracks = (arr) => arr.forEach((t) => { try { t.onended = null; t.stop(); } catch (e) { /* noop */ } });
+  const sleep8 = (ms) => new Promise((r) => setTimeout(r, ms));
+  const camErrText = (e) => {
+    const n = e && e.name;
+    if (n === 'NotAllowedError' || n === 'SecurityError') return 'Нет доступа к камере. Разрешите её в настройках браузера';
+    if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'Камера не найдена или не поддерживается этим браузером';
+    if (n === 'NotReadableError') return 'Камера занята другим приложением';
+    return 'Камера не дала изображение. Попробуйте ещё раз' + (n ? ' (' + n + ')' : '');
+  };
   window.mxCameraStartStream = async function () {
     const cam = gv(() => mxCam, null), v = $('mx-cam-video');
-    if (!cam || !v || camStarting) return;
-    camStarting = true;
+    if (!cam || !v) return;
+    const token = ++camToken;
+    const dead = () => token !== camToken || gv(() => mxCam, null) !== cam;   // запуск вытеснен новым или окно закрыто
+    let vs = null, audioTracks = [];
     try {
       v.muted = true; v.defaultMuted = true; v.playsInline = true; v.autoplay = true;
       v.setAttribute('muted', ''); v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Камера недоступна в этом браузере'); return gv(() => mxCameraClose()); }
-      if (cam.stream) { cam.stream.getTracks().forEach((t) => { try { t.onended = null; t.stop(); } catch (e) { /* noop */ } }); cam.stream = null; }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Камера недоступна в этом браузере (нужен https)'); return gv(() => mxCameraClose()); }
+      if (cam.stream) { stopTracks(cam.stream.getTracks()); cam.stream = null; }
       v.srcObject = null;
       const prof = (window.MxPerf && MxPerf.profile) ? MxPerf.profile() : { capW: 1280, capH: 720, fps: 30 };
-      let audioTracks = [];
+      let err = null;
+      for (let attempt = 0; attempt < 2 && !vs; attempt++) {
+        try { vs = await window.mx7OpenVerified({ facing: cam.facing, deviceId: cam.deviceId, width: prof.capW, height: prof.capH, fps: prof.fps, video: v, cancelled: dead }); }
+        catch (e) {
+          err = e;
+          if (dead() || (e && (e.name === 'Cancelled' || e.name === 'NotAllowedError' || e.name === 'SecurityError'))) break;
+          await sleep8(350);   // Android: камере нужно время, чтобы освободиться
+        }
+      }
+      if (dead()) { if (vs) stopTracks(vs.getTracks()); return; }
+      if (!vs) { console.warn('[camera] запуск не удался:', err && err.name, err && err.message); toast(camErrText(err)); return gv(() => mxCameraClose()); }
       if (cam.mode === 'circle') {
         try { const as = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false }); audioTracks = as.getAudioTracks(); }
-        catch (e) { if (e && e.name === 'NotAllowedError') { toast('Нет доступа к микрофону. Разрешите его в настройках'); return gv(() => mxCameraClose()); } /* нет микрофона — запишем без звука */ }
+        catch (e) { if (!dead()) toast('Нет доступа к микрофону — кружок запишется без звука'); }
       }
-      let vs = null, err = null;
-      for (let attempt = 0; attempt < 2 && !vs; attempt++) {
-        try { vs = await window.mx7OpenVerified({ facing: cam.facing, deviceId: cam.deviceId, width: prof.capW, height: prof.capH, fps: prof.fps, video: v, keepAudio: audioTracks }); }
-        catch (e) { err = e; if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) break; await new Promise((r) => setTimeout(r, 300)); }
-      }
-      if (!vs) {
-        audioTracks.forEach((t) => { try { t.stop(); } catch (e) { /* noop */ } });
-        const n = err && err.name;
-        toast(n === 'NotAllowedError' || n === 'SecurityError' ? 'Нет доступа к камере. Разрешите его в настройках браузера'
-          : n === 'NotFoundError' || n === 'OverconstrainedError' ? 'Камера не найдена'
-          : n === 'NotReadableError' ? 'Камера занята другим приложением' : 'Камера не дала изображение. Попробуйте ещё раз');
-        return gv(() => mxCameraClose());
-      }
+      if (dead()) { stopTracks(vs.getTracks().concat(audioTracks)); return; }
       const track = vs.getVideoTracks()[0];
       cam.stream = new MediaStream([track].concat(audioTracks));
       const st = (track.getSettings && track.getSettings()) || {};
       cam.facing = (window.MxCamera && MxCamera.facingOf(track)) || st.facingMode || cam.facing;
       cam.deviceId = st.deviceId || cam.deviceId;
       v.srcObject = cam.stream; v.classList.toggle('mirror', cam.facing === 'user');
-      try { await v.play(); } catch (e) { /* автозапуск уже идёт */ }
+      try { await Promise.race([v.play(), sleep8(1500)]); } catch (e) { /* автозапуск уже идёт */ }
       // камеру отняли (звонок, другое приложение) — не оставляем чёрный экран, а пробуем перезапустить один раз
       track.onended = () => { if (gv(() => mxCam === cam && !cam.recording && !!cam.stream, false)) { toast('Камера отключилась, перезапускаем…'); setTimeout(() => window.mxCameraStartStream(), 400); } };
-    } finally { camStarting = false; }
+      try { if (window.mxCamOnTrack) window.mxCamOnTrack(); } catch (e) { /* noop */ }
+    } catch (e) {
+      console.warn('[camera] ошибка запуска:', e && e.name, e && e.message);
+      if (vs) stopTracks(vs.getTracks());
+      stopTracks(audioTracks);
+      if (!dead()) { toast(camErrText(e)); gv(() => mxCameraClose()); }
+    }
   };
   // вернулись во вкладку/приложение — если превью замерло, оживляем
   document.addEventListener('visibilitychange', () => { const v = $('mx-cam-video'); if (!document.hidden && v && v.srcObject && v.paused) v.play().catch(() => {}); });
+
+  /* ═════════ 3.2 Вспышка / подсветка в камере кружка ═════════
+     Реальные возможности браузера проверяются, а не предполагаются:
+       • задняя камера + track.getCapabilities().torch (Chrome на Android) → аппаратная вспышка (applyConstraints {torch});
+       • фронтальная камера, iOS Safari и всё, где torch нет или он отклонён → экранная подсветка:
+         верхняя часть экрана становится белой (#mx-cam-light), превью камеры остаётся видимым. В запись подсветка не попадает. */
+  const camNow = () => gv(() => mxCam, null);
+  const camTrackNow = () => { const c = camNow(); return (c && c.stream && c.stream.getVideoTracks()[0]) || null; };
+  const torchCapable = (t) => { try { const c = t && t.getCapabilities && t.getCapabilities(); return !!(c && 'torch' in c); } catch (e) { return false; } };
+  function setScreenLight(on) {
+    const el = $('mx-camera'); if (!el) return;
+    if (el.classList.contains('mx-light') !== !!on) el.classList.toggle('mx-light', !!on);   // меняем class только при изменении
+  }
+  function paintFlashBtn(on) {
+    const b = $('mx-cam-flash'); if (!b) return;
+    if (b.classList.contains('on') !== !!on) b.classList.toggle('on', !!on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  async function applyFlash(announce) {
+    const cam = camNow(); if (!cam) { setScreenLight(false); paintFlashBtn(false); return; }
+    const on = !!cam.flashOn, t = camTrackNow();
+    let torch = false;
+    if (t && torchCapable(t)) {
+      if (on && cam.facing === 'environment') { try { await t.applyConstraints({ advanced: [{ torch: true }] }); torch = true; } catch (e) { console.warn('[camera] torch отклонён:', e && e.name); } }
+      else if (cam.torchOn) { try { await t.applyConstraints({ advanced: [{ torch: false }] }); } catch (e) { /* трек уже остановлен */ } }
+    }
+    cam.torchOn = torch;
+    setScreenLight(on && !torch);
+    paintFlashBtn(on);
+    if (announce && on && !torch && cam.facing === 'environment') toast('Аппаратная вспышка недоступна — включена подсветка экраном');
+  }
+  window.mxCameraFlash = function () {
+    const cam = camNow(); if (!cam) return;
+    cam.flashOn = !cam.flashOn;
+    return applyFlash(true);
+  };
+  window.mxCamOnTrack = function () { const cam = camNow(); if (cam && cam.flashOn) applyFlash(false); };
+  // закрыли камеру — подсветка и кнопка сбрасываются (аппаратная вспышка гаснет вместе с остановкой трека)
+  const _camClose = window.mxCameraClose;
+  if (typeof _camClose === 'function') {
+    window.mxCameraClose = function () {
+      const r = _camClose.apply(this, arguments);
+      setScreenLight(false); paintFlashBtn(false);
+      return r;
+    };
+  }
 
   /* ═════════ 10.3 Блок установки на экране входа: APK-кнопка появляется ТОЛЬКО когда в app-config.json задан реальный apkUrl ═════════ */
   (function installBlock() {

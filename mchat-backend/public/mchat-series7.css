@@ -68,8 +68,8 @@ html.mx-noanim .mx-rec-dot,html.mx-noanim .mx-live-bars i{ animation:none !impor
 /* переключатель «Анимации» */
 #mx-anim-toggle.on{ background:var(--accent); }
 
-/* ───────── 2. Камера: только кружок, без «Фото» и HD ───────── */
-.mx-cam-modes,#mx-cam-modes,#mx-mode-photo,#mx-pv-hd,#sc-hd,.mx-hd-btn,.mx-hdbadge{ display:none !important; }
+/* ───────── 2. Камера: только кружок, без «Фото» (кнопка HD в превью/историях и бейдж HD снова показываются) ───────── */
+.mx-cam-modes,#mx-cam-modes,#mx-mode-photo{ display:none !important; }
 .mx-cam-bottom{ gap:10px; }
 #mx-cam-flip[disabled]{ opacity:.45; pointer-events:none; }
 #mx-cam-video,#sc-camera{ background:#000; }
