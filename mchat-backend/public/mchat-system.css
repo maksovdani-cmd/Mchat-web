@@ -1,0 +1,36 @@
+/* Mchat — официальные аккаунты и карточка подтверждения входа. Логика: mchat-system.js */
+
+/* логотип официального аккаунта (запасной значок лежит под файлом логотипа) */
+.mx-off-logo { position: relative; display: block; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; }
+.mx-off-logo svg, .mx-off-logo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+/* значок «официальный аккаунт» — отдельный от галочки верификации; выдаётся только сервером */
+.mx-official-badge { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%;
+  background: var(--accent, #4a4af0); color: #fff; margin-left: 5px; vertical-align: -2px; flex-shrink: 0; }
+.mx-official-sub { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--text2); }
+
+/* карточка «Вход с нового устройства» */
+.mx-sec-card { min-width: 230px; max-width: 300px; padding: 4px 2px; }
+.mx-sec-title { font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+.mx-sec-row { display: flex; flex-direction: column; margin-bottom: 6px; font-size: 12px; }
+.mx-sec-row span { color: var(--text2); font-size: 11px; }
+.mx-sec-row b { font-weight: 600; word-break: break-word; }
+.mx-sec-row i { font-weight: 500; color: var(--text2); }
+.mx-sec-btns { display: flex; gap: 8px; margin-top: 10px; }
+.mx-sec-btns button { flex: 1; border: 0; border-radius: 12px; padding: 10px 6px; font-weight: 700; font-size: 13px; cursor: pointer; color: #fff; font-family: inherit; }
+.mx-sec-btns button:disabled { opacity: .55; cursor: default; }
+.mx-sec-yes { background: #16a34a; }
+.mx-sec-no { background: #dc2626; }
+.mx-sec-note { margin-top: 8px; font-size: 11px; color: var(--text2); }
+.mx-sec-state { margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--text2); }
+.mx-sec-state.ok { color: #16a34a; }
+.mx-sec-state.no { color: #dc2626; }
+
+/* строка «Архив» в списке чатов */
+.mx-archive-av { width: 100%; height: 100%; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--surf2); color: var(--text2); font-size: 26px; }
+.mx-archive-row .chat-name { font-weight: 700; }
+.mx-archive-row .chat-last { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mx-archive-count { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--text2); color: var(--bg); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-left: 8px; flex-shrink: 0; }
+
+/* кнопки раздела новостей в админ-панели */
+.mx-adm-btn { padding: 8px 12px; border-radius: 8px; border: 0; color: #fff; cursor: pointer; font-size: 12px; font-family: inherit; }

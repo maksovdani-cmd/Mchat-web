@@ -10,6 +10,7 @@ import { gcMedia, mediaUrl, toMediaDTO } from '../services/media';
 import { announcePresence, visiblePresence } from '../services/presence';
 import { publicUserSelect } from '../services/chat';
 import { generalOf } from '../services/titles';
+import { officialOf } from '../services/official';
 import { COOKIE, dropCookie, revokeDevice } from '../services/session';
 import { HttpError, wrap } from '../utils/errors';
 import { cleanDisplayName, cleanQuery, displayNameAllowed, normalizeUsername } from '../utils/validate';
@@ -17,13 +18,14 @@ import { cleanDisplayName, cleanQuery, displayNameAllowed, normalizeUsername } f
 export const usersRouter = Router();
 usersRouter.use(requireAuth);
 
-const toPublic = (u: { id: string; username: string; name: string; avatarUrl: string | null; verified: boolean; bio?: string; generalTitle?: boolean | null; generalStyle?: string | null; }) => ({
+const toPublic = (u: { id: string; username: string; name: string; avatarUrl: string | null; verified: boolean; bio?: string; generalTitle?: boolean | null; generalStyle?: string | null; isSystem?: boolean | null; officialKind?: string | null; }) => ({
   id: u.id,
   username: u.username,
   name: u.name,
   avatar: u.avatarUrl,
   verified: u.verified,
   general: generalOf(u),
+  official: officialOf(u),
   ...(u.bio !== undefined ? { bio: u.bio } : {}),
 });
 
@@ -58,7 +60,7 @@ usersRouter.get(
       momentActive: await hasActiveMoment(u.id),
       role: u.role,
       generalPending: u.generalTitle && !u.generalCelebratedAt, // титул получен, а праздничный экран ещё не показан
-      settings: { notifyMessages: u.notifyMessages, hideOnline: u.hideOnline, hideRead: u.hideRead, hideFollowing: u.hideFollowing },
+      settings: { notifyMessages: u.notifyMessages, hideOnline: u.hideOnline, hideRead: u.hideRead, hideFollowing: u.hideFollowing, archiveHidden: u.archiveHidden },
       deviceId: authOf(req).deviceId,
     });
   }),
@@ -72,6 +74,7 @@ const patchSchema = z
     hideOnline: z.boolean(),
     hideRead: z.boolean(),
     hideFollowing: z.boolean(),
+    archiveHidden: z.boolean(),
     avatarMediaId: z.string().min(1).max(40).nullable(),
     bannerMediaId: z.string().min(1).max(40).nullable(),
     musicTrack: z.string().min(1).max(40).nullable(),
@@ -92,7 +95,8 @@ usersRouter.patch(
     if (rest.name !== undefined) {
       rest.name = cleanDisplayName(rest.name).slice(0, 40);   // убираем невидимые/«битые» символы (иначе в профиле квадратики)
       if (!rest.name) throw new HttpError(400, 'bad_request');
-      if (!displayNameAllowed(rest.name)) throw new HttpError(400, 'name_forbidden');
+      const me = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+      if (!displayNameAllowed(rest.name, { privileged: me?.role === 'ADMIN' })) throw new HttpError(400, 'name_forbidden');   // в т.ч. «Mchat» и похожие: имя принадлежит официальным аккаунтам
     }
     const data: Record<string, unknown> = { ...rest };
     const before = await prisma.user.findUnique({ where: { id: userId }, select: { hideOnline: true, avatarUrl: true, bannerUrl: true } });

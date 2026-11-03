@@ -111,7 +111,16 @@
     nick_invalid_chars: 'Ник: только латиница, цифры и _',
     nick_reserved: 'Этот ник зарезервирован',
     nick_forbidden: 'Этот ник нельзя использовать: он содержит запрещённое слово',
-    name_forbidden: 'Это имя нельзя использовать: оно содержит запрещённое слово',
+    name_forbidden: 'Это имя нельзя использовать: оно содержит запрещённое слово или зарезервировано за Mchat',
+    cannot_archive_saved: '«Избранное» нельзя отправить в архив',
+    system_readonly: 'В официальный аккаунт Mchat писать нельзя',
+    alert_not_found: 'Запрос на подтверждение входа не найден',
+    alert_expired: 'Время подтверждения истекло — вход отменён',
+    alert_already_resolved: 'На этот запрос уже ответили',
+    cannot_confirm_own_login: 'Подтвердить вход нужно с другого, уже вошедшего устройства',
+    session_too_new: 'Подтвердить вход можно только с устройства, которое вошло раньше',
+    session_gone: 'Новый сеанс уже завершён',
+    approval_expired: 'Время подтверждения истекло — войдите заново',
     username_immutable: '@username изменить нельзя — менять можно только отображаемое имя',
     title_not_requestable: 'Этот титул выдаёт только создатель Mchat',
     bad_style: 'Недопустимое оформление звезды',
@@ -377,6 +386,7 @@
     inviteToCall: (id, userIds) => api('/calls/' + encodeURIComponent(id) + '/invite', { method: 'POST', body: { userIds: userIds } }),
     chatContacts: () => api('/chats/contacts'),
     searchChannels: (q) => api('/chats/search?q=' + encodeURIComponent(q)),
+    archiveChat: (id, archived) => api('/chats/' + encodeURIComponent(id) + '/archive', { method: 'PUT', body: { archived: !!archived } }),
     pinChat: (id, pinned) => api('/chats/' + encodeURIComponent(id) + '/pin-chat', { method: 'PUT', body: { pinned: !!pinned } }),
     storiesFeed: () => api('/stories/feed'),
     sendSupport: (text) => api('/support', { method: 'POST', body: { text: text, clientId: newClientId() } }),
@@ -486,6 +496,15 @@
     momentComments: (id) => api('/moments/' + id + '/comments'),
     addMomentComment: (id, text) => api('/moments/' + id + '/comments', { method: 'POST', body: { text: text } }),
     deleteMomentComment: (id, commentId) => api('/moments/' + id + '/comments/' + commentId, { method: 'DELETE' }),
+
+    // ── подтверждение входа с нового устройства (карточка «Mchat — Безопасность») ──
+    securityConfirm: (alertId) => api('/security/alerts/' + encodeURIComponent(alertId) + '/confirm', { method: 'POST', body: {} }),
+    securityDeny: (alertId) => api('/security/alerts/' + encodeURIComponent(alertId) + '/deny', { method: 'POST', body: {} }),
+    // ── новости (только администратор; права проверяет сервер) ──
+    newsList: () => api('/news'),
+    newsPublish: (text, mediaId) => api('/news', { method: 'POST', body: Object.assign({ text: text || '' }, mediaId ? { mediaId: mediaId } : {}) }),
+    newsDelete: (id) => api('/news/' + encodeURIComponent(id), { method: 'DELETE' }),
+    newsStory: (body) => api('/news/story', { method: 'POST', body: body }),
 
     // ── произвольные события сокета (WebSocket-часть «Момента») ──
     on: onSocket,

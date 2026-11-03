@@ -250,12 +250,13 @@
     const seen = seenMap();
     row.insertAdjacentHTML('beforeend', feedGroups.map((g, i) => {
       const allSeen = g.stories.every((s) => seen[s.id]);
-      const av = g.avatar
+      const av = g.official && window.mxOfficialLogoHtml ? window.mxOfficialLogoHtml(g.official)   // официальный аккаунт Mchat — его логотип
+        : g.avatar
         ? `<img src="${esc(g.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" referrerpolicy="no-referrer">`
         : `<span style="color:var(--text);font-weight:700;font-size:20px">${esc((g.name || g.username).charAt(0).toUpperCase())}</span>`;
       return `<div class="si" onclick="mxViewUserStories(${i})">
         <div class="sring has-story${allSeen ? ' seen' : ''}" style="position:relative"><div class="sinner" style="display:flex;align-items:center;justify-content:center">${av}</div></div>
-        <div class="sname">${esc(g.username)}</div></div>`;
+        <div class="sname">${esc(g.official ? 'Mchat' : g.username)}</div></div>`;
     }).join(''));
   };
 
@@ -380,37 +381,119 @@
   /* ════════════════════════ 6. ЗАКРЕПЛЁННЫЕ ЧАТЫ + КНОПКИ КАНАЛА ════════════════════════ */
   const PIN_SVG = '<svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><path d="M16 3l5 5-3 1-3 4 1 4-2 2-4-4-6 6-1-1 6-6-4-4 2-2 4 1 4-3z"/></svg>';
 
+  /* ── АРХИВ ──
+     Личный архив чатов и каналов: чат убирается из основного списка только у меня, ничего не удаляется.
+     • строка «Архив» — самая верхняя в списке; долгое нажатие на неё → «Скрыть архив» (настройка хранится на сервере);
+     • скрытый архив не виден, пока не потянуть список вниз от самого верха (на компьютере — прокрутить вверх колесом);
+     • скрытие архива содержимое не трогает. */
+  let archiveOpen = false;     // открыт экран архива
+  let archiveReveal = false;   // скрытый архив временно показан жестом «потянуть вниз»
+  const archiveHidden = () => { try { return !!(currentUser && currentUser.settings && currentUser.settings.archiveHidden); } catch (e) { return false; } };   // currentUser — let из script.js, не свойство window
+  const ARCHIVE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>';
+  const searchVal = () => ($('chat-search') ? $('chat-search').value.toLowerCase() : '');
+
   window._renderChatsInner = function (q) {
     q = (q || '').replace(/^[@#]/, '');
     const c = $('chats-list');
     if (!c) return;
-    let list = chats.filter((ch) => (ch.name || '').toLowerCase().includes(q));
-    if (list.length === 0) { c.innerHTML = `<div style="text-align:center;padding:40px 20px;color:var(--text2)">${q ? 'Не найдено' : 'Нет чатов'}</div>`; return; }
-    // закреплённые — сверху (в порядке закрепления), остальные — как были (по свежести)
-    const pinned = list.filter((ch) => ch.pinnedChat).sort((a, b) => String(a.pinnedChatAt).localeCompare(String(b.pinnedChatAt)));
-    list = pinned.concat(list.filter((ch) => !ch.pinnedChat));
-    // «Избранное» всегда первым в списке (если нет поиска, который его не находит)
-    list = list.filter((ch) => ch.type === 'SAVED').concat(list.filter((ch) => ch.type !== 'SAVED'));
-    c.innerHTML = list.map((ch) => `
-      <div class="chat-item${ch.pinnedChat ? ' mx-pinned-chat' : ''}" data-chat-id="${esc(ch.id)}" onclick="openChat('${esc(ch.id)}')">
+    const archived = chats.filter((ch) => ch.archived);
+    if (archiveOpen && !archived.length) archiveOpen = false;
+    let list, head = '';
+    if (q) list = chats.filter((ch) => (ch.name || '').toLowerCase().includes(q));   // поиск ищет и среди архивных
+    else if (archiveOpen) {
+      list = archived;
+      head = `<div class="chat-item mx-archive-row mx-archive-back" data-chat-id="__archive-back" onclick="mxCloseArchive()">
+        <div class="chat-avatar"><div class="mx-archive-av">‹</div></div>
+        <div class="chat-info"><div class="chat-name">Архив</div><div class="chat-last">${archived.length} ${archived.length === 1 ? 'чат' : 'чатов'} · нажмите, чтобы вернуться</div></div></div>`;
+    } else {
+      list = chats.filter((ch) => !ch.archived);
+      if (archived.length && (!archiveHidden() || archiveReveal)) {
+        const unread = archived.reduce((n, ch) => n + (ch.unread || 0), 0);
+        const names = archived.slice(0, 3).map((ch) => ch.name).join(', ');
+        head = `<div class="chat-item mx-archive-row" data-chat-id="__archive" onclick="mxOpenArchive()">
+          <div class="chat-avatar"><div class="mx-archive-av">${ARCHIVE_SVG}</div></div>
+          <div class="chat-info"><div class="chat-name">Архив</div><div class="chat-last">${esc(names)}</div></div>
+          ${unread > 0 ? `<div class="mx-archive-count">${unread > 99 ? '99+' : unread}</div>` : ''}</div>`;
+      }
+    }
+    if (list.length === 0 && !head) { c.innerHTML = `<div style="text-align:center;padding:40px 20px;color:var(--text2)">${q ? 'Не найдено' : 'Нет чатов'}</div>`; return; }
+    if (!archiveOpen) {
+      // закреплённые — сверху (в порядке закрепления), остальные — как были (по свежести)
+      const pinned = list.filter((ch) => ch.pinnedChat).sort((a, b) => String(a.pinnedChatAt).localeCompare(String(b.pinnedChatAt)));
+      list = pinned.concat(list.filter((ch) => !ch.pinnedChat));
+      // «Избранное» всегда первым в списке (если нет поиска, который его не находит)
+      list = list.filter((ch) => ch.type === 'SAVED').concat(list.filter((ch) => ch.type !== 'SAVED'));
+    }
+    const empty = list.length === 0 ? '<div style="text-align:center;padding:30px 20px;color:var(--text2)">Нет чатов</div>' : '';
+    c.innerHTML = head + list.map((ch) => `
+      <div class="chat-item${ch.pinnedChat && !ch.archived ? ' mx-pinned-chat' : ''}" data-chat-id="${esc(ch.id)}" onclick="openChat('${esc(ch.id)}')">
         <div class="chat-avatar">${chatAvatarHtml(ch)}</div>
-        <div class="chat-info"><div class="chat-name">${esc(ch.name)}${ch.pinnedChat ? `<span class="mx-pin-ico">${PIN_SVG}</span>` : ''}</div><div class="chat-last">${esc(ch.lastMessage || '')}</div></div>
+        <div class="chat-info"><div class="chat-name">${esc(ch.name)}${ch.pinnedChat && !ch.archived ? `<span class="mx-pin-ico">${PIN_SVG}</span>` : ''}</div><div class="chat-last">${esc(ch.lastMessage || '')}</div></div>
         <div class="chat-time">${esc(ch.time || '')}</div>
         ${ch.unread > 0 ? '<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-left:8px"></div>' : ''}
-      </div>`).join('');
+      </div>`).join('') + empty;
     updateNavBadge();
   };
+  window.mxOpenArchive = () => { archiveOpen = true; renderChats(searchVal()); const l = $('chats-list'); if (l) l.scrollTop = 0; };
+  window.mxCloseArchive = () => { archiveOpen = false; renderChats(searchVal()); };
+  window.mxSetArchiveHidden = async function (hidden) {
+    mxCloseFloating();
+    try {
+      await MchatAPI.updateMe({ archiveHidden: !!hidden });
+      currentUser.settings = Object.assign({}, currentUser.settings, { archiveHidden: !!hidden });
+      archiveReveal = false; archiveOpen = false;
+      renderChats(searchVal());
+      toast(hidden ? 'Архив скрыт. Потяните список вниз от самого верха, чтобы показать' : 'Архив снова показывается в списке');
+    } catch (e) { toast(MchatAPI.errorText(e)); }
+  };
+  window.mxToggleArchiveChat = async function (id) {
+    mxCloseFloating();
+    const ch = chats.find((c) => c.id === id);
+    if (!ch) return;
+    try {
+      const r = await MchatAPI.archiveChat(id, !ch.archived);
+      ch.archived = !!r.archived;
+      if (ch.archived) { ch.pinnedChat = false; ch.pinnedChatAt = null; }
+      renderChats(searchVal());
+      toast(ch.archived ? 'Чат перемещён в архив' : 'Чат возвращён из архива');
+    } catch (e) { toast(MchatAPI.errorText(e)); }
+  };
+  // «Потянуть вниз от самого верха» (телефон) / прокрутить вверх колесом (компьютер) → показать скрытый архив
+  function revealArchive() {
+    if (archiveOpen || archiveReveal || !archiveHidden() || !chats.some((ch) => ch.archived)) return;
+    archiveReveal = true;
+    if (navigator.vibrate) navigator.vibrate(10);
+    renderChats(searchVal());
+  }
+  (function bindArchivePull() {
+    const list = $('chats-list');
+    if (!list) return;
+    let y0 = null, wheel = 0;
+    list.addEventListener('touchstart', (e) => { y0 = list.scrollTop <= 0 ? e.touches[0].clientY : null; }, { passive: true });
+    list.addEventListener('touchmove', (e) => { if (y0 != null && list.scrollTop <= 0 && e.touches[0].clientY - y0 > 70) { y0 = null; revealArchive(); } }, { passive: true });
+    list.addEventListener('wheel', (e) => { if (list.scrollTop <= 0 && e.deltaY < 0) { wheel += -e.deltaY; if (wheel > 150) { wheel = 0; revealArchive(); } } else wheel = 0; }, { passive: true });
+  })();
+  // открыли чат — временно показанный архив снова прячется
+  (function () { const _oc = window.openChat; if (typeof _oc === 'function') window.openChat = function () { archiveReveal = false; return _oc.apply(this, arguments); }; })();
 
   // Закрепить/открепить: ПКМ на компьютере, долгое нажатие на телефоне
   function openChatPinMenu(chatId, evt) {
     mxCloseFloating();
-    const ch = chats.find((c) => c.id === chatId);
-    if (!ch) return;
     const scrim = document.createElement('div');
     scrim.className = 'mx-ctx-scrim'; scrim.onclick = mxCloseFloating;
     const panel = document.createElement('div');
     panel.className = 'mx-ctx';
-    panel.innerHTML = mxCtxItem(MX_ICO.pin, ch.pinnedChat ? 'Открепить' : 'Закрепить', `mxTogglePinChat('${esc(chatId)}')`)
+    if (chatId === '__archive' || chatId === '__archive-back') {
+      // строка «Архив»: единственное действие — скрыть (содержимое архива не удаляется)
+      panel.innerHTML = mxCtxItem(ARCHIVE_SVG, archiveHidden() ? 'Показывать архив' : 'Скрыть архив', `mxSetArchiveHidden(${archiveHidden() ? 'false' : 'true'})`);
+      $('app').appendChild(scrim); $('app').appendChild(panel);
+      mxPositionNear(evt.currentTarget || evt.target.closest('.chat-item') || evt.target, panel);
+      return;
+    }
+    const ch = chats.find((c) => c.id === chatId);
+    if (!ch) return;
+    panel.innerHTML = (ch.archived ? '' : mxCtxItem(MX_ICO.pin, ch.pinnedChat ? 'Открепить' : 'Закрепить', `mxTogglePinChat('${esc(chatId)}')`))
+      + (ch.type === 'SAVED' ? '' : mxCtxItem(ARCHIVE_SVG, ch.archived ? 'Вернуть из архива' : 'Добавить в архив', `mxToggleArchiveChat('${esc(chatId)}')`))
       + (window.mxChatMenuExtra ? window.mxChatMenuExtra(ch) : ''); // «Удалить чат» / «Выйти» / «Удалить из контактов»
     $('app').appendChild(scrim); $('app').appendChild(panel);
     mxPositionNear(evt.currentTarget || evt.target.closest('.chat-item') || evt.target, panel);

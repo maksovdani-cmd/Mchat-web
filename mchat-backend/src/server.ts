@@ -27,6 +27,10 @@ import { expireVerifications } from './services/verification';
 import { pushRouter } from './routes/push';
 import { titlesRouter } from './routes/titles';
 import { usersRouter } from './routes/users';
+import { securityRouter } from './routes/security';
+import { newsRouter } from './routes/news';
+import { ensureSystemAccounts } from './services/system';
+import { expireStaleAlerts } from './services/security';
 import { ensureUploadDir, storageMode } from './services/storage';
 import { HttpError } from './utils/errors';
 
@@ -127,6 +131,8 @@ app.use('/api/calls', callsRouter);
 app.use('/api/support', supportRouter);
 app.use('/api/stickers', stickersRouter);
 app.use('/api/titles', titlesRouter);
+app.use('/api/security', securityRouter);
+app.use('/api/news', newsRouter);
 app.use('/api', usersRouter); // /api/me, /api/users/*, /api/me/devices
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
 
@@ -134,7 +140,7 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'not_found' }));
 app.use(
   express.static(path.join(__dirname, '..', 'public'), {
     setHeaders(res, filePath) {
-      if (/(sw\.js|index\.html|mchat-textsplit\.js|mchat-drafts\.js|manifest\.webmanifest|mchat-api\.js|mchat-ext\.js|mchat-fixes\.js|mchat-fixes\.css|mchat-features\.js|mchat-features\.css|mchat-series[0-9]\.(js|css)|Mchat-series[0-9]\.(js|css)|i18n\.js|masks\.js|script\.js|style\.css)$/.test(filePath)) {
+      if (/(sw\.js|index\.html|mchat-textsplit\.js|mchat-drafts\.js|manifest\.webmanifest|mchat-api\.js|mchat-ext\.js|mchat-fixes\.js|mchat-fixes\.css|mchat-features\.js|mchat-features\.css|mchat-series[0-9]\.(js|css)|Mchat-series[0-9]\.(js|css)|mchat-player\.(js|css)|mchat-system\.(js|css)|i18n\.js|masks\.js|script\.js|style\.css)$/.test(filePath)) {
         res.setHeader('Cache-Control', 'no-cache');
       }
       if (filePath.endsWith('sw.js')) res.setHeader('Service-Worker-Allowed', '/');
@@ -168,6 +174,10 @@ sanitizeStoredNames(prisma as never).catch((e) => console.error('sanitize names'
 checkMediaIntegrity().catch((e) => console.error('media integrity', e));                 // все ли файлы из БД на месте
 const server = http.createServer(app);
 const io = initSocket(server);
+
+// Официальные аккаунты Mchat (Безопасность и Новости): создаются/восстанавливаются при каждом старте
+ensureSystemAccounts().catch((e) => console.error('system accounts', e));
+setInterval(() => expireStaleAlerts().catch((e) => console.error('expire login alerts', e)), 60 * 1000).unref(); // неподтверждённые входы отменяются по таймеру
 
 const expireNow = () => expireVerifications().catch((e) => console.error('expire verifications', e));
 expireNow();

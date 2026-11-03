@@ -4,6 +4,7 @@ import { HttpError } from '../utils/errors';
 import { normalizeUsername } from '../utils/validate';
 import { publicUserSelect } from './chat';
 import { generalOf } from './titles';
+import { officialOf } from './official';
 import { sendPushToUser } from './push';
 
 /**
@@ -58,8 +59,8 @@ export const followCounts = async (userId: string) => {
   return { followers, following };
 };
 
-const toPublic = (u: { id: string; username: string; name: string; avatarUrl: string | null; verified: boolean; generalTitle?: boolean | null; generalStyle?: string | null; }) => ({
-  id: u.id, username: u.username, name: u.name, avatar: u.avatarUrl, verified: u.verified, general: generalOf(u),
+const toPublic = (u: { id: string; username: string; name: string; avatarUrl: string | null; verified: boolean; generalTitle?: boolean | null; generalStyle?: string | null; isSystem?: boolean | null; officialKind?: string | null; }) => ({
+  id: u.id, username: u.username, name: u.name, avatar: u.avatarUrl, verified: u.verified, general: generalOf(u), official: officialOf(u),
 });
 
 /** Сообщаем второй стороне, что состояние изменилось (с её точки зрения). */

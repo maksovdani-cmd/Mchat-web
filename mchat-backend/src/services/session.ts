@@ -52,6 +52,29 @@ export async function startSession(res: Response, userId: string, deviceId: stri
   return session;
 }
 
+/**
+ * Сессия нового устройства, которая ЖДЁТ подтверждения (approval=PENDING): cookie не выдаём, сервер её никуда не пускает
+ * (см. resolveSessionToken). Живёт не дольше окна подтверждения.
+ */
+export async function startPendingSession(userId: string, deviceId: string, expiresAt: Date) {
+  return prisma.session.create({ data: { userId, deviceId, expiresAt, approval: 'PENDING' } });
+}
+
+/** Подтверждённая сессия: даём полный срок жизни и выдаём cookie сессии и доверенного устройства. */
+export async function activatePendingSession(res: Response, session: { id: string; userId: string; deviceId: string }, rawDevice: string) {
+  const expiresAt = new Date(Date.now() + config.sessionTtlMs);
+  const done = await prisma.session.updateMany({
+    where: { id: session.id, approval: 'ACTIVE', revokedAt: null },
+    data: { expiresAt },
+  });
+  if (done.count === 0) return false; // сессию успели отозвать или она не подтверждена
+  const token = signJwt({ sid: session.id, sub: session.userId }, Math.floor(config.sessionTtlMs / 1000));
+  setCookie(res, COOKIE.session, token, config.sessionTtlMs);
+  setDeviceCookie(res, rawDevice);
+  await prisma.device.update({ where: { id: session.deviceId }, data: { lastUsedAt: new Date() } });
+  return true;
+}
+
 export async function revokeSession(sessionId: string) {
   await prisma.session.updateMany({ where: { id: sessionId, revokedAt: null }, data: { revokedAt: new Date() } });
   disconnectSession(sessionId);

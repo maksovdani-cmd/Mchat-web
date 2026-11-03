@@ -7,6 +7,7 @@ import { randomToken } from '../utils/crypto';
 import { normalizeUsername } from '../utils/validate';
 import { gcMedia, mediaUrl } from './media';
 import { generalOf } from './titles';
+import { officialOf } from './official';
 import { visiblePresence } from './presence';
 
 export const MAX_TEXT = 4000;
@@ -24,6 +25,8 @@ export const publicUserSelect = {
   verified: true,
   generalTitle: true,
   generalStyle: true,
+  isSystem: true,
+  officialKind: true,
 } as const;
 
 export const messageInclude = {
@@ -64,6 +67,25 @@ export interface MessageDTO {
   viewOnceOpened: boolean;
   /** стикер из коллекции: рисуется без рамки баббла; по нажатию открывается вся коллекция */
   sticker: { id: string; packId: string; packTitle: string } | null;
+  /** карточка официального аккаунта (kind === 'SYSTEM_CARD'), например подтверждение входа */
+  card: SystemCardDTO | null;
+}
+
+/** Карточка подтверждения входа с нового устройства. Сервер хранит JSON в text; клиенту отдаём разобранным, без IP. */
+export interface SystemCardDTO {
+  type: 'login_alert';
+  alertId: string;
+  state: 'PENDING' | 'CONFIRMED' | 'DENIED' | 'EXPIRED';
+  deviceType: string;
+  os: string;
+  client: string;
+  /** примерное место (страна/город) или null — «недоступно» */
+  location: string | null;
+  /** время входа, ISO */
+  at: string;
+  /** до какого момента можно ответить, ISO */
+  expiresAt: string;
+  resolvedVia: 'DEVICE' | 'EMAIL' | null;
 }
 
 export interface CallCardDTO {
@@ -83,9 +105,22 @@ const parseCall = (text: string): CallCardDTO | null => {
   } catch { return null; }
 };
 
+const parseCard = (text: string): SystemCardDTO | null => {
+  try {
+    const j = JSON.parse(text) as Partial<SystemCardDTO>;
+    if (!j || typeof j !== 'object' || j.type !== 'login_alert' || !j.alertId) return null;
+    const state = j.state === 'CONFIRMED' || j.state === 'DENIED' || j.state === 'EXPIRED' ? j.state : 'PENDING';
+    return {
+      type: 'login_alert', alertId: String(j.alertId), state, deviceType: String(j.deviceType ?? 'unknown'), os: String(j.os ?? ''),
+      client: String(j.client ?? ''), location: j.location ? String(j.location) : null, at: String(j.at ?? ''), expiresAt: String(j.expiresAt ?? ''),
+      resolvedVia: j.resolvedVia === 'EMAIL' ? 'EMAIL' : j.resolvedVia === 'DEVICE' ? 'DEVICE' : null,
+    };
+  } catch { return null; }
+};
+
 export const previewOf = (kind: MessageKind, text: string) =>
   kind === 'TEXT' ? text : kind === 'VOICE' ? '🎤 Голосовое сообщение' : kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение'
-    : kind === 'VIDEO' ? '🎬 Видео' : kind === 'FILE' ? '📎 Файл' : kind === 'CALL' ? '📞 Звонок' : '📷 Фото';
+    : kind === 'VIDEO' ? '🎬 Видео' : kind === 'FILE' ? '📎 Файл' : kind === 'CALL' ? '📞 Звонок' : kind === 'SYSTEM_CARD' ? '🔐 Вход в аккаунт' : '📷 Фото';
 
 type ReactionRow = { emoji: string; userId: string; user?: { id: string; name: string; username: string; avatarUrl: string | null } | null };
 export const groupReactions = (list: ReactionRow[]): ReactionDTO[] => {
@@ -106,7 +141,7 @@ export const toMessageDTO = (m: FullMessage): MessageDTO => ({
   senderName: m.sender?.name ?? null,
   senderUsername: m.sender?.username ?? null,
   kind: m.kind,
-  text: m.kind === 'CALL' || m.viewOnce ? '' : m.text,
+  text: m.kind === 'CALL' || m.kind === 'SYSTEM_CARD' || m.viewOnce ? '' : m.text,
   mediaUrl: m.mediaId && !m.viewOnce ? mediaUrl(m.mediaId) : null,
   fileName: m.kind === 'FILE' ? m.media?.title ?? null : null,
   fileSize: m.media?.size ?? null,
@@ -128,6 +163,7 @@ export const toMessageDTO = (m: FullMessage): MessageDTO => ({
   viewOnce: m.viewOnce,
   viewOnceOpened: !!m.viewOnceOpenedAt,
   sticker: m.sticker ? { id: m.sticker.id, packId: m.sticker.packId, packTitle: m.sticker.pack.title } : null,
+  card: m.kind === 'SYSTEM_CARD' ? parseCard(m.text) : null,
 });
 
 // ───────────────────────── права ─────────────────────────
@@ -153,7 +189,7 @@ export const canModerate = (type: string, role: MemberRole) => isGroupType(type)
 /** Уведомления чата выключены прямо сейчас (с учётом «глушить на 1/2/8 часов»). */
 export const isMutedNow = (m: { muted: boolean; mutedUntil: Date | null }) => m.muted && (!m.mutedUntil || m.mutedUntil.getTime() > Date.now());
 
-export type DmReason = 'blocked' | 'blocked_by_me' | 'dm_follow_required';
+export type DmReason = 'blocked' | 'blocked_by_me' | 'dm_follow_required' | 'system_readonly';
 export interface DirectAccess { ok: boolean; reason?: DmReason; otherId: string | null; blockedByMe: boolean; blockedMe: boolean }
 
 /**
@@ -167,10 +203,12 @@ export interface DirectAccess { ok: boolean; reason?: DmReason; otherId: string 
 export async function directAccess(userId: string, chatId: string): Promise<DirectAccess> {
   const other = await prisma.chatMember.findFirst({
     where: { chatId, userId: { not: userId } },
-    select: { userId: true, user: { select: { role: true } } },
+    select: { userId: true, user: { select: { role: true, isSystem: true } } },
   });
   if (!other) return { ok: false, reason: 'dm_follow_required', otherId: null, blockedByMe: false, blockedMe: false };
   const otherId = other.userId;
+  // официальные аккаунты Mchat: писать и звонить им нельзя никому (проверка на сервере, а не скрытие поля ввода)
+  if (other.user.isSystem) return { ok: false, reason: 'system_readonly', otherId, blockedByMe: false, blockedMe: false };
   const [blocks, follows, me, theirMsg] = await Promise.all([
     prisma.block.findMany({
       where: { OR: [{ blockerId: userId, blockedId: otherId }, { blockerId: otherId, blockedId: userId }] },
@@ -380,6 +418,8 @@ export async function getChatDTO(userId: string, chatId: string) {
     muted: mutedNow,
     mutedUntil: mutedNow && m.mutedUntil ? m.mutedUntil.toISOString() : null,
     pinnedChat: !!m.pinnedAt,
+    /** чат в «Архиве» (только у меня) */
+    archived: !!m.archivedAt,
     pinnedChatAt: m.pinnedAt ? m.pinnedAt.toISOString() : null,
     background: backgroundOf(m.background),
     inviteCode: !isDirect && m.role !== 'MEMBER' ? chat.inviteCode : null,
@@ -390,6 +430,7 @@ export async function getChatDTO(userId: string, chatId: string) {
       avatar: peer.avatarUrl,
       verified: peer.verified,
       general: generalOf(peer),
+      official: officialOf(peer),
       ...visiblePresence(peer),
     },
     lastMessage: last && { text: lastText, createdAt: last.createdAt.toISOString(), senderId: last.senderId },
@@ -462,7 +503,7 @@ export async function createMessage(userId: string, chatId: string, input: Creat
   }
 
   const kind = input.kind ?? 'TEXT';
-  if (kind === 'CALL') throw new HttpError(400, 'bad_request'); // служебный тип, только сервер
+  if (kind === 'CALL' || kind === 'SYSTEM_CARD') throw new HttpError(400, 'bad_request'); // служебные типы, только сервер
   const text = (input.text ?? '').trim();
   if (kind === 'TEXT' && !text) throw new HttpError(400, 'empty_message');
   if (text.length > MAX_TEXT) throw new HttpError(400, 'message_too_long');
@@ -532,7 +573,7 @@ export async function createMessage(userId: string, chatId: string, input: Creat
 
 export async function forwardMessage(userId: string, messageId: string, targetChatId: string, clientId?: string) {
   const { msg, member } = await loadVisibleMessage(userId, messageId); // видеть исходное сообщение обязан
-  if (msg.kind === 'CALL' || msg.viewOnce) throw new HttpError(400, 'not_forwardable'); // карточки звонков создаёт сервер; одноразовое пересылать нельзя
+  if (msg.kind === 'CALL' || msg.kind === 'SYSTEM_CARD' || msg.viewOnce) throw new HttpError(400, 'not_forwardable'); // карточки звонков создаёт сервер; одноразовое пересылать нельзя
   if (member.chat.isPrivate) throw new HttpError(403, 'content_protected'); // приватный канал/группа: пересылка запрещена
   const author = msg.senderId ? await prisma.user.findUnique({ where: { id: msg.senderId }, select: { name: true } }) : null;
   return createMessage(userId, targetChatId, {
@@ -722,7 +763,7 @@ export async function listContacts(userId: string) {
   directs.filter((d) => !d.hiddenAt || d.chat.lastMessageAt > d.hiddenAt).forEach((d) => d.chat.members.forEach((m) => ids.add(m.userId)));
   ids.delete(userId);
   if (!ids.size) return [];
-  const users = await prisma.user.findMany({ where: { id: { in: [...ids] } }, select: publicUserSelect, orderBy: { name: 'asc' } });
+  const users = await prisma.user.findMany({ where: { id: { in: [...ids] }, isSystem: false }, select: publicUserSelect, orderBy: { name: 'asc' } }); // официальные аккаунты Mchat — не контакты
   return users.map((u) => ({ id: u.id, username: u.username, name: u.name, avatar: u.avatarUrl, verified: u.verified, general: generalOf(u) }));
 }
 
@@ -808,6 +849,20 @@ export async function setChatPinned(userId: string, chatId: string, pinned: bool
     if (count >= MAX_PINNED_CHATS) throw new HttpError(400, 'too_many_pinned_chats');
   }
   await prisma.chatMember.update({ where: { chatId_userId: { chatId, userId } }, data: { pinnedAt: pinned ? new Date() : null } });
+}
+
+/**
+ * «Добавить в архив» / «Вернуть из архива». Архив личный (у собеседников ничего не меняется), ничего не удаляет:
+ * сообщения, участники и файлы остаются. Новые сообщения чат из архива НЕ возвращают (непрочитанные считаются в счётчике архива).
+ * «Избранное» архивировать нельзя. При архивации чат перестаёт быть закреплённым.
+ */
+export async function setChatArchived(userId: string, chatId: string, archived: boolean) {
+  const m = await assertMember(chatId, userId);
+  if (m.chat.type === 'SAVED') throw new HttpError(400, 'cannot_archive_saved');
+  await prisma.chatMember.update({
+    where: { chatId_userId: { chatId, userId } },
+    data: archived ? { archivedAt: new Date(), pinnedAt: null } : { archivedAt: null },
+  });
 }
 
 export type MuteDuration = '1h' | '2h' | '8h' | 'forever';

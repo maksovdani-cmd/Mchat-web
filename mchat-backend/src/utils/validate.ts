@@ -8,6 +8,26 @@ const RESERVED = new Set([
   'official', 'moderator', 'security', 'api', 'null', 'undefined', 'me', 'settings',
 ]);
 
+/**
+ * Защита бренда: имя «Mchat» принадлежит только официальным аккаунтам (их создаёт сервер).
+ * Проверяем не точное совпадение, а «похожесть»: регистр, пробелы и знаки, кириллические двойники латиницы
+ * («Мchat», «мчат»), цифры вместо букв («mch4t») и «rn» вместо «m» не помогают обойти запрет.
+ */
+const HOMOGLYPHS: Record<string, string> = {
+  а: 'a', с: 'c', е: 'e', о: 'o', р: 'p', х: 'x', м: 'm', н: 'h', т: 't', к: 'k', у: 'y', і: 'i', ѕ: 's', ј: 'j', ч: 'ch',
+  ᴍ: 'm', ʜ: 'h', ᴄ: 'c', ᴀ: 'a', ᴛ: 't', '4': 'a', '0': 'o', '1': 'i', '3': 'e', '5': 's', '7': 't', '@': 'a',
+};
+export function normalizeBrand(raw: string): string {
+  const base = raw.normalize('NFKC').toLowerCase();
+  let out = '';
+  for (const ch of base) out += HOMOGLYPHS[ch] ?? ch;
+  return out.replace(/[^a-z]/g, '');
+}
+export function isReservedBrandName(raw: string): boolean {
+  const n = normalizeBrand(raw);
+  return n.includes('mchat') || n.replace(/rn/g, 'm').includes('mchat');
+}
+
 export type UsernameCheck =
   | { ok: true; value: string }
   | { ok: false; reason: 'too_short' | 'too_long' | 'invalid_chars' | 'reserved' | 'forbidden' };
@@ -16,12 +36,13 @@ export function normalizeUsername(raw: string): string {
   return raw.trim().replace(/^@+/, '').toLowerCase();
 }
 
-export function validateUsername(raw: string): UsernameCheck {
+export function validateUsername(raw: string, opts: { privileged?: boolean } = {}): UsernameCheck {
   const v = normalizeUsername(raw);
   if (v.length < 3) return { ok: false, reason: 'too_short' };
   if (v.length > 20) return { ok: false, reason: 'too_long' };
   if (!USERNAME_RE.test(v)) return { ok: false, reason: 'invalid_chars' };
-  if (RESERVED.has(v)) return { ok: false, reason: 'reserved' };
+  if (RESERVED.has(v) && !opts.privileged) return { ok: false, reason: 'reserved' };
+  if (!opts.privileged && isReservedBrandName(v)) return { ok: false, reason: 'reserved' };
   // чёрный список: проверка по вхождению подстроки («123negr» тоже блокируется)
   if (isForbidden(v)) return { ok: false, reason: 'forbidden' };
   return { ok: true, value: v };
@@ -30,7 +51,8 @@ export function validateUsername(raw: string): UsernameCheck {
 export const cleanQuery = (q: string) => q.trim().replace(/^@+/, '').slice(0, 40);
 
 /** Отображаемое имя (Display Name): можно менять и повторять, но нецензурное и оскорбительное нельзя. */
-export function displayNameAllowed(raw: string): boolean {
+export function displayNameAllowed(raw: string, opts: { privileged?: boolean } = {}): boolean {
+  if (!opts.privileged && isReservedBrandName(raw)) return false; // «Mchat» — только у официальных аккаунтов
   return !isForbidden(raw);
 }
 

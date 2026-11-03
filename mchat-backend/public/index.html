@@ -39,6 +39,8 @@
 <link rel="stylesheet" href="mchat-series6.css">
 <link rel="stylesheet" href="mchat-series7.css">
 <link rel="stylesheet" href="mchat-series8.css">
+<link rel="stylesheet" href="mchat-player.css">
+<link rel="stylesheet" href="mchat-system.css">
 </head>
 <body>
 <div class="phone" id="app">
@@ -135,11 +137,6 @@
 <div class="screen" id="s-chats">
   <div class="topbar" style="padding-bottom:8px"><h1 id="chats-title">Чаты</h1></div>
   <div class="sbar"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input placeholder="Поиск" id="chat-search" oninput="filterChats()"></div>
-  <div class="chat-item" onclick="goTo('s-mchat-news')" style="border-bottom:1px solid var(--border);padding:14px 16px">
-    <div class="chat-avatar" style="background:linear-gradient(135deg,#4a4af0,#7c3aed)"><svg viewBox="0 0 48 48" fill="none" width="26" height="26"><path d="M6 38L18 12L24 26L30 18L42 38H6Z" fill="#fff"/></svg><img class="brand-img" src="img/Mchat.jpg" alt="Mchat" onerror="this.remove()"></div>
-    <div class="chat-info"><div class="chat-name" style="font-weight:700">Mchat</div><div class="chat-last">Официальный канал · Только чтение</div></div>
-    <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0"></div>
-  </div>
   <div class="cscroll" id="chats-list"></div>
   <div class="mx-scrim" id="mx-fab-scrim" onclick="mxFabClose()"></div>
   <div class="mx-fab-menu" id="mx-fab-menu">
@@ -222,21 +219,6 @@
       <button class="mx-cam-btn primary" id="mx-cam-send" onclick="mxCameraSend()">Отправить</button>
     </div>
   </div>
-</div>
-
-<div class="screen" id="s-mchat-news">
-  <div style="display:flex;align-items:center;gap:12px;padding:max(56px, calc(env(safe-area-inset-top) + 16px)) 16px 14px;border-bottom:1px solid var(--border);flex-shrink:0;background:linear-gradient(135deg,#1a1a50,#2d1b4e)">
-    <button class="ib ghost" onclick="goTo('s-feed')"><svg width="22" height="22" fill="none" stroke="#fff" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
-    <div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden"><svg viewBox="0 0 48 48" fill="none" width="20" height="20"><path d="M6 38L18 12L24 26L30 18L42 38H6Z" fill="#fff"/></svg><img class="brand-img" src="img/Mchat.jpg" alt="Mchat" onerror="this.remove()"></div>
-    <div style="flex:1"><div style="font-weight:700;font-size:16px;color:#fff">Mchat</div><div style="font-size:12px;color:rgba(255,255,255,.6)">Официальный канал</div></div>
-    <div style="font-size:11px;color:rgba(255,255,255,.6);background:rgba(255,255,255,.12);padding:4px 10px;border-radius:20px">Только чтение</div>
-  </div>
-  <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">
-    <div style="background:var(--surf);border-radius:16px;padding:16px"><div style="font-size:11px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Сегодня</div><div style="font-weight:700;font-size:15px;margin-bottom:6px">Добро пожаловать в Mchat!</div><div style="font-size:13px;color:var(--text2);line-height:1.6">Это официальный канал новостей. Здесь будут выходить обновления, анонсы и важная информация.</div></div>
-    <div style="background:var(--surf);border-radius:16px;padding:16px"><div style="font-size:11px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Сегодня</div><div style="font-weight:700;font-size:15px;margin-bottom:6px">Новое обновление</div><div style="font-size:13px;color:var(--text2);line-height:1.6">Добавлены 3 стиля для навигации: обычный, матовое стекло и жидкое стекло (Liquid Glass). Mchat растёт!</div></div>
-    <div style="background:var(--surf);border-radius:16px;padding:16px"><div style="font-size:11px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Вчера</div><div style="font-weight:700;font-size:15px;margin-bottom:6px">Совет дня</div><div style="font-size:13px;color:var(--text2);line-height:1.6">Добавляй хэштеги в свои истории — так тебя найдёт больше людей! #mchat #истории</div></div>
-  </div>
-  <div style="padding:12px 16px 28px;background:var(--bg2);border-top:1px solid var(--border);text-align:center;color:var(--text2);font-size:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Только администраторы могут писать сюда</div>
 </div>
 
 <div class="screen" id="s-profile">
@@ -556,11 +538,6 @@
     <div onclick="closeChatSheet();goTo('s-chats')" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surf);border-radius:16px;cursor:pointer;margin-bottom:8px">
       <div style="width:42px;height:42px;border-radius:12px;background:var(--accent);display:flex;align-items:center;justify-content:center"><svg width="20" height="20" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
       <div><div style="font-weight:600;font-size:15px">Чаты</div><div style="font-size:12px;color:var(--text2)">Личные сообщения</div></div>
-      <svg style="margin-left:auto;color:var(--text2)" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
-    </div>
-    <div onclick="closeChatSheet();goTo('s-mchat-news')" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surf);border-radius:16px;cursor:pointer;margin-bottom:14px">
-      <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#4a4af0,#7c3aed);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden"><svg viewBox="0 0 48 48" fill="none" width="22" height="22"><path d="M6 38L18 12L24 26L30 18L42 38H6Z" fill="#fff"/></svg><img class="brand-img" src="img/Mchat.jpg" alt="Mchat" onerror="this.remove()"></div>
-      <div><div style="font-weight:600;font-size:15px">Mchat</div><div style="font-size:12px;color:var(--text2)">Новости и обновления</div></div>
       <svg style="margin-left:auto;color:var(--text2)" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
     </div>
     <button onclick="closeChatSheet()" style="width:100%;padding:13px;border-radius:14px;border:none;background:var(--surf);color:var(--text2);font-family:var(--font);font-size:15px;cursor:pointer">Отмена</button>
@@ -917,6 +894,7 @@
 <script src="i18n.js"></script>
 
 <script src="script.js"></script>
+<script src="mchat-player.js"></script>
 <script src="masks.js"></script>
 <script src="mchat-ext.js"></script>
 <script src="mchat-features.js"></script>
@@ -928,5 +906,6 @@
 <script src="mchat-textsplit.js"></script>
 <script src="mchat-drafts.js"></script>
 <script src="mchat-series8.js"></script>
+<script src="mchat-system.js"></script>
 </body>
 </html>

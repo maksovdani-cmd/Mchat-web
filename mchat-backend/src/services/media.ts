@@ -81,7 +81,7 @@ export async function canAccessMedia(userId: string, m: Pick<Media, 'id' | 'owne
     if (post) return true;
     // история: медиа видят только подписчики автора (а сам автор — как владелец файла)
     const story = await prisma.story.findFirst({
-      where: { mediaId: m.id, expiresAt: { gt: new Date() }, author: { followers: { some: { followerId: userId } } } }, select: { id: true },
+      where: { mediaId: m.id, expiresAt: { gt: new Date() }, author: { OR: [{ followers: { some: { followerId: userId } } }, { isSystem: true, officialKind: 'NEWS' }] } }, select: { id: true },
     });
     if (story) return true;
     // «Момент»: фото/видео момента видны всем вошедшим (стена профиля)

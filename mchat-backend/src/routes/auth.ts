@@ -11,8 +11,9 @@ import { emitToUser, isConnected } from '../realtime/hub';
 import { sendLoginCodeEmail } from '../services/mailer';
 import { sendPushToUser } from '../services/push';
 import {
-  COOKIE, createDevice, dropCookie, findTrustedDevice, revokeSession, setCookie, setDeviceCookie, startSession,
+  activatePendingSession, COOKIE, createDevice, dropCookie, findTrustedDevice, revokeSession, setCookie, setDeviceCookie, startPendingSession, startSession,
 } from '../services/session';
+import { alertTtlMs, confirmAlertByEmail, createLoginAlert, expireAlert, hasApprover } from '../services/security';
 import { generateCode, hashCode, randomToken, safeEqualHex, sha256Buf, signJwt, verifyJwt } from '../utils/crypto';
 import { clientIp, deviceLabel } from '../utils/device';
 import { HttpError, wrap } from '../utils/errors';
@@ -261,6 +262,9 @@ async function loginAsMchatAdmin(req: Request, res: Response, who: { sub: string
 
 /** Новое устройство: генерируем код и доставляем его на УЖЕ вошедшие устройства (как Telegram). */
 async function beginDeviceVerification(req: Request, res: Response, user: { id: string; email: string }) {
+  // Есть другое вошедшее устройство → вход ждёт подтверждения на нём («Это я» / «Это не я»); код из письма — запасной путь.
+  // Нет ни одного — подтверждать некому, остаётся прежний путь с кодом на email.
+  if (await hasApprover(user.id)) return beginApproval(req, res, user);
   const recent = await prisma.loginCode.count({
     where: { userId: user.id, createdAt: { gt: new Date(Date.now() - 15 * 60_000) } },
   });
@@ -312,13 +316,44 @@ async function beginDeviceVerification(req: Request, res: Response, user: { id: 
   return res.redirect('/?auth=code');
 }
 
+/**
+ * Вход ждёт подтверждения. Создаём устройство и сессию в состоянии PENDING (cookie сессии и устройства НЕ выдаём —
+ * секрет устройства лежит только в подписанной httpOnly cookie ожидания), карточку для уже вошедших устройств и запасной код для письма.
+ * Любой сбой → вход отклоняется (никакого «пустить без проверки»).
+ */
+async function beginApproval(req: Request, res: Response, user: { id: string; email: string }) {
+  const recent = await prisma.loginAlert.count({ where: { userId: user.id, createdAt: { gt: new Date(Date.now() - 15 * 60_000) } } });
+  if (recent >= 5) return fail(res, 'too_many_codes');
+  const ttl = alertTtlMs();
+  const expiresAt = new Date(Date.now() + ttl);
+  let created: { deviceId?: string; sessionId?: string } = {};
+  try {
+    const { device, raw } = await createDevice(user.id, req);
+    created.deviceId = device.id;
+    const session = await startPendingSession(user.id, device.id, expiresAt);
+    created.sessionId = session.id;
+    const rec = await prisma.loginCode.create({
+      // код для письма создаётся только по запросу «отправить на email»; пока хэш случайный и никому не известен
+      data: { userId: user.id, codeHash: hashCode(user.id, generateCode() + randomToken(8)), label: deviceLabel(req), ip: clientIp(req), expiresAt },
+    });
+    await createLoginAlert(req, { userId: user.id, sessionId: session.id, deviceId: device.id, expiresAt });
+    setCookie(res, COOKIE.pending, signJwt({ cid: rec.id, uid: user.id, sid: session.id, dev: device.id, dr: raw }, Math.ceil(ttl / 1000)), ttl);
+    return res.redirect('/?auth=approve');
+  } catch (e) {
+    console.error('login approval failed:', (e as Error).message);
+    if (created.deviceId) await prisma.device.updateMany({ where: { id: created.deviceId }, data: { revokedAt: new Date() } }).catch(() => {});
+    if (created.sessionId) await prisma.session.updateMany({ where: { id: created.sessionId }, data: { revokedAt: new Date(), approval: 'DENIED' } }).catch(() => {});
+    return fail(res, 'login_failed');
+  }
+}
+
 // ─────────────────────────────────────────────────────────────
-// 3. Экран ввода кода
+// 3. Экран ввода кода / ожидания подтверждения
 // ─────────────────────────────────────────────────────────────
 function getPending(req: Request) {
-  const p = verifyJwt<{ cid?: string; uid?: string }>(req.cookies?.[COOKIE.pending]);
+  const p = verifyJwt<{ cid?: string; uid?: string; sid?: string; dev?: string; dr?: string }>(req.cookies?.[COOKIE.pending]);
   if (!p?.cid || !p.uid) throw new HttpError(401, 'no_pending_login');
-  return { cid: p.cid, uid: p.uid };
+  return { cid: p.cid, uid: p.uid, sid: p.sid, dev: p.dev, dr: p.dr };
 }
 
 const maskEmail = (e: string) => {
@@ -329,10 +364,41 @@ const maskEmail = (e: string) => {
 authRouter.get(
   '/pending',
   wrap(async (req, res) => {
-    const { cid } = getPending(req);
+    const { cid, uid, sid, dev, dr } = getPending(req);
+    // Режим подтверждения с другого устройства: этот же запрос опрашивает состояние и, когда вход подтверждён, выдаёт cookie
+    if (sid) {
+      let alert = await prisma.loginAlert.findUnique({ where: { sessionId: sid } });
+      if (!alert || alert.userId !== uid) { dropCookie(res, COOKIE.pending); throw new HttpError(410, 'approval_expired'); }
+      if (alert.state === 'PENDING' && alert.expiresAt <= new Date()) {
+        await expireAlert(alert.id);
+        alert = await prisma.loginAlert.findUniqueOrThrow({ where: { id: alert.id } });
+      }
+      if (alert.state === 'CONFIRMED') {
+        const ok = dev && dr && await activatePendingSession(res, { id: sid, userId: uid, deviceId: dev }, dr);
+        dropCookie(res, COOKIE.pending);
+        if (!ok) throw new HttpError(410, 'approval_expired');
+        emitToUser(uid, 'auth:new-device', { label: deviceLabel(req) });
+        return void res.json({ mode: 'approve', state: 'CONFIRMED' });
+      }
+      if (alert.state !== 'PENDING') {
+        dropCookie(res, COOKIE.pending);
+        return void res.json({ mode: 'approve', state: alert.state }); // DENIED | EXPIRED — вход отменён, сессия отозвана на сервере
+      }
+      const code = await prisma.loginCode.findUnique({ where: { id: cid }, include: { user: { select: { email: true } } } });
+      if (!code) throw new HttpError(410, 'approval_expired');
+      return void res.json({
+        mode: 'approve', state: 'PENDING',
+        emailMasked: maskEmail(code.user.email), emailSent: code.emailSent,
+        canSendEmail: config.ALLOW_EMAIL_FALLBACK && !code.emailSent,
+        attemptsLeft: Math.max(0, config.codeMaxAttempts - code.attempts),
+        expiresAt: alert.expiresAt.toISOString(),
+        client: alert.client, os: alert.os,
+      });
+    }
     const rec = await prisma.loginCode.findUnique({ where: { id: cid }, include: { user: { select: { email: true } } } });
     if (!rec || rec.consumedAt || rec.expiresAt < new Date()) throw new HttpError(410, 'code_expired');
     res.json({
+      mode: 'code',
       emailMasked: maskEmail(rec.user.email),
       emailSent: rec.emailSent,
       canSendEmail: config.ALLOW_EMAIL_FALLBACK && !rec.emailSent,
@@ -346,7 +412,7 @@ authRouter.post(
   '/verify-code',
   codeLimiter,
   wrap(async (req, res) => {
-    const { cid, uid } = getPending(req);
+    const { cid, uid, sid, dev, dr } = getPending(req);
     const { code } = z.object({ code: z.string().regex(/^\d{6}$/) }).parse(req.body);
 
     // Атомарно «съедаем» попытку ДО проверки — параллельным перебором лимит не обойти
@@ -365,6 +431,15 @@ authRouter.post(
     const consumed = await prisma.loginCode.updateMany({ where: { id: cid, consumedAt: null }, data: { consumedAt: new Date() } });
     if (consumed.count === 0) throw new HttpError(409, 'code_used');
 
+    // Запасной путь подтверждения: код из письма подтверждает ТУ ЖЕ ожидающую сессию (и закрывает карточку на других устройствах)
+    if (sid) {
+      const okAlert = await confirmAlertByEmail(sid);
+      const okSession = okAlert && dev && dr && await activatePendingSession(res, { id: sid, userId: uid, deviceId: dev }, dr);
+      dropCookie(res, COOKIE.pending);
+      if (!okSession) throw new HttpError(410, 'approval_expired');
+      emitToUser(uid, 'auth:new-device', { label: deviceLabel(req) });
+      return void res.json({ ok: true });
+    }
     const { device, raw } = await createDevice(uid, req); // устройство становится доверенным
     setDeviceCookie(res, raw);
     await startSession(res, uid, device.id);

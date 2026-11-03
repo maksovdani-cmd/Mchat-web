@@ -25,6 +25,8 @@ export async function resolveSessionToken(token: string | undefined): Promise<Au
   if (!p?.sid || !p.sub) return null;
   const s = await prisma.session.findUnique({ where: { id: p.sid }, include: { device: true } });
   if (!s || s.userId !== p.sub || s.revokedAt || s.expiresAt < new Date() || s.device.revokedAt) return null;
+  // вход с нового устройства ещё не подтверждён (или отклонён) — такая сессия не работает ни в REST, ни в Socket.IO
+  if (s.approval !== 'ACTIVE') return null;
   return { userId: s.userId, sessionId: s.id, deviceId: s.deviceId };
 }
 
@@ -32,6 +34,18 @@ export const requireAuth = wrap(async (req, _res, next) => {
   const ctx = await resolveSessionToken(req.cookies?.[COOKIE.session]);
   if (!ctx) throw new HttpError(401, 'unauthorized');
   req.auth = ctx;
+  next();
+});
+
+/**
+ * Только администратор. Роль берётся из БД при КАЖДОМ запросе (а не из cookie/JWT и не из интерфейса),
+ * системные аккаунты администраторами не считаются.
+ */
+export const requireAdmin = wrap(async (req, _res, next) => {
+  const a = req.auth;
+  if (!a) throw new HttpError(401, 'unauthorized');
+  const u = await prisma.user.findUnique({ where: { id: a.userId }, select: { role: true, isSystem: true } });
+  if (!u || u.role !== 'ADMIN' || u.isSystem) throw new HttpError(403, 'forbidden');
   next();
 });
 

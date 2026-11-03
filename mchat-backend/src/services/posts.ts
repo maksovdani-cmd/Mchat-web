@@ -2,9 +2,10 @@ import { prisma } from '../db';
 import { HttpError } from '../utils/errors';
 import { gcMedia, mediaUrl } from './media';
 import { generalOf } from './titles';
+import { officialOf } from './official';
 import { sendPushToUser } from './push';
 
-const authorSelect = { id: true, username: true, name: true, avatarUrl: true, verified: true, generalTitle: true, generalStyle: true } as const;
+const authorSelect = { id: true, username: true, name: true, avatarUrl: true, verified: true, generalTitle: true, generalStyle: true, isSystem: true, officialKind: true } as const;
 
 const postInclude = (_viewerId: string) => ({
   author: { select: authorSelect },
@@ -248,6 +249,8 @@ function loadStories(where: object) {
 /** Истории видят только подписчики автора (и сам автор). */
 async function canSeeStories(viewerId: string, authorId: string) {
   if (viewerId === authorId) return true;
+  // истории официального аккаунта «Mchat — Новости» видят все пользователи
+  if (await prisma.user.count({ where: { id: authorId, isSystem: true, officialKind: 'NEWS' } })) return true;
   return (await prisma.follow.count({ where: { followerId: viewerId, followingId: authorId } })) > 0;
 }
 
@@ -276,21 +279,22 @@ export function toStoryDTO(s: StoryRow, viewerId: string) {
 export async function listStoriesFeed(viewerId: string) {
   const follows = await prisma.follow.findMany({ where: { followerId: viewerId }, select: { followingId: true } });
   const following = new Set(follows.map((f) => f.followingId));
+  const news = await prisma.user.findFirst({ where: { isSystem: true, officialKind: 'NEWS' }, select: { id: true } });
   const rows = await prisma.story.findMany({
-    where: { expiresAt: { gt: new Date() }, authorId: { in: [...following] } },
+    where: { expiresAt: { gt: new Date() }, authorId: { in: [...following, ...(news ? [news.id] : [])] } },
     orderBy: { createdAt: 'asc' },
     include: storyInclude,
     take: 500,
   });
   const groups = new Map<string, {
-    username: string; name: string; avatar: string | null; verified: boolean; general: string | null; following: boolean; latestAt: number;
+    username: string; name: string; avatar: string | null; verified: boolean; general: string | null; official: 'SECURITY' | 'NEWS' | null; following: boolean; latestAt: number;
     stories: ReturnType<typeof toStoryDTO>[];
   }>();
   for (const s of rows) {
     let g = groups.get(s.authorId);
     if (!g) {
       g = {
-        username: s.author.username, name: s.author.name, avatar: s.author.avatarUrl, verified: s.author.verified, general: generalOf(s.author),
+        username: s.author.username, name: s.author.name, avatar: s.author.avatarUrl, verified: s.author.verified, general: generalOf(s.author), official: officialOf(s.author),
         following: following.has(s.authorId), latestAt: 0, stories: [],
       };
       groups.set(s.authorId, g);
@@ -313,6 +317,8 @@ export async function listUserStories(viewerId: string, username: string) {
 export async function createStory(
   userId: string,
   b: { mediaId?: string; bg?: string; textBlocks: unknown },
+  /** кто загружал файл (по умолчанию сам автор); для историй официального аккаунта — администратор */
+  uploaderId: string = userId,
 ) {
   const since = new Date(Date.now() - STORY_TTL_MS);
   if ((await prisma.story.count({ where: { authorId: userId, createdAt: { gt: since } } })) >= MAX_STORIES_PER_DAY) {
@@ -320,7 +326,7 @@ export async function createStory(
   }
   let mediaType: string | null = null;
   if (b.mediaId) {
-    const m = await ownImage(userId, b.mediaId, ['IMAGE', 'VIDEO']);
+    const m = await ownImage(uploaderId, b.mediaId, ['IMAGE', 'VIDEO']);
     mediaType = m.kind === 'VIDEO' ? 'video' : 'image';
   }
   const row = await prisma.story.create({

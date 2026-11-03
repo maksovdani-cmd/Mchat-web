@@ -3,12 +3,13 @@ import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
   addMembers, createGroupOrChannel, getChannelPreview, listShared, getChatDTO, getOrCreateDirectChat, getOrCreateSavedChat, joinPublicChannel, listChats, listContacts, mentionCandidatesForChat,
-  clearChatForMe, hideChat, listDrafts, setDraft, MAX_DRAFT, leaveChat, listMembers, listMessages, removeMember, searchPublicChannels, setChatAutoDelete, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
+  clearChatForMe, hideChat, listDrafts, setDraft, MAX_DRAFT, leaveChat, listMembers, listMessages, removeMember, searchPublicChannels, setChatArchived, setChatAutoDelete, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
 } from '../services/chat';
 import { emitToChat, emitToUser, leaveUserFromChat } from '../realtime/hub';
 import { joinAllToChat, pinAndDispatch, readAndBroadcast, sendAndDispatch } from '../services/messaging';
 import { decideRequest, invitePreview, listAllPending, listRequests, requestJoin } from '../services/joinRequests';
 import { wrap } from '../utils/errors';
+import { ensureSystemChats } from '../services/system';
 
 export const chatsRouter = Router();
 chatsRouter.use(requireAuth);
@@ -17,6 +18,7 @@ const id = z.string().min(1).max(40);
 
 chatsRouter.get('/', wrap(async (req, res) => {
   const { userId } = authOf(req);
+  await ensureSystemChats(userId); // официальные аккаунты Mchat (Безопасность и Новости) есть у каждого, в том числе у тех, кто был до обновления
   const list = await listChats(userId);
   // «Избранное» могло появиться только что — подключаем сокеты пользователя к его комнате
   const saved = list.find((c) => c.type === 'SAVED');
@@ -89,6 +91,14 @@ chatsRouter.put('/:id/pin-chat', wrap(async (req, res) => {
   const { pinned } = z.object({ pinned: z.boolean() }).parse(req.body);
   await setChatPinned(userId, String(req.params.id), pinned);
   res.json({ pinned, chat: await getChatDTO(userId, String(req.params.id)) });
+}));
+
+/** «Добавить в архив» / «Вернуть из архива» (только для меня; ничего не удаляет). */
+chatsRouter.put('/:id/archive', wrap(async (req, res) => {
+  const { userId } = authOf(req);
+  const { archived } = z.object({ archived: z.boolean() }).parse(req.body);
+  await setChatArchived(userId, String(req.params.id), archived);
+  res.json({ archived, chat: await getChatDTO(userId, String(req.params.id)) });
 }));
 
 /** «Написать» на профиле: найти или создать личный диалог. */

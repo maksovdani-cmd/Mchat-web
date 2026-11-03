@@ -35,6 +35,8 @@ enum MessageKind {
   FILE
   /// служебная карточка завершённого звонка (JSON в text); создаётся только сервером
   CALL
+  /// служебная карточка официального аккаунта Mchat (уведомление о входе и т.п., JSON в text); создаётся только сервером
+  SYSTEM_CARD
 }
 
 enum MediaKind {
@@ -69,6 +71,13 @@ model User {
   verifiedUntil  DateTime?
   role           Role     @default(USER)
 
+  /// Официальный системный аккаунт Mchat (не человек): в него нельзя войти и ему нельзя писать. Выставляется только сервером.
+  isSystem       Boolean  @default(false)
+  /// SECURITY | NEWS — какой именно официальный аккаунт (определяет значок и логотип)
+  officialKind   String?
+  /// «Скрыть архив» в списке чатов (настройка пользователя, хранится на сервере; содержимое архива не затрагивает)
+  archiveHidden  Boolean  @default(false)
+
   /// Титул «Генерал Mchat» (пурпурная звезда рядом с ником). Выдаётся и забирается только админом, навсегда.
   generalTitle        Boolean   @default(false)
   generalGrantedAt    DateTime?
@@ -90,6 +99,7 @@ model User {
   devices        Device[]
   sessions       Session[]
   loginCodes     LoginCode[]
+  loginAlerts    LoginAlert[]
   memberships    ChatMember[]
   messages       Message[]
   pushSubs       PushSubscription[]
@@ -152,9 +162,40 @@ model Session {
   createdAt  DateTime  @default(now())
   expiresAt  DateTime
   revokedAt  DateTime?
+  /// ACTIVE — обычная сессия; PENDING — вход ждёт подтверждения с другого устройства (сервер не пускает такую сессию никуда);
+  /// DENIED / EXPIRED — вход отклонён или не подтверждён вовремя (сессия при этом отозвана)
+  approval   String    @default("ACTIVE")
 
   @@index([userId])
   @@index([deviceId])
+}
+
+/// Запрос подтверждения входа с нового устройства. Привязан к ОДНОЙ конкретной сессии.
+model LoginAlert {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// сессия нового устройства, которую подтверждают или отклоняют
+  sessionId    String    @unique
+  deviceId     String
+  /// PENDING | CONFIRMED | DENIED | EXPIRED
+  state        String    @default("PENDING")
+  /// как подтвердили: DEVICE (кнопка на другом устройстве) | EMAIL (код из письма)
+  resolvedVia  String?
+  /// сессия, с которой нажали кнопку (для журнала)
+  resolvedBySessionId String?
+  /// описание нового устройства для карточки (без IP)
+  deviceType   String    @default("unknown")
+  os           String    @default("")
+  client       String    @default("")
+  /// страна/город по IP, если удалось определить достоверно; иначе null
+  location     String?
+  messageId    String?
+  createdAt    DateTime  @default(now())
+  expiresAt    DateTime
+  resolvedAt   DateTime?
+
+  @@index([userId, state])
 }
 
 /// Одноразовый код входа с нового устройства (хранится только хэш).
@@ -286,6 +327,8 @@ model ChatMember {
   pinnedAt   DateTime?
   /// «Удалить чат» из моего списка: сообщения до этого момента мне не показываем; новое сообщение вернёт чат в список
   hiddenAt   DateTime?
+  /// «Добавить в архив»: чат убран в архив только у этого участника; новые сообщения его оттуда не возвращают
+  archivedAt DateTime?
   /// Черновик неотправленного сообщения ЭТОГО участника в ЭТОМ чате (личный: у каждого пользователя свой)
   draft      String?   @db.Text
   draftAt    DateTime?
@@ -704,4 +747,18 @@ model MomentComment {
   createdAt DateTime @default(now())
 
   @@index([momentId, createdAt])
+}
+/// Публикация официального аккаунта «Mchat — Новости». Публикует только администратор (проверка на сервере).
+/// В каждый личный чат с аккаунтом новостей уходит своё сообщение (clientId = news:<id>:<userId>), по этой записи его можно удалить у всех.
+model NewsPost {
+  id         String    @id @default(cuid())
+  authorId   String
+  kind       String    @default("TEXT") // TEXT | IMAGE | VIDEO
+  text       String    @default("") @db.Text
+  mediaId    String?
+  recipients Int       @default(0)
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+
+  @@index([createdAt])
 }

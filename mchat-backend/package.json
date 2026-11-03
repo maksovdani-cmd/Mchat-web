@@ -14,10 +14,11 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "vapid": "web-push generate-vapid-keys",
+    "system:legacy-channel": "tsx scripts/legacy-mchat-channel.ts",
     "secret": "node -e \"console.log(require('crypto').randomBytes(48).toString('base64url'))\"",
     "db:push": "prisma db push",
     "start:prod": "prisma db push --skip-generate && node dist/server.js",
-    "test": "node --test --test-force-exit tests/*.test.js && tsx --test tests/storage.test.ts"
+    "test": "node --test --test-force-exit tests/*.test.js && tsx --test tests/storage.test.ts tests/system.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1141.0",

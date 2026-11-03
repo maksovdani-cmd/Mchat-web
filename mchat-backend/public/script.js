@@ -521,7 +521,7 @@ function init() {
 async function bootSession() {
   const params = new URLSearchParams(location.search);
   const authErr = params.get('auth_error');
-  const wantsCode = params.get('auth') === 'code';
+  const wantsCode = params.get('auth') === 'code' || params.get('auth') === 'approve'; // approve — вход ждёт подтверждения на другом устройстве
   const openChatId = params.get('chat');
   // «Ответить» на звонок из push-уведомления при закрытом приложении: /?call=ID&chat=ID&video=1&title=Имя
   const pushCall = params.get('call') ? { callId: params.get('call'), chatId: params.get('chat') || '', video: params.get('video') === '1', title: params.get('title') || '' } : null;
@@ -2993,7 +2993,7 @@ const AVATAR_SVG_OPEN = '<svg width="22" height="22" fill="none" stroke="var(--t
 // серверный формат → формат, который ждёт твой UI
 function chatFromServer(c) {
   return {
-    pinnedChat: !!c.pinnedChat, pinnedChatAt: c.pinnedChatAt || null,
+    pinnedChat: !!c.pinnedChat, pinnedChatAt: c.pinnedChatAt || null, archived: !!c.archived,
     id: c.id, type: c.type, name: c.name, description: c.description, avatar: c.avatar, peer: c.peer,
     unread: c.unread || 0, role: c.role, canPost: c.canPost !== false, canModerate: !!c.canModerate, muted: !!c.muted, isPublic: !!c.isPublic, isPrivate: !!c.isPrivate,
     memberCount: c.memberCount || 0, inviteCode: c.inviteCode || null, pinned: c.pinned || null, background: c.background || null,
@@ -3008,7 +3008,7 @@ function msgFromServer(m) {
     id: m.id, clientId: m.clientId, chatId: m.chatId, senderId: m.senderId,
     senderName: m.senderName, senderUsername: m.senderUsername,
     kind: m.kind || 'TEXT', text: m.text, mediaUrl: m.mediaUrl, fileName: m.fileName, fileSize: m.fileSize, durationSec: m.durationSec,
-    replyTo: m.replyTo, forwardedFrom: m.forwardedFrom, call: m.call || null,
+    replyTo: m.replyTo, forwardedFrom: m.forwardedFrom, call: m.call || null, card: m.card || null,
     viewOnce: !!m.viewOnce, viewOnceOpened: !!m.viewOnceOpened, sticker: m.sticker || null,
     reactions: m.reactions || [], editedAt: m.editedAt,
     time: fmtClock(m.createdAt), createdAt: m.createdAt,
@@ -3272,19 +3272,24 @@ function mxCallCardHtml(m) {
 }
 function bubbleBodyHtml(m) {
   if (m.kind === 'CALL') return mxCallCardHtml(m);
+  if (m.kind === 'SYSTEM_CARD') return window.mxSystemCardHtml ? window.mxSystemCardHtml(m) : '';
   if (m.viewOnce && window.mxOnceBubble) return window.mxOnceBubble(m); // одноразовое медиа: файла в чате нет, только плашка
   if (m.kind === 'VOICE') {
-    return `<div class="mx-voice" data-audio-url="${esc(m.mediaUrl||'')}">
+    return `<div class="mx-voice" data-audio-url="${esc(m.mediaUrl||'')}" data-mid="${esc(m.id)}">
       <button class="mx-vplay" onclick="event.stopPropagation();mxVoicePlayToggle(this,'${esc(m.id)}')"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 20 12 7 20 7 4"/></svg></button>
       <div class="mx-prog" onclick="event.stopPropagation();mxVoiceSeek(event,this)"><div class="mx-prog-fill"></div></div>
       <span class="mx-vdur">${esc(fmtDur(m.durationSec))}</span>
     </div>`;
   }
   if (m.kind === 'VIDEO_NOTE') {
-    return `<div class="mx-vn-wrap" onclick="event.stopPropagation();mxVideoNoteToggle(this)">
+    // pending: кружок ещё сжимается/загружается — тёмный, без воспроизведения, внизу анимированные часы (см. mchat-player.css)
+    const vnState = m.pending ? ' mx-vn-pending' : m.failed ? ' mx-vn-failed' : '';
+    return `<div class="mx-vn-wrap${vnState}" data-mid="${esc(m.id)}" onclick="event.stopPropagation();mxVideoNoteToggle(this)">
       <video src="${esc(m.mediaUrl||'')}" playsinline muted loop preload="metadata" onloadedmetadata="mxFixWebmDuration(this)"></video>
       <div class="mx-vn-ico"><svg width="30" height="30" viewBox="0 0 24 24" fill="#fff"><polygon points="7 4 20 12 7 20 7 4"/></svg></div>
       <div class="mx-vn-dur">${esc(fmtDur(m.durationSec))}</div>
+      ${m.pending ? '<div class="mx-vn-clock" title="Отправляется"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path class="mx-clock-h" d="M12 7v5"/><path class="mx-clock-m" d="M12 12l4 2"/></svg></div>' : ''}
+      ${m.failed ? '<div class="mx-vn-retry" onclick="event.stopPropagation();mxVnRetry(\'' + esc(m.id) + '\')">Повторить</div>' : ''}
     </div>`;
   }
   if (m.kind === 'IMAGE' && mxIsSticker(m)) {
@@ -3358,7 +3363,7 @@ function renderMessages(id) {
     const senderHtml = (isGroup && !m.outgoing && m.senderName) ? `<div class="mx-sender">${esc(m.senderName)}</div>` : '';
     const fwdHtml = m.forwardedFrom ? `<div class="mx-fwd">Переслано от ${esc(m.forwardedFrom)}</div>` : '';
     const editedHtml = m.editedAt ? '<span class="mx-edited">ред.</span>' : '';
-    return `${daySep}<div class="${cls.join(' ')}" data-id="${esc(m.id)}" data-day="${day}"${m.pending?' style="opacity:.6"':''} onclick="mxOpenReactions('${esc(m.id)}', event)" oncontextmenu="event.preventDefault();mxOpenContextMenu('${esc(m.id)}', event)">${senderHtml}${fwdHtml}${replyQuoteHtml(m)}${bubbleBodyHtml(m)}${reactionsHtml(m)}${mxCommentBtnHtml(m)}<div class="mt">${editedHtml}${esc(m.time)}${mxTickHtml(m)}</div></div>`;
+    return `${daySep}<div class="${cls.join(' ')}" data-id="${esc(m.id)}" data-day="${day}"${m.pending && m.kind !== 'VIDEO_NOTE' ? ' style="opacity:.6"' : ''} onclick="mxOpenReactions('${esc(m.id)}', event)" oncontextmenu="event.preventDefault();mxOpenContextMenu('${esc(m.id)}', event)">${senderHtml}${fwdHtml}${replyQuoteHtml(m)}${bubbleBodyHtml(m)}${reactionsHtml(m)}${mxCommentBtnHtml(m)}<div class="mt">${editedHtml}${esc(m.time)}${mxTickHtml(m)}</div></div>`;
   }).join('');
   c.scrollTop = c.scrollHeight;
   if (window.mxAfterRender) window.mxAfterRender(c, id); // плавающая дата и кнопка «вниз»
@@ -3412,7 +3417,7 @@ function mxGalleryStep(d) { // d = +1 вперёд (свайп влево), -1 �
   });
 })();
 
-const msgPreview = (m) => m.kind === 'VOICE' ? '🎤 Голосовое сообщение' : m.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : m.kind === 'IMAGE' ? '📷 Фото' : m.kind === 'VIDEO' ? '🎬 Видео' : m.kind === 'FILE' ? '📎 ' + (m.fileName || 'Файл') : m.kind === 'CALL' ? '📞 Звонок' : m.text;
+const msgPreview = (m) => m.kind === 'VOICE' ? '🎤 Голосовое сообщение' : m.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : m.kind === 'IMAGE' ? '📷 Фото' : m.kind === 'VIDEO' ? '🎬 Видео' : m.kind === 'FILE' ? '📎 ' + (m.fileName || 'Файл') : m.kind === 'CALL' ? '📞 Звонок' : m.kind === 'SYSTEM_CARD' ? '🔐 Вход в аккаунт' : m.text;
 
 // Новое сообщение (по сокету): своё с другого устройства, либо от собеседника
 function onIncomingMessage(m) {
@@ -5815,15 +5820,47 @@ async function mxCameraSend() {
       const saved = await MchatAPI.sendMessage(chatId, '', MchatAPI.newClientId(), { kind: 'IMAGE', mediaId: media.id });
       onIncomingMessage(saved);
     } else if (mxCam.blob) {
-      const hd = 'best';   // кружок всегда в лучшем качестве, которое дала камера (в пределах лимита размера), без выбора HD
-      showToast('Сжимаю видео…');
-      const vn = await mxCompressVideoBlob(mxCam.blob, hd, mxCam.elapsed);
-      const media = await MchatAPI.uploadMedia('videonote', vn, { duration: mxCam.elapsed, hd: false });   // бейдж «HD» на кружках не нужен
-      const saved = await MchatAPI.sendMessage(chatId, '', MchatAPI.newClientId(), { kind: 'VIDEO_NOTE', mediaId: media.id, durationSec: mxCam.elapsed });
-      onIncomingMessage(saved);
+      // Кружок: сразу возвращаем в чат, а сжатие/загрузка/отправка идут в фоне (в чате — тёмный кружок с часами)
+      const blob = mxCam.blob, elapsed = mxCam.elapsed;
+      mxCameraClose();
+      if (sendBtn) sendBtn.disabled = false;
+      mxVnSendBackground(chatId, blob, elapsed, MchatAPI.newClientId());
+      return;
     }
     mxCameraClose();
   } catch (e) { showToast(MchatAPI.errorText(e)); if (sendBtn) sendBtn.disabled = false; }
+}
+
+/**
+ * Фоновая отправка кружка. Локальное сообщение (pending) показывается в чате сразу; когда сервер принял файл и сообщение,
+ * onIncomingMessage заменяет его настоящим по clientId — кружок «светлеет» и становится доступным для воспроизведения.
+ */
+window._mxVnQueue = window._mxVnQueue || {};
+async function mxVnSendBackground(chatId, blob, elapsed, clientId, existing) {
+  window._mxVnQueue[clientId] = { chatId, blob, elapsed };
+  let local = existing;
+  if (!local) {
+    local = { id: clientId, clientId, chatId, kind: 'VIDEO_NOTE', text: '', mediaUrl: URL.createObjectURL(blob), durationSec: elapsed, reactions: [],
+      time: fmtClock(new Date().toISOString()), outgoing: true, pending: true, failed: false, progress: 0 };
+    (messages[chatId] = messages[chatId] || []).push(local);
+  } else { local.pending = true; local.failed = false; }
+  if (currentChatId === chatId) renderMessages(chatId);
+  try {
+    const vn = await mxCompressVideoBlob(blob, 'best', elapsed);   // кружок всегда в лучшем качестве камеры (в пределах лимита)
+    const media = await MchatAPI.uploadMedia('videonote', vn, { duration: elapsed, hd: false });
+    const saved = await MchatAPI.sendMessage(chatId, '', clientId, { kind: 'VIDEO_NOTE', mediaId: media.id, durationSec: elapsed });
+    delete window._mxVnQueue[clientId];
+    onIncomingMessage(saved);
+  } catch (e) {
+    local.pending = false; local.failed = true;   // файл остаётся в памяти — можно повторить без новой записи
+    if (currentChatId === chatId) renderMessages(chatId);
+    showToast(MchatAPI.errorText(e));
+  }
+}
+function mxVnRetry(id) {
+  const q = window._mxVnQueue[id]; if (!q) return;
+  const local = (messages[q.chatId] || []).find((x) => x.id === id);
+  if (local) mxVnSendBackground(q.chatId, q.blob, q.elapsed, id, local);
 }
 
 // ============================================================
