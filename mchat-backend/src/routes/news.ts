@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { authOf, requireAdmin, requireAuth } from '../middleware/auth';
 import { createStory, deleteStory } from '../services/posts';
 import { deleteNews, listNews, publishNews, systemId } from '../services/system';
+import { prisma } from '../db';
+import { gcMedia, mediaUrl } from '../services/media';
+import { emitToChat } from '../realtime/hub';
+import { HttpError } from '../utils/errors';
 import { wrap } from '../utils/errors';
 
 /**
@@ -16,6 +20,22 @@ const mediaId = z.string().min(1).max(40);
 
 newsRouter.get('/', wrap(async (_req, res) => {
   res.json({ posts: await listNews() });
+}));
+
+// Администратор меняет постоянный аватар системного аккаунта; ссылка хранится в User и раздаётся всем клиентам.
+newsRouter.put('/avatar/:kind', wrap(async (req, res) => {
+  const kind = z.enum(['SECURITY', 'NEWS']).parse(req.params.kind);
+  const { mediaId } = z.object({ mediaId: z.string().min(1).max(40) }).strict().parse(req.body);
+  const media = await prisma.media.findUnique({ where: { id: mediaId } });
+  if (!media || media.ownerId !== authOf(req).userId || media.kind !== 'IMAGE') throw new HttpError(400, 'bad_media');
+  const userId = await systemId(kind);
+  const old = await prisma.user.findUnique({ where: { id: userId }, select: { avatarUrl: true } });
+  await prisma.user.update({ where: { id: userId }, data: { avatarUrl: mediaUrl(mediaId) } });
+  const memberships = await prisma.chatMember.findMany({ where: { userId }, select: { chatId: true } });
+  memberships.forEach(({ chatId }) => emitToChat(chatId, 'chat:changed', { chatId }));
+  const previous = old?.avatarUrl && /^\/api\/media\/([\w-]+)$/.exec(old.avatarUrl);
+  if (previous) gcMedia(previous[1]).catch(() => {});
+  res.json({ ok: true, avatar: mediaUrl(mediaId) });
 }));
 
 newsRouter.post('/', wrap(async (req, res) => {

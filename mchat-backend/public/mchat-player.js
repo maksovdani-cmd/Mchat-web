@@ -30,6 +30,7 @@
 
   // ── состояние ──
   var rate = 1;                 // общая скорость (держится в памяти, пока открыта страница)
+  var circleRates = [2, 0.5, 1];
   var cur = null;               // текущий источник
   var voiceEl = new Audio();    // единственный аудио-элемент голосовых
   voiceEl.preload = 'auto';
@@ -191,15 +192,18 @@
     var small = wrap.querySelector('video');
     var src = small && (small.currentSrc || small.src);
     if (!src) return;
+    setRate(1);
     closeCircle(true);
     try { if (!voiceEl.paused) voiceEl.pause(); } catch (e) { /* ничего */ }
     pauseForeign();
     zoom = document.createElement('div');
     zoom.id = 'mx-vn-zoom'; zoom.className = 'mx-vn-zoom';
-    zoom.innerHTML = '<div class="mx-vnz-rates">' + RATES.map(function (r) { return '<button data-rate="' + r + '">' + rateLabel(r) + '</button>'; }).join('') + '</div>'
+    var msg = findMsg(wrap.getAttribute('data-mid') || '');
+    var ownId = ''; try { ownId = typeof currentUser !== 'undefined' && currentUser ? currentUser.id : ''; } catch (e) { /* noop */ }
+    var sender = msg && (String(msg.senderId) === String(ownId) ? 'Вы' : (msg.senderName || msg.sender || ''));
+    zoom.innerHTML = '<div class="mx-vnz-island"><button class="mx-vnz-pause" aria-label="Пауза"></button><span class="mx-vnz-sender">' + esc(sender || 'Кружок') + '</span><button class="mx-vnz-rate" data-rate="1">1x</button></div>'
       + '<div class="mx-vnz-circle"><video playsinline preload="auto"></video>'
-      + '<svg class="mx-vnz-ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48"/></svg></div>'
-      + '<button class="mx-vnz-pause" aria-label="Пауза"></button>';
+      + '<svg class="mx-vnz-ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48"/></svg></div>';
     document.body.appendChild(zoom);
     var v = zoom.querySelector('video'), ring = zoom.querySelector('.mx-vnz-ring circle');
     var btn = zoom.querySelector('.mx-vnz-pause');
@@ -210,13 +214,21 @@
     v.addEventListener('ended', function () { closeCircle(); });
     v.addEventListener('error', function () { if (!zoom) return; toast('Не удалось воспроизвести кружок'); closeCircle(); });
     cur = { kind: 'video', id: wrap.getAttribute('data-mid') || '', chatId: curChatId(), el: v, title: 'Кружок' };
-    function syncRates() { zoom && zoom.querySelectorAll('[data-rate]').forEach(function (b) { b.classList.toggle('on', parseFloat(b.getAttribute('data-rate')) === rate); }); }
-    syncRates();
+    var rateBtn = zoom.querySelector('.mx-vnz-rate');
+    rateBtn.onclick = function (e) { e.stopPropagation(); var i = circleRates.indexOf(rate); setRate(circleRates[(i + 1) % circleRates.length]); rateBtn.textContent = rateLabel(rate); };
+    var tapTimer = null;
+    zoom.querySelector('.mx-vnz-circle').addEventListener('dblclick', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      var rect = e.currentTarget.getBoundingClientRect(); v.currentTime = Math.max(0, Math.min(v.duration || Infinity, v.currentTime + (e.clientX >= rect.left + rect.width / 2 ? 5 : -5)));
+    });
     zoom.addEventListener('click', function (e) {
       var rb = e.target.closest('[data-rate]');
-      if (rb) { e.stopPropagation(); setRate(parseFloat(rb.getAttribute('data-rate'))); syncRates(); return; }
-      // пауза (и тап по кружку / вне его) — кружок возвращается к уменьшенному виду
-      if (e.target.closest('.mx-vnz-pause') || e.target.closest('.mx-vnz-circle') || e.target === zoom) { v.pause(); closeCircle(); }
+      if (rb) return;
+      if (e.target.closest('.mx-vnz-pause')) { e.stopPropagation(); if (v.paused) v.play().catch(function () {}); else v.pause(); btn.innerHTML = v.paused ? PLAY_ICO.replace(/16/g, '26') : PAUSE_ICO.replace(/16/g, '26'); return; }
+      if (e.target.closest('.mx-vnz-circle')) {
+        if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; return; }
+        tapTimer = setTimeout(function () { tapTimer = null; if (v.paused) v.play().catch(function () {}); else v.pause(); btn.innerHTML = v.paused ? PLAY_ICO.replace(/16/g, '26') : PAUSE_ICO.replace(/16/g, '26'); }, 230);
+      } else if (e.target === zoom) closeCircle();
     });
     var pr = v.play(); if (pr && pr.catch) pr.catch(function () { toast('Не удалось воспроизвести кружок'); closeCircle(); });
     requestAnimationFrame(function () { zoom && zoom.classList.add('on'); });

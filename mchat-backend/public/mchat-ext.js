@@ -462,16 +462,37 @@
   function revealArchive() {
     if (archiveOpen || archiveReveal || !archiveHidden() || !chats.some((ch) => ch.archived)) return;
     archiveReveal = true;
-    if (navigator.vibrate) navigator.vibrate(10);
     renderChats(searchVal());
   }
   (function bindArchivePull() {
     const list = $('chats-list');
     if (!list) return;
-    let y0 = null, wheel = 0;
-    list.addEventListener('touchstart', (e) => { y0 = list.scrollTop <= 0 ? e.touches[0].clientY : null; }, { passive: true });
-    list.addEventListener('touchmove', (e) => { if (y0 != null && list.scrollTop <= 0 && e.touches[0].clientY - y0 > 70) { y0 = null; revealArchive(); } }, { passive: true });
-    list.addEventListener('wheel', (e) => { if (list.scrollTop <= 0 && e.deltaY < 0) { wheel += -e.deltaY; if (wheel > 150) { wheel = 0; revealArchive(); } } else wheel = 0; }, { passive: true });
+    let y0 = null, wheel = 0, revealedByGesture = false, buzzed = false;
+    list.addEventListener('touchstart', (e) => {
+      y0 = list.scrollTop <= 0 ? e.touches[0].clientY : null;
+      revealedByGesture = false; buzzed = false;
+    }, { passive: true });
+    list.addEventListener('touchmove', (e) => {
+      if (y0 == null || list.scrollTop > 0) return;
+      const dy = e.touches[0].clientY - y0;
+      if (dy >= 72 && !archiveReveal && !archiveOpen) {
+        if (!buzzed && navigator.vibrate) { navigator.vibrate(12); buzzed = true; }
+        revealArchive(); revealedByGesture = true;
+      } else if (revealedByGesture && dy < 38) {
+        archiveReveal = false; revealedByGesture = false; renderChats(searchVal());
+      }
+    }, { passive: true });
+    list.addEventListener('touchend', () => {
+      y0 = null;
+      if (revealedByGesture && archiveReveal) { archiveOpen = true; archiveReveal = false; renderChats(searchVal()); list.scrollTop = 0; }
+      revealedByGesture = false;
+    }, { passive: true });
+    list.addEventListener('touchcancel', () => {
+      y0 = null;
+      if (revealedByGesture) { archiveReveal = false; renderChats(searchVal()); }
+      revealedByGesture = false;
+    }, { passive: true });
+    list.addEventListener('wheel', (e) => { if (list.scrollTop <= 0 && e.deltaY < 0) { wheel += -e.deltaY; if (wheel > 150) { wheel = 0; if (navigator.vibrate) navigator.vibrate(12); revealArchive(); } } else wheel = 0; }, { passive: true });
   })();
   // открыли чат — временно показанный архив снова прячется
   (function () { const _oc = window.openChat; if (typeof _oc === 'function') window.openChat = function () { archiveReveal = false; return _oc.apply(this, arguments); }; })();

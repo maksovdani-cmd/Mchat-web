@@ -224,18 +224,30 @@
   const SHARE_ICO = '<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M4 12v7a2 2 0 002 2h12a2 2 0 002-2v-7M16 6l-4-4-4 4M12 2v14"/></svg>';
   const CHAT_ICO = '<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>';
   const STK_ICO = '<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M15.5 3H6a3 3 0 00-3 3v12a3 3 0 003 3h12a3 3 0 003-3V9.5z"/><path d="M15 3v4a2 2 0 002 2h4"/><path d="M9 14s1 1.6 3 1.6 3-1.6 3-1.6M9 11h.01M15 11h.01"/></svg>';
+  const SAVE_ICO = '<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 19h14"/></svg>';
+  const REPLY_ICO = '<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 010 12h-2"/></svg>';
+  const DEL_ICO = '<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6"/></svg>';
+  const MARK_ICO = '<svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>';
+  const FWD_ICO = '<svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M15 17l5-5-5-5M20 12H9a5 5 0 00-5 5v2"/></svg>';
   const curUrl = () => { try { return mxGallery.urls[mxGallery.i] || ''; } catch (e) { return ''; } };
   function injectViewerMenu() {
     const ov = $('avatar-fullscreen'); if (!ov || ov.querySelector('.mx-vw-more')) return;
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'mx-vw-more'; b.title = 'Ещё'; b.setAttribute('aria-label', 'Ещё'); b.innerHTML = MORE_ICO;
     const menu = document.createElement('div'); menu.className = 'mx-vw-menu';
-    menu.innerHTML = '<button type="button" data-a="share">' + SHARE_ICO + '<span>Поделиться</span></button>'
+    function fillMenu(channel) {
+      menu.innerHTML = (channel ? '' : '<button type="button" data-a="save">' + SAVE_ICO + '<span>Сохранить в галерею</span></button>')
+      + '<button type="button" data-a="all">' + CHAT_ICO + '<span>Показать все медиа</span></button>'
       + '<button type="button" data-a="show">' + CHAT_ICO + '<span>Показать в чате</span></button>'
-      + '<button type="button" data-a="sticker">' + STK_ICO + '<span>Сделать стикер</span></button>';
+      + (channel ? '' : '<button type="button" data-a="sticker">' + STK_ICO + '<span>Создать стикер</span></button>'
+      + '<button type="button" data-a="reply">' + REPLY_ICO + '<span>Ответить</span></button>'
+      + '<button type="button" data-a="share">' + SHARE_ICO + '<span>Поделиться</span></button>'
+      + '<button type="button" data-a="delete">' + DEL_ICO + '<span>Удалить</span></button>');
+    }
+    fillMenu(false);
     const stop = (e) => e.stopPropagation();
     b.addEventListener('pointerdown', stop);
-    b.onclick = (e) => { e.stopPropagation(); menu.classList.toggle('open'); };
+    b.onclick = (e) => { e.stopPropagation(); const ch = chats.find((x) => x.id === curChat()); fillMenu(!!(ch && ch.type === 'CHANNEL')); menu.classList.toggle('open'); };
     menu.addEventListener('pointerdown', stop);
     menu.onclick = async (e) => {
       e.stopPropagation();
@@ -243,10 +255,27 @@
       menu.classList.remove('open');
       const url = curUrl();
       if (a.dataset.a === 'share') shareUrl(url);
+      else if (a.dataset.a === 'save') { if (window.mxDownloadMedia) window.mxDownloadMedia(url, 'mchat-' + Date.now() + '.jpg'); }
+      else if (a.dataset.a === 'all') { closeViewer(); window.mxOpenChatInfo && window.mxOpenChatInfo(); }
       else if (a.dataset.a === 'show') showInChat(url);
       else if (a.dataset.a === 'sticker') { const u = url; closeViewer(); openSticker(u); }
+      else if (a.dataset.a === 'reply' || a.dataset.a === 'delete') {
+        const m = msgsOf(curChat()).find((x) => x.mediaUrl === url); closeViewer(); if (!m) return;
+        if (a.dataset.a === 'reply' && window.mxReplyTo) window.mxReplyTo(m.id);
+        if (a.dataset.a === 'delete' && window.mxDeleteMessage) window.mxDeleteMessage(m.id);
+      }
     };
     ov.appendChild(b); ov.appendChild(menu);
+    const meta = document.createElement('div'); meta.className = 'mx-vw-channel-meta'; meta.innerHTML = '<b></b><span></span>'; ov.appendChild(meta);
+    const mark = document.createElement('button'); mark.type = 'button'; mark.className = 'mx-vw-mark'; mark.title = 'Маркер'; mark.innerHTML = MARK_ICO;
+    const forward = document.createElement('button'); forward.type = 'button'; forward.className = 'mx-vw-forward'; forward.title = 'Переслать'; forward.innerHTML = FWD_ICO;
+    ov.appendChild(mark); ov.appendChild(forward);
+    mark.onclick = async function (e) {
+      e.stopPropagation(); const url = curUrl();
+      try { const res = await fetch(url, { credentials: 'include' }); if (!res.ok) throw new Error('media'); const blob = await res.blob(); const f = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' }); closeViewer(); const edited = await window.mxPreviewOpen(f); if (edited && window.mxSendAttachment) await window.mxSendAttachment(curChat(), edited.file, { caption: edited.caption, hd: edited.hd }); }
+      catch (err) { toast('Не удалось открыть редактор фото'); }
+    };
+    forward.onclick = function (e) { e.stopPropagation(); const m = msgsOf(curChat()).find((x) => x.mediaUrl === curUrl()); if (m) openRecipients(m); };
     new MutationObserver(() => {
       if (!ov.classList.contains('active')) { delete ov.dataset.chat; menu.classList.remove('open'); }
     }).observe(ov, { attributes: true, attributeFilter: ['class'] });
@@ -258,11 +287,17 @@
     const ov = $('avatar-fullscreen'); if (!ov) return;
     const inChat = msgsOf(curChat()).some((m) => m.kind === 'IMAGE' && m.mediaUrl === url);
     if (inChat) ov.dataset.chat = '1'; else delete ov.dataset.chat;
+    const ch = chats.find((x) => x.id === curChat()), channel = !!(ch && ch.type === 'CHANNEL');
+    ov.classList.toggle('mx-vw-channel', channel);
+    const m = msgsOf(curChat()).find((x) => x.kind === 'IMAGE' && x.mediaUrl === url), meta = ov.querySelector('.mx-vw-channel-meta');
+    if (channel && m && meta) { meta.querySelector('b').textContent = ch.name; const d = new Date(m.createdAt || Date.now()); meta.querySelector('span').textContent = d.toLocaleDateString() + ' · ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
     const mn = ov.querySelector('.mx-vw-menu'); if (mn) mn.classList.remove('open');
   };
   const absUrl = (u) => { try { return new URL(u, location.href).href; } catch (e) { return u; } };
   async function shareUrl(url) {
     if (!url) return;
+    const msg = msgsOf(curChat()).find((x) => x.mediaUrl === url && x.id && !x.pending);
+    if (msg && window.MchatAPI && window.MchatAPI.forward) { openRecipients(msg); return; }
     try {
       const r = await fetch(url, { credentials: 'include' });
       const blob = await r.blob();
@@ -272,6 +307,21 @@
     } catch (e) { if (e && e.name === 'AbortError') return; }
     if (navigator.share) { try { await navigator.share({ url: absUrl(url) }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
     try { await navigator.clipboard.writeText(absUrl(url)); toast('Ссылка скопирована'); } catch (e) { toast('Не удалось поделиться'); }
+  }
+  function openRecipients(msg) {
+    const existing = $('mx-media-share'); if (existing) existing.remove();
+    const sheet = document.createElement('div'); sheet.id = 'mx-media-share';
+    sheet.style.cssText = 'position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.48);display:flex;align-items:flex-end';
+    const panel = document.createElement('div'); panel.style.cssText = 'width:100%;height:min(52vh,520px);overflow:auto;background:var(--bg);color:var(--text);border-radius:22px 22px 0 0;padding:16px 14px calc(18px + env(safe-area-inset-bottom));box-sizing:border-box;box-shadow:0 -10px 40px #0005';
+    const eligible = chats.filter((c) => c.id !== curChat() && c.type !== 'SAVED' && c.canPost !== false);
+    const selected = new Set();
+    panel.innerHTML = '<div style="width:38px;height:4px;border-radius:4px;background:var(--text2);opacity:.4;margin:0 auto 14px"></div><div style="font-weight:750;font-size:17px;margin-bottom:12px">Поделиться</div><div class="mx-share-list"></div><button class="mx-share-send" disabled style="position:sticky;bottom:0;width:100%;margin-top:12px;padding:13px;border:0;border-radius:14px;background:var(--accent);color:white;font:700 14px var(--font);opacity:.5">Отправить</button>';
+    const list = panel.querySelector('.mx-share-list'), send = panel.querySelector('.mx-share-send');
+    list.innerHTML = eligible.map((c) => '<button type="button" data-id="' + E(c.id) + '" style="display:flex;align-items:center;gap:10px;width:100%;padding:9px 4px;border:0;border-bottom:1px solid var(--border);background:transparent;color:var(--text);text-align:left"><span style="width:38px;height:38px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:var(--surf2)">' + (window.chatAvatarHtml ? window.chatAvatarHtml(c) : E((c.name || '?').slice(0, 1))) + '</span><span style="flex:1">' + E(c.name) + '</span><span class="mx-share-check" style="opacity:.35">○</span></button>').join('') || '<div style="padding:20px;text-align:center;color:var(--text2)">Нет доступных чатов</div>';
+    list.querySelectorAll('[data-id]').forEach((b) => b.onclick = function () { const id = b.dataset.id; selected.has(id) ? selected.delete(id) : selected.add(id); b.querySelector('.mx-share-check').textContent = selected.has(id) ? '✓' : '○'; b.querySelector('.mx-share-check').style.opacity = selected.has(id) ? '1' : '.35'; send.disabled = !selected.size; send.style.opacity = selected.size ? '1' : '.5'; });
+    sheet.onclick = (e) => { if (e.target === sheet) sheet.remove(); };
+    send.onclick = async function () { send.disabled = true; send.textContent = 'Отправка…'; try { for (const id of selected) await MchatAPI.forward(msg.id, id); sheet.remove(); toast('Медиа отправлено'); } catch (e) { send.disabled = false; send.textContent = 'Отправить'; toast(MchatAPI.errorText(e)); } };
+    sheet.appendChild(panel); document.body.appendChild(sheet);
   }
   function showInChat(url) {
     const m = msgsOf(curChat()).find((x) => x.mediaUrl === url);

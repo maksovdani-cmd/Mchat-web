@@ -3036,6 +3036,10 @@ function mxGlobalBox() {
   }
   return box;
 }
+function mxOfficialSubscriberLabel(ch) {
+  const n = String(ch && ch.name || '').replace(/[—–]/g, '-').replace(/\s+/g, ' ').trim().toLowerCase();
+  return ch && ch.type === 'CHANNEL' && (/^mchat\s*-\s*(новости|безопасность)$/.test(n) || /^mchat (news|security)$/.test(n)) ? '0 0 0' : null;
+}
 function mxSearchGlobalChannels(q) {
   clearTimeout(mxGlobalTimer);
   if (!q || q.trim().replace(/^[@#]+/, '').length < 1) { mxGlobalResults = []; mxRefreshGlobalChannels(); return; }
@@ -3062,7 +3066,7 @@ function mxRefreshGlobalChannels() {
       <div style="display:flex;gap:12px;align-items:center;${joined ? 'cursor:pointer' : ''}" ${joined ? `onclick="openChat('${esc(c.id)}')"` : ''}>
         <div style="width:46px;height:46px;border-radius:50%;background:var(--surf2);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px">${av}</div>
         <div style="min-width:0;flex:1"><div style="font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</div>
-        <div style="font-size:12px;color:var(--text2)">${mxPlural(c.memberCount, ['подписчик','подписчика','подписчиков'])}${c.description ? ' · ' + esc(c.description.slice(0, 50)) : ''}</div></div>
+        <div style="font-size:12px;color:var(--text2)">${mxOfficialSubscriberLabel(c) || mxPlural(c.memberCount, ['подписчик','подписчика','подписчиков'])}${c.description ? ' · ' + esc(c.description.slice(0, 50)) : ''}</div></div>
       </div>
       ${joined
         ? `<div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--surf2);opacity:.9"><div style="font-size:14px">Уведомления: <b>${muted ? 'Выкл' : 'Вкл'}</b></div>${mxSwitchHtml(!muted, `mxToggleChannelMute('${esc(c.id)}')`)}</div>`
@@ -3139,7 +3143,7 @@ function updateChatStatusBase(ch) {
   const el = document.getElementById('chat-status');
   if (!el) return;
   if (ch && ch.type === 'GROUP') { el.textContent = mxPlural(ch.memberCount, ['участник', 'участника', 'участников']); el.style.color = 'var(--text2)'; return; }
-  if (ch && ch.type === 'CHANNEL') { el.textContent = mxPlural(ch.memberCount, ['подписчик', 'подписчика', 'подписчиков']); el.style.color = 'var(--text2)'; return; }
+  if (ch && ch.type === 'CHANNEL') { el.textContent = mxOfficialSubscriberLabel(ch) || mxPlural(ch.memberCount, ['подписчик', 'подписчика', 'подписчиков']); el.style.color = 'var(--text2)'; return; }
   const peer = ch && ch.peer;
   if (peer && peer.online === true) { el.textContent = 'онлайн'; el.style.color = '#4ade80'; }
   else if (peer && peer.online === false && peer.lastSeenAt) { el.textContent = 'был(а) ' + fmtChatTime(peer.lastSeenAt); el.style.color = 'var(--text2)'; }
@@ -4175,7 +4179,7 @@ function mxPlayServerTrack(id, url) {
   a = new Audio(url);
   window._mxTrackRowAudio = a; window._mxTrackRowId = id;
   a.addEventListener('ended', () => { if (ico) ico.innerHTML = playIco; });
-  a.play().catch(() => showToast('Не удалось воспроизвести'));
+  a.play().catch((err) => { if (ico) ico.innerHTML = playIco; showToast('Не удалось воспроизвести: ' + (err && err.message ? err.message : 'проверьте формат аудиофайла')); });
   if (ico) ico.innerHTML = pauseIco;
 }
 async function renderProfileTracksTab() {
@@ -4409,7 +4413,7 @@ function mxRenderChatInfo() {
     <div style="display:flex;flex-direction:column;align-items:center;text-align:center;padding:4px 20px 14px">
       <div style="width:116px;height:116px;border-radius:50%;background:var(--surf2);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:700;margin-bottom:12px">${chatAvatarHtml(ch)}</div>
       <div style="font-family:var(--font);font-size:22px;font-weight:800;word-break:break-word">${esc(ch.name)}</div>
-      <div style="font-size:13px;color:var(--text2);margin-top:4px">${isChannel ? 'Канал' : 'Группа'} · ${mxPlural(ch.memberCount, isChannel ? ['подписчик','подписчика','подписчиков'] : ['участник','участника','участников'])}</div>
+      <div style="font-size:13px;color:var(--text2);margin-top:4px">${isChannel ? 'Канал' : 'Группа'} · ${mxOfficialSubscriberLabel(ch) || mxPlural(ch.memberCount, isChannel ? ['подписчик','подписчика','подписчиков'] : ['участник','участника','участников'])}</div>
       ${ch.description ? `<div style="font-size:13px;line-height:1.5;margin-top:10px;max-width:380px">${esc(ch.description)}</div>` : ''}
     </div>
     <div style="display:flex;gap:8px;padding:0 14px 14px">
@@ -5987,14 +5991,36 @@ async function mxAttachChosen(evt) {
   // Несколько фото/видео за раз → один альбом: общий префикс clientId собирает их в единый блок у обоих собеседников
   const isMedia = (f) => { const k = mxKindOfFile(f); return k === 'image' || k === 'video'; };
   const albumId = files.filter(isMedia).length >= 2 ? 'a' + Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 5) : null;
+  if (files.length > 1 && files.every((f) => mxKindOfFile(f) === 'image' && f.type !== 'image/gif')) {
+    await mxMultiPhotoPrepare(files, chatId, albumId); return;
+  }
   let n = 0;
   for (const f of files) {
     const cid = albumId && isMedia(f) ? albumId + '_' + (n++) + '_' + Math.random().toString(36).slice(2, 6) : undefined;
-    if (!albumId && mxKindOfFile(f) === 'image' && f.type !== 'image/gif') {
-      const r = await mxPreviewOpen(f); // полноэкранный предпросмотр: HD, маркер, подпись
-      if (r) await mxSendAttachment(chatId, r.file, { caption: r.caption, hd: r.hd });
+    if (mxKindOfFile(f) === 'image' && f.type !== 'image/gif') {
+      const r = await mxPreviewOpen(f); // полноэкранное редактирование; для подборки кадры остаются связанным альбомом
+      if (r) await mxSendAttachment(chatId, r.file, { caption: r.caption, hd: r.hd, clientId: cid });
     } else await mxSendAttachment(chatId, f, { hd: mxHdPref(), clientId: cid });
   }
+}
+
+async function mxMultiPhotoPrepare(files, chatId, albumId) {
+  const items = files.map((file) => ({ file, caption: '', hd: mxHdPref(), url: URL.createObjectURL(file) }));
+  const overlay = document.createElement('div'); overlay.className = 'mx-multi-photo';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:2100;background:rgba(0,0,0,.94);display:flex;flex-direction:column;color:#fff;padding:calc(env(safe-area-inset-top) + 14px) 14px calc(env(safe-area-inset-bottom) + 12px);box-sizing:border-box';
+  overlay.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:16px;padding:4px 2px 14px"><span>Подготовка фото · ' + items.length + '</span><button type="button" data-close style="border:0;background:none;color:#fff;font-size:24px">×</button></div><div class="mx-multi-stage" style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center"><img style="max-width:100%;max-height:100%;object-fit:contain;border-radius:12px"></div><div class="mx-multi-thumbs" style="display:flex;gap:8px;overflow-x:auto;padding:12px 0 10px"></div><button type="button" data-send style="border:0;border-radius:14px;padding:13px;background:var(--accent);color:#fff;font:700 14px var(--font)">Отправить ' + items.length + ' фото</button>';
+  document.body.appendChild(overlay);
+  const thumbs = overlay.querySelector('.mx-multi-thumbs'), stage = overlay.querySelector('.mx-multi-stage img');
+  let active = 0, cancelled = false, busy = false;
+  function paint() { stage.src = items[active].url; thumbs.innerHTML = items.map((x, i) => '<button type="button" data-i="' + i + '" style="position:relative;flex:0 0 58px;width:58px;height:58px;padding:0;border:2px solid ' + (i === active ? 'var(--accent)' : 'transparent') + ';border-radius:12px;overflow:hidden;background:#222"><img src="' + x.url + '" style="width:100%;height:100%;object-fit:cover"><span style="position:absolute;right:2px;bottom:2px;border-radius:9px;background:#0009;color:white;font:10px sans-serif;padding:1px 4px">' + (x.hd ? 'HD' : '') + (x.caption ? '✎' : '') + '</span></button>').join(''); thumbs.querySelectorAll('[data-i]').forEach((b) => b.onclick = async () => { active = Number(b.dataset.i); paint(); overlay.style.display = 'none'; const edited = await mxPreviewOpen(items[active].file); overlay.style.display = 'flex'; if (!edited) return; items[active].file = edited.file; items[active].caption = edited.caption; items[active].hd = edited.hd; URL.revokeObjectURL(items[active].url); items[active].url = URL.createObjectURL(edited.file); paint(); }); }
+  paint();
+  const cleanup = () => { overlay.remove(); items.forEach((x) => URL.revokeObjectURL(x.url)); };
+  overlay.querySelector('[data-close]').onclick = () => { cancelled = true; cleanup(); };
+  overlay.querySelector('[data-send]').onclick = async function () {
+    if (busy || cancelled) return; busy = true; this.disabled = true; this.textContent = 'Отправка…';
+    try { for (let i = 0; i < items.length; i++) { const id = albumId + '_' + i + '_' + Math.random().toString(36).slice(2, 6); await mxSendAttachment(chatId, items[i].file, { caption: items[i].caption, hd: items[i].hd, clientId: id }); } cleanup(); }
+    catch (e) { busy = false; this.disabled = false; this.textContent = 'Повторить отправку'; }
+  };
 }
 
 // ── Полноэкранный предпросмотр фото из галереи ──

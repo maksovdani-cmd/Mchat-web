@@ -41,6 +41,8 @@
 .mx-vw-menu button{display:flex;align-items:center;gap:12px;width:100%;background:none;border:none;color:var(--text);font-family:var(--font);font-size:14px;padding:11px 12px;border-radius:11px;cursor:pointer;text-align:left;}
 .mx-vw-menu button:active{background:var(--surf);}
 .mx-vw-menu button svg{color:var(--text2);flex:none;}
+.mx-vw-channel-meta{display:none;position:absolute;top:calc(var(--sat,0px) + 14px);left:64px;right:64px;z-index:30;color:#fff;text-shadow:0 1px 4px #000;font-size:13px;pointer-events:none;text-align:center}.mx-vw-channel-meta b,.mx-vw-channel-meta span{display:block}.mx-vw-channel-meta span{font-size:11px;opacity:.82;margin-top:2px}#avatar-fullscreen.mx-vw-channel.active .mx-vw-channel-meta{display:block}#avatar-fullscreen.mx-vw-channel.active>.mx-vw-more{left:12px;right:auto}
+.mx-vw-mark,.mx-vw-forward{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);z-index:31;width:44px;height:44px;border:0;border-radius:50%;display:none;align-items:center;justify-content:center;color:#fff;background:rgba(0,0,0,.48);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);cursor:pointer}#avatar-fullscreen[data-chat="1"].active:not(.mx-vw-channel)>.mx-vw-mark,#avatar-fullscreen[data-chat="1"].active:not(.mx-vw-channel)>.mx-vw-forward{display:flex}.mx-vw-mark{left:calc(50% - 52px)}.mx-vw-forward{left:calc(50% + 8px)}
 
 /* ── Редактор стикеров ── */
 .mx-stk{position:absolute;inset:0;z-index:965;background:#0b0b10;display:flex;flex-direction:column;color:#fff;animation:fu .16s ease;}

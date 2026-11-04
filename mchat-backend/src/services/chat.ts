@@ -203,12 +203,12 @@ export interface DirectAccess { ok: boolean; reason?: DmReason; otherId: string 
 export async function directAccess(userId: string, chatId: string): Promise<DirectAccess> {
   const other = await prisma.chatMember.findFirst({
     where: { chatId, userId: { not: userId } },
-    select: { userId: true, user: { select: { role: true, isSystem: true } } },
+    select: { userId: true, user: { select: { role: true, isSystem: true, officialKind: true } } },
   });
   if (!other) return { ok: false, reason: 'dm_follow_required', otherId: null, blockedByMe: false, blockedMe: false };
   const otherId = other.userId;
-  // официальные аккаунты Mchat: писать и звонить им нельзя никому (проверка на сервере, а не скрытие поля ввода)
-  if (other.user.isSystem) return { ok: false, reason: 'system_readonly', otherId, blockedByMe: false, blockedMe: false };
+  // Новости — канал только для публикаций администратора; в персональную Безопасность пользователи могут писать.
+  if (other.user.isSystem && other.user.officialKind !== 'SECURITY') return { ok: false, reason: 'system_readonly', otherId, blockedByMe: false, blockedMe: false };
   const [blocks, follows, me, theirMsg] = await Promise.all([
     prisma.block.findMany({
       where: { OR: [{ blockerId: userId, blockedId: otherId }, { blockerId: otherId, blockedId: userId }] },
@@ -496,6 +496,7 @@ export interface CreateInput {
 
 export async function createMessage(userId: string, chatId: string, input: CreateInput) {
   const member = await assertMember(chatId, userId);
+  if (await prisma.user.findUnique({ where: { id: userId }, select: { isSystem: true } }).then((u) => !!u?.isSystem)) throw new HttpError(403, 'channel_read_only');
   if (!canPost(member.chat.type, member.role)) throw new HttpError(403, 'channel_read_only');
   if (member.chat.type === 'DIRECT') {
     const acc = await directAccess(userId, chatId);
