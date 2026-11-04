@@ -1,291 +1,524 @@
-/*
- * Mchat — официальные системные аккаунты («Mchat — Безопасность» и «Mchat — Новости»).
- *
- * Здесь ТОЛЬКО отображение. Что аккаунт официальный, решает сервер (поле official в данных пользователя/чата);
- * подделать это изменением интерфейса нельзя: писать в такой аккаунт, подтверждать/отклонять вход и публиковать новости
- * сервер всё равно проверяет сам.
- *
- * Логотипы: положите файлы в public/img/mchat-security.png (буква M со щитом и замком) и public/img/mchat-news.png
- * (обычная буква M). Пока файлов нет, показываются встроенные запасные значки.
- */
+/* ============================================================
+   Mchat — слой интеграции с бэкендом.
+   Подключается в index.html ПЕРЕД script.js.
+   Здесь ВСЕ fetch() и socket.emit(); script.js вызывает только MchatAPI.*
+   ============================================================ */
 (function () {
   'use strict';
 
-  var $ = function (id) { return document.getElementById(id); };
-  var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
-  var toast = function (m) { try { window.showToast(m); } catch (e) { /* ничего */ } };
-  var LOGO = { SECURITY: '/img/mchat-security.png', NEWS: '/img/mchat-news.png' };
-  var LABEL = { SECURITY: 'Безопасность', NEWS: 'Новости' };   // подписи переводятся словарём i18n
-
-  // Запасные значки, пока нет файлов логотипов
-  var FALLBACK = {
-    SECURITY: '<svg viewBox="0 0 48 48" width="100%" height="100%"><rect width="48" height="48" fill="#1f2a6b"/><path d="M24 6l14 5v11c0 9-6 16-14 20C16 38 10 31 10 22V11z" fill="#4a4af0"/><path d="M15 31V20l5 6 4-8 4 8 5-6v11" fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" transform="translate(0 -4) scale(1 .9) translate(0 4)"/><rect x="19.5" y="29" width="9" height="7" rx="1.6" fill="#fff"/><path d="M21.5 29v-2a2.5 2.5 0 015 0v2" fill="none" stroke="#fff" stroke-width="1.8"/></svg>',
-    NEWS: '<svg viewBox="0 0 48 48" width="100%" height="100%"><rect width="48" height="48" fill="#4a4af0"/><path d="M11 36V13l13 14 13-14v23" fill="none" stroke="#fff" stroke-width="4.2" stroke-linejoin="round" stroke-linecap="round"/></svg>',
-  };
-
-  var kindOfChat = function (ch) { return ch && ch.peer && ch.peer.official || null; };
-  var OFFICIAL_BADGE = '<span class="mx-official-badge" title="Официальный аккаунт Mchat" aria-label="Официальный аккаунт Mchat"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>';
-
-  /** Круглый логотип официального аккаунта (если файла нет — запасной значок под ним). */
-  window.mxOfficialLogoHtml = function (kind, avatar) {
-    if (!LOGO[kind]) return '';
-    if (avatar) return '<span class="mx-off-logo"><img src="' + esc(avatar) + '" alt=""></span>';
-    return '<span class="mx-off-logo">' + FALLBACK[kind] + '<img src="' + LOGO[kind] + '" alt="" onerror="this.remove()"></span>';
-  };
-
-  // ── аватар в списке чатов ──
-  (function () {
-    var _av = window.chatAvatarHtml;
-    if (typeof _av !== 'function') return;
-    window.chatAvatarHtml = function (ch) { var k = kindOfChat(ch); return k ? window.mxOfficialLogoHtml(k, ch.peer && ch.peer.avatar) : _av.apply(this, arguments); };
-  })();
-
-  // ── значок и подпись «Безопасность / Новости» рядом с именем в списке ──
-  function decorateList() {
-    var list = $('chats-list'); if (!list || typeof chats === 'undefined') return;
-    list.querySelectorAll('.chat-item[data-chat-id]').forEach(function (it) {
-      var ch = chats.find(function (c) { return c.id === it.getAttribute('data-chat-id'); });
-      var k = kindOfChat(ch);
-      var nm = it.querySelector('.chat-name');
-      if (!k || !nm || nm.querySelector('.mx-official-badge')) return;
-      nm.insertAdjacentHTML('beforeend', OFFICIAL_BADGE + '<span class="mx-official-sub">' + esc(LABEL[k]) + '</span>');
+  // ---------- HTTP ----------
+  async function api(path, opts) {
+    opts = opts || {};
+    const res = await fetch('/api' + path, {
+      method: opts.method || 'GET',
+      credentials: 'same-origin', // cookie с JWT (httpOnly) уходит автоматически
+      headers: opts.body ? { 'Content-Type': 'application/json' } : undefined,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
-  }
-  (function () {
-    var _rc = window.renderChats;
-    if (typeof _rc !== 'function') return;
-    window.renderChats = function () { var r = _rc.apply(this, arguments); try { decorateList(); } catch (e) { /* ничего */ } return r; };
-  })();
-
-  // ── шапка открытого чата ──
-  (function () {
-    var _ap = window.mxApplyChatInputState;
-    if (typeof _ap !== 'function') return;
-    window.mxApplyChatInputState = function (ch) {
-      var r = _ap.apply(this, arguments);
-      try {
-        var k = kindOfChat(ch);
-        if (k) {
-          $('chat-name').innerHTML = esc(ch.name) + OFFICIAL_BADGE + '<span class="mx-official-sub">' + esc(LABEL[k]) + '</span>';
-          $('chat-open-av').innerHTML = window.mxOfficialLogoHtml(k, ch.peer && ch.peer.avatar);
-          var st = $('chat-status'); if (st) { st.textContent = 'Официальный аккаунт Mchat'; st.style.color = 'var(--text2)'; }
-        }
-      } catch (e) { /* ничего */ }
-      return r;
-    };
-  })();
-  (function () {
-    var _us = window.updateChatStatus;
-    if (typeof _us !== 'function') return;
-    window.updateChatStatus = function (ch) {
-      var r = _us.apply(this, arguments);
-      if (kindOfChat(ch)) { var st = $('chat-status'); if (st) { st.textContent = 'Официальный аккаунт Mchat'; st.style.color = 'var(--text2)'; } }
-      return r;
-    };
-  })();
-  // вместо поля ввода — подсказка, что писать в официальный аккаунт нельзя (сервер это тоже проверяет)
-  (function () {
-    var _ro = window.mxReadonlyHtml;
-    if (typeof _ro !== 'function') return;
-    window.mxReadonlyHtml = function (ch) {
-      if (kindOfChat(ch) === 'NEWS') return '<button class="mx-news-sound" type="button" onclick="event.stopPropagation();mxNewsToggleSound(\'' + esc(ch.id) + '\')">' + (ch.muted ? 'Вкл. звук' : 'Выкл. звук') + '</button>';
-      if (ch && ch.dm && ch.dm.reason === 'system_readonly') return 'Это официальный аккаунт Mchat — писать в него нельзя';
-      return _ro.apply(this, arguments);
-    };
-  })();
-  window.mxNewsToggleSound = async function (chatId) {
-    var ch = typeof chats !== 'undefined' && chats.find(function (item) { return item.id === chatId; }); if (!ch) return;
-    try {
-      var muted = !ch.muted;
-      await MchatAPI.muteChat(chatId, muted, muted ? 'forever' : undefined);
-      ch.muted = muted; ch.mutedUntil = null;
-      if (typeof window.mxApplyChatInputState === 'function') window.mxApplyChatInputState(ch);
-      toast(muted ? 'Звук выключен' : 'Звук включён');
-    } catch (e) { toast(MchatAPI.errorText(e)); }
-  };
-
-  // ── карточка «Вход с нового устройства» ──
-  var DEVICE = { phone: 'Телефон', tablet: 'Планшет', desktop: 'Компьютер', unknown: 'Неизвестно' };
-  function fmtAt(iso) {
-    try { return new Date(iso).toLocaleString([], { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; }
-  }
-  window.mxSystemCardHtml = function (m) {
-    var c = m.card;
-    if (!c || c.type !== 'login_alert') return '<div class="mx-txt">Служебное сообщение Mchat</div>';
-    var expired = c.state === 'PENDING' && c.expiresAt && Date.now() > Date.parse(c.expiresAt);
-    var state = expired ? 'EXPIRED' : c.state;
-    var device = [DEVICE[c.deviceType] || DEVICE.unknown, c.os].filter(Boolean).join(' · ');
-    var rows = '<div class="mx-sec-row"><span>Устройство</span><b>' + esc(device) + '</b></div>'
-      + '<div class="mx-sec-row"><span>Браузер или приложение</span><b>' + esc(c.client || '—') + '</b></div>'
-      // местоположение — только если сервер смог определить достоверно; иначе честно «недоступно», ничего не придумываем
-      + '<div class="mx-sec-row"><span>Местоположение (примерно)</span><b>' + (c.location ? esc(c.location) : '<i>Местоположение недоступно</i>') + '</b></div>'
-      + '<div class="mx-sec-row"><span>Время входа</span><b>' + esc(fmtAt(c.at)) + '</b></div>';
-    var foot;
-    if (state === 'PENDING') {
-      foot = '<div class="mx-sec-btns" data-alert="' + esc(c.alertId) + '">'
-        + '<button class="mx-sec-yes" onclick="event.stopPropagation();mxSecurityAnswer(\'' + esc(c.alertId) + '\',\'confirm\',this)">Это я</button>'
-        + '<button class="mx-sec-no" onclick="event.stopPropagation();mxSecurityAnswer(\'' + esc(c.alertId) + '\',\'deny\',this)">Это не я</button></div>'
-        + '<div class="mx-sec-note">Пока вы не ответите, новое устройство не получит доступ к аккаунту.</div>';
-    } else if (state === 'CONFIRMED') {
-      foot = '<div class="mx-sec-state ok">✓ Вход подтверждён' + (c.resolvedVia === 'EMAIL' ? ' кодом из письма' : '') + '</div>';
-    } else if (state === 'DENIED') {
-      foot = '<div class="mx-sec-state no">✕ Вход отклонён — этот сеанс отозван на сервере</div>';
-    } else {
-      foot = '<div class="mx-sec-state">Время подтверждения истекло — вход отменён</div>';
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* пустой ответ */ }
+    if (!res.ok) {
+      const err = new Error((data && data.error) || 'http_' + res.status);
+      err.status = res.status;
+      err.code = data && data.error;
+      err.data = data;
+      throw err;
     }
-    return '<div class="mx-sec-card"><div class="mx-sec-title">🔐 Вход в аккаунт с нового устройства</div>' + rows + foot + '</div>';
+    return data;
+  }
+
+  // ---------- тексты ошибок ----------
+  const ERR = {
+    unauthorized: 'Сессия истекла. Войди снова',
+    calls_disabled: 'Звонки не настроены на сервере: добавь ZEGO_APP_ID и ZEGO_SERVER_SECRET в Render',
+    calls_bad_key: 'Ключи ZEGOCLOUD (ZEGO_APP_ID / ZEGO_SERVER_SECRET) не подходят — проверь их в Render',
+    calls_provider_error: 'Сервис звонков ZEGOCLOUD сейчас недоступен, попробуй позже',
+    no_calls_in_channel: 'В канале нельзя звонить',
+    nobody_to_call: 'Некому звонить',
+    already_in_call: 'Ты уже в другом звонке',
+    call_not_found: 'Звонок уже завершён',
+    not_a_contact: 'Добавлять можно только людей из твоих контактов',
+    already_verified: 'У тебя уже есть галочка',
+    request_pending: 'Твой запрос уже на рассмотрении',
+    request_decided: 'По этому запросу уже принято решение',
+    bad_days: 'Неверный срок',
+    post_not_found: 'Пост не найден или удалён',
+    story_not_found: 'История не найдена или истекла',
+    empty_post: 'Добавь описание или медиа',
+    bad_media: 'Не удалось прикрепить файл, попробуй ещё раз',
+    story_limit: 'Максимум 6 историй в день',
+    own_post: 'Нельзя репостить свой пост',
+    rate_limited: 'Слишком часто. Подожди немного',
+    chat_not_found: 'Чат не найден',
+    user_not_found: 'Пользователь не найден',
+    cannot_chat_with_self: 'Нельзя писать самому себе',
+    empty_message: 'Пустое сообщение',
+    message_too_long: 'Сообщение слишком длинное (максимум 4000 символов)',
+    invalid_code: 'Неверный код',
+    code_expired: 'Код истёк. Войди через Google заново',
+    already_sent: 'Код уже отправлен на почту',
+    email_failed: 'Не удалось отправить письмо',
+    email_disabled: 'Отправка на почту отключена',
+    bad_origin: 'Запрос отклонён (неверный источник)',
+    bad_request: 'Некорректные данные',
+    channel_read_only: 'В канале публикует только владелец',
+    forbidden: 'Недостаточно прав',
+    not_author: 'Можно менять только свои сообщения',
+    not_editable: 'Это сообщение нельзя изменить',
+    message_not_found: 'Сообщение не найдено',
+    bad_emoji: 'Недопустимая реакция',
+    too_many_reactions: 'Слишком много разных реакций',
+    already_friends: 'Вы уже друзья',
+    forbidden: 'Недостаточно прав',
+    not_a_friend: 'Добавлять можно только друзей',
+    not_a_group: 'Это личный чат',
+    owner_cannot_leave: 'Владелец не может выйти из группы',
+    cannot_change_owner: 'Роль владельца изменить нельзя',
+    group_full: 'В группе уже максимум участников',
+    bad_avatar: 'Не удалось поставить эту аватарку',
+    member_not_found: 'Участник не найден',
+    cannot_friend_self: 'Нельзя добавить в друзья самого себя',
+    request_not_found: 'Заявка не найдена',
+    invite_not_found: 'Ссылка-приглашение недействительна',
+    unsupported_type: 'Этот формат файла не поддерживается',
+    too_large: 'Файл слишком большой',
+    empty_file: 'Файл пустой',
+    too_many_tracks: 'Максимум 20 треков в профиле',
+    media_not_found: 'Файл не найден',
+    forbidden_media: 'Нельзя использовать чужой файл',
+    push_unsupported: 'Этот браузер не поддерживает push-уведомления',
+    push_denied: 'Разреши уведомления в настройках браузера',
+    dm_follow_required: 'Писать можно только взаимным подписчикам. Подпишись на человека, и он сможет ответить',
+    blocked: 'Пользователь ограничил с вами общение',
+    blocked_by_me: 'Вы заблокировали этого пользователя. Разблокируйте его, чтобы писать',
+    not_forwardable: 'Это сообщение нельзя переслать',
+    cannot_block_self: 'Нельзя заблокировать самого себя',
+    cannot_block_admin: 'Техподдержку заблокировать нельзя',
+    group_call_admin_only: 'Групповой звонок могут начать только владелец и админы группы',
+    no_calls_in_saved: 'В «Избранном» звонки недоступны',
+    stories_followers_only: 'Истории доступны только подписчикам',
+    empty_moment: 'Добавь фото или напиши заметку',
+    moment_limit: 'Сегодня уже опубликовано максимум моментов',
+    moment_not_found: 'Момент не найден',
+    comments_disabled: 'Автор отключил комментарии',
+    empty_comment: 'Комментарий пустой',
+    comment_not_found: 'Комментарий не найден',
+    // ошибки, которые сервер возвращает после входа через Google (?auth_error=...)
+    nick_required: 'Введи ник для регистрации',
+    nick_taken: 'Этот ник уже занят — выбери другой',
+    nick_too_short: 'Ник: минимум 3 символа',
+    nick_too_long: 'Ник: максимум 20 символов',
+    nick_invalid_chars: 'Ник: только латиница, цифры и _',
+    nick_reserved: 'Этот ник зарезервирован',
+    nick_forbidden: 'Этот ник нельзя использовать: он содержит запрещённое слово',
+    name_forbidden: 'Это имя нельзя использовать: оно содержит запрещённое слово или зарезервировано за Mchat',
+    cannot_archive_saved: '«Избранное» нельзя отправить в архив',
+    system_readonly: 'В официальный аккаунт Mchat писать нельзя',
+    alert_not_found: 'Запрос на подтверждение входа не найден',
+    alert_expired: 'Время подтверждения истекло — вход отменён',
+    alert_already_resolved: 'На этот запрос уже ответили',
+    cannot_confirm_own_login: 'Подтвердить вход нужно с другого, уже вошедшего устройства',
+    session_too_new: 'Подтвердить вход можно только с устройства, которое вошло раньше',
+    session_gone: 'Новый сеанс уже завершён',
+    approval_expired: 'Время подтверждения истекло — войдите заново',
+    username_immutable: '@username изменить нельзя — менять можно только отображаемое имя',
+    title_not_requestable: 'Этот титул выдаёт только создатель Mchat',
+    bad_style: 'Недопустимое оформление звезды',
+    view_once_gone: 'Это медиа уже просмотрено',
+    view_once_not_allowed: 'Одноразовые медиа доступны только в личных и групповых чатах',
+    view_once_sender: 'Свой одноразовый файл открыть нельзя',
+    bad_owner: 'Выбранный участник не найден',
+    not_forwardable: 'Это сообщение нельзя переслать',
+    not_supported_in_channel: 'В канале это недоступно',
+    google_denied: 'Вход через Google отменён',
+    google_failed: 'Не удалось войти через Google. Попробуй ещё раз',
+    google_expired: 'Время входа истекло. Нажми «Войти через Google» ещё раз',
+    login_failed: 'Не удалось завершить вход. Попробуй ещё раз',
+    bad_state: 'Ошибка безопасности входа. Попробуй ещё раз',
+    too_many_codes: 'Слишком много попыток. Подожди 15 минут',
+    account_conflict: 'Этот Google-аккаунт уже связан с другим профилем',
+    admin_denied: 'Этот Google-аккаунт не имеет доступа к аккаунту Mchat',
+    too_many_pinned_chats: 'Можно закрепить не больше 10 чатов',
+    support_unavailable: 'Техподдержка сейчас недоступна, попробуй позже',
+  };
+  const errorText = (e) => {
+    const code = typeof e === 'string' ? e : e && e.code;
+    if (ERR[code]) return ERR[code];
+    if (e && e.status === 0) return 'Нет связи с сервером';
+    // неизвестная ошибка: показываем технический код, чтобы можно было понять причину
+    const detail = e && (e.code || e.message) ? ' (' + String(e.code || e.message).slice(0, 60) + ')' : '';
+    return 'Что-то пошло не так. Попробуй ещё раз' + detail;
   };
 
-  window.mxSecurityAnswer = async function (alertId, action, btn) {
-    var box = btn && btn.closest('.mx-sec-btns');
-    if (box) box.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
-    try {
-      var r = await (action === 'confirm' ? MchatAPI.securityConfirm(alertId) : MchatAPI.securityDeny(alertId));
-      applyAlertState(alertId, r && r.state);
-      toast(action === 'confirm' ? 'Вход подтверждён' : 'Вход отклонён, новый сеанс отозван');
-    } catch (e) {
-      toast(MchatAPI.errorText(e));
-      if (e && (e.status === 409 || e.status === 410)) { applyAlertState(alertId, e.code === 'alert_expired' ? 'EXPIRED' : null); try { if (typeof currentChatId !== 'undefined' && currentChatId) await loadChatHistory(currentChatId); } catch (x) { /* ничего */ } }
-      else if (box) box.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
-    }
+  // ---------- realtime ----------
+  // script.js подставляет свои обработчики: MchatAPI.handlers.onMessage = ...
+  const handlers = {
+    onMessage: null, onRead: null, onTyping: null, onPresence: null,
+    onLoginCode: null, onNewDevice: null, onUnauthorized: null,
+    onReconnect: null, onOpenChat: null,
+    onEdited: null, onDeleted: null, onReactions: null, onPinned: null, onFriendUpdate: null, onChatChanged: null, onChatRemoved: null,
+    onCallIncoming: null, onCallEnded: null, onCallHandled: null,
   };
-  function applyAlertState(alertId, state) {
-    if (!state) return;
-    try {
-      Object.keys(messages).forEach(function (k) {
-        (messages[k] || []).forEach(function (m) { if (m.card && m.card.alertId === alertId) m.card.state = state; });
-        if (typeof currentChatId !== 'undefined' && currentChatId === k) renderMessages(k);
+  let socket = null;
+  let everConnected = false;
+  // подписки на любые события сокета; переживают переподключение и можно ставить до connect()
+  const extraListeners = [];
+  function onSocket(event, fn) {
+    extraListeners.push([event, fn]);
+    if (socket) socket.on(event, fn);
+  }
+  // emit с подтверждением: резолвится ответом сервера ({ ok: true, ... }) или отклоняется { code }
+  function emitSocket(event, payload) {
+    return new Promise((resolve, reject) => {
+      if (!socket || !socket.connected) return reject({ code: 'offline', status: 0 });
+      socket.timeout(10000).emit(event, payload || {}, (err, res) => {
+        if (err) return reject({ code: 'timeout', status: 0 });
+        if (res && res.ok) resolve(res); else reject({ code: (res && res.error) || 'server_error', status: 400 });
       });
-    } catch (e) { /* ничего */ }
-  }
-
-  // ── экран нового устройства: «ждём подтверждения на другом устройстве» ──
-  var poll = null;
-  function stopPoll() { if (poll) { clearInterval(poll); poll = null; } }
-  function showApprove(p) {
-    var hint = $('code-hint'), codeRow = document.querySelector('#s-code .irow'), codeBtn = $('code-btn'), emailRow = $('code-email-row');
-    var mins = p.expiresAt ? Math.max(1, Math.round((Date.parse(p.expiresAt) - Date.now()) / 60000)) : 10;
-    hint.textContent = 'Подтвердите вход на другом устройстве, где вы уже вошли в Mchat: откройте чат «Mchat — Безопасность» и нажмите «Это я». Запрос действует ещё около ' + mins + ' мин.';
-    var showCode = !!p.emailSent;
-    if (codeRow) codeRow.style.display = showCode ? '' : 'none';
-    if (codeBtn) codeBtn.style.display = showCode ? '' : 'none';
-    if (emailRow) emailRow.style.display = p.canSendEmail ? 'block' : 'none';
-    stopPoll();
-    poll = setInterval(async function () {
-      var active = document.getElementById('s-code');
-      if (!active || !active.classList.contains('active')) return stopPoll();
-      try {
-        var s = await MchatAPI.pending();
-        if (s.mode !== 'approve' || s.state === 'PENDING') return;
-        stopPoll();
-        if (s.state === 'CONFIRMED') { var me = await MchatAPI.me(); await onLoggedIn(me); return; }
-        cancelCodeLogin();
-        $('auth-err').textContent = s.state === 'DENIED' ? 'Вход отклонён: другое ваше устройство ответило «Это не я»' : MchatAPI.errorText('approval_expired');
-      } catch (e) {
-        stopPoll();
-        // вход мог завершиться кодом из письма (cookie ожидания уже снята) — тогда сессия есть
-        try { var me2 = await MchatAPI.me(); await onLoggedIn(me2); } catch (x) { cancelCodeLogin(); $('auth-err').textContent = MchatAPI.errorText('approval_expired'); }
-      }
-    }, 2500);
-  }
-  (function () {
-    var _show = window.showCodeScreen;
-    if (typeof _show !== 'function') return;
-    window.showCodeScreen = async function () {
-      var p = null;
-      try { goTo('s-code'); p = await MchatAPI.pending(); } catch (e) { p = null; }
-      if (p && p.mode === 'approve') {
-        if (p.state !== 'PENDING') { cancelCodeLogin(); return; }
-        var err = $('code-err'), input = $('code-input'); if (err) err.textContent = ''; if (input) input.value = '';
-        return showApprove(p);
-      }
-      return _show.apply(this, arguments);
-    };
-    var _send = window.sendCodeByEmail;
-    if (typeof _send === 'function') window.sendCodeByEmail = async function () {
-      var r = await _send.apply(this, arguments);
-      // код из письма — запасной способ: показываем поле ввода
-      var codeRow = document.querySelector('#s-code .irow'), codeBtn = $('code-btn');
-      if (poll && codeRow) { codeRow.style.display = ''; if (codeBtn) codeBtn.style.display = ''; var h = $('code-hint'); if (h) h.textContent = 'Мы отправили код на вашу почту из Google-аккаунта. Введите его, если нет доступа к другому устройству.'; }
-      return r;
-    };
-    var _cancel = window.cancelCodeLogin;
-    if (typeof _cancel === 'function') window.cancelCodeLogin = function () { stopPoll(); return _cancel.apply(this, arguments); };
-  })();
-
-  // ── админ-панель: публикация новостей и историй от имени «Mchat — Новости» (права проверяет сервер) ──
-  (function () {
-    var _admin = window.openAdminPanel;
-    if (typeof _admin !== 'function') return;
-    window.openAdminPanel = async function () {
-      var r = await _admin.apply(this, arguments);
-      try { mountNews(); } catch (e) { console.warn('news admin', e); }
-      return r;
-    };
-  })();
-  function mountNews() {
-    var modal = document.querySelector('.modal.mx-admin'); if (!modal || modal.querySelector('#adm-news')) return;
-    var scroller = modal.querySelector('.modal-box > div'); if (!scroller) return;
-    var sec = document.createElement('div');
-    sec.id = 'adm-news'; sec.style.cssText = 'margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)';
-    sec.innerHTML = '<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Mchat — Новости</div>'
-      + '<textarea id="adm-news-text" maxlength="4000" placeholder="Текст новости" style="width:100%;box-sizing:border-box;min-height:70px;padding:10px 12px;border-radius:10px;border:none;background:var(--surf);color:var(--text);font-family:var(--font);font-size:13px;resize:vertical;margin-bottom:6px"></textarea>'
-      + '<input type="file" id="adm-news-file" accept="image/*" style="font-size:12px;margin-bottom:8px;max-width:100%">'
-      + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin:-2px 0 8px;color:var(--text2);font-size:12px"><label><input id="adm-news-hd" type="checkbox" checked> HD качество</label><label><input id="adm-news-story-too" type="checkbox"> Также добавить в истории</label></div>'
-      + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 8px">'
-      + '<label style="font-size:12px;color:var(--text2)">Аватар Безопасности <input type="file" id="adm-security-avatar" accept="image/*"></label>'
-      + '<button id="adm-security-avatar-save" class="mx-adm-btn">Сохранить</button>'
-      + '<label style="font-size:12px;color:var(--text2)">Аватар Новостей <input type="file" id="adm-news-avatar" accept="image/*"></label>'
-      + '<button id="adm-news-avatar-save" class="mx-adm-btn">Сохранить</button></div>'
-      + '<div style="display:flex;gap:6px;margin-bottom:8px"><button id="adm-news-pub" class="mx-adm-btn" style="background:var(--accent)">Опубликовать новость</button><button id="adm-news-story" class="mx-adm-btn" style="background:#a21caf">В истории (нужно фото)</button></div>'
-      + '<div id="adm-news-list" style="font-size:12px;color:var(--text2)">Загрузка…</div>';
-    scroller.insertBefore(sec, scroller.firstChild);
-    var list = sec.querySelector('#adm-news-list');
-    async function upload() {
-      var f = sec.querySelector('#adm-news-file').files[0]; if (!f) return null;
-      var file = typeof window.mxCompressImage === 'function' ? await window.mxCompressImage(f, true) : f;
-      return (await MchatAPI.uploadMedia('image', file, { hd: !!sec.querySelector('#adm-news-hd').checked })).id;
-    }
-    [['SECURITY', 'adm-security-avatar'], ['NEWS', 'adm-news-avatar']].forEach(function (pair) {
-      var btn = sec.querySelector('#' + pair[1] + '-save');
-      btn.onclick = async function () {
-        var f = sec.querySelector('#' + pair[1]).files[0]; if (!f) { toast('Выберите изображение'); return; }
-        try {
-          var image = typeof window.mxCompressImage === 'function' ? await window.mxCompressImage(f, true) : f;
-          var media = await MchatAPI.uploadMedia('image', image, { hd: true });
-          await MchatAPI.newsSetOfficialAvatar(pair[0], media.id);
-          sec.querySelector('#' + pair[1]).value = ''; toast('Аватар обновлён у всех пользователей');
-        } catch (e) { toast(MchatAPI.errorText(e)); }
-      };
     });
-    async function load() {
-      try {
-        var d = await MchatAPI.newsList();
-        list.innerHTML = d.posts.length ? d.posts.map(function (p) {
-          return '<div style="background:var(--surf);border-radius:10px;padding:8px 10px;margin-bottom:6px;display:flex;gap:8px;align-items:center"><div style="flex:1;min-width:0;color:var(--text)">' + esc((p.text || (p.kind === 'IMAGE' ? '📷 Фото' : '')).slice(0, 90)) + '<div style="color:var(--text2);font-size:11px">' + esc(fmtAt(p.createdAt)) + ' · получателей: ' + p.recipients + '</div></div><button data-del="' + esc(p.id) + '" class="mx-adm-btn" style="background:#dc2626">Удалить</button></div>';
-        }).join('') : 'Публикаций пока нет';
-        list.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = async function () { if (!confirm('Удалить эту новость у всех пользователей?')) return; try { await MchatAPI.newsDelete(b.getAttribute('data-del')); toast('Новость удалена'); load(); } catch (e) { toast(MchatAPI.errorText(e)); } }; });
-      } catch (e) { list.textContent = MchatAPI.errorText(e); }
-    }
-    sec.querySelector('#adm-news-pub').onclick = async function () {
-      var text = sec.querySelector('#adm-news-text').value.trim();
-      try {
-        var mediaId = await upload();
-        if (!text && !mediaId) { toast('Напишите текст или добавьте фото'); return; }
-        await MchatAPI.newsPublish(text, mediaId);
-        if (mediaId && sec.querySelector('#adm-news-story-too').checked) await MchatAPI.newsStory({ mediaId: mediaId, textBlocks: [] });
-        sec.querySelector('#adm-news-text').value = ''; sec.querySelector('#adm-news-file').value = '';
-        toast('Новость отправляется всем пользователям'); load();
-      } catch (e) { toast(MchatAPI.errorText(e)); }
-    };
-    sec.querySelector('#adm-news-story').onclick = async function () {
-      try {
-        var mediaId = await upload();
-        if (!mediaId) { toast('Для истории нужно фото'); return; }
-        await MchatAPI.newsStory({ mediaId: mediaId, textBlocks: [] });
-        sec.querySelector('#adm-news-file').value = ''; toast('История опубликована');
-      } catch (e) { toast(MchatAPI.errorText(e)); }
-    };
-    load();
   }
+
+  function connect() {
+    if (socket) return;
+    socket = io({ withCredentials: true, transports: ['websocket', 'polling'] });
+
+    socket.on('connect', () => {
+      socket.emit('app:visibility', document.visibilityState === 'visible');
+      if (everConnected && handlers.onReconnect) handlers.onReconnect(); // догнать пропущенное
+      everConnected = true;
+    });
+    socket.on('connect_error', (err) => {
+      if (err && err.message === 'unauthorized') { // сессия отозвана/истекла — переподключаться бессмысленно
+        socket.disconnect(); socket = null;
+        if (handlers.onUnauthorized) handlers.onUnauthorized();
+      }
+    });
+    socket.on('disconnect', (reason) => {
+      // сервер закрыл соединение сам (например, отозвали устройство) → проверим сессию
+      if (reason === 'io server disconnect') {
+        api('/me').catch((e) => { if (e.status === 401 && handlers.onUnauthorized) handlers.onUnauthorized(); });
+        socket.connect();
+      }
+    });
+    socket.on('message:new', (m) => handlers.onMessage && handlers.onMessage(m));
+    socket.on('chat:read', (p) => handlers.onRead && handlers.onRead(p));
+    socket.on('typing', (p) => handlers.onTyping && handlers.onTyping(p));
+    socket.on('presence', (p) => handlers.onPresence && handlers.onPresence(p));
+    socket.on('message:edited', (m) => handlers.onEdited && handlers.onEdited(m));
+    socket.on('message:deleted', (p) => handlers.onDeleted && handlers.onDeleted(p));
+    socket.on('message:reactions', (p) => handlers.onReactions && handlers.onReactions(p));
+    socket.on('chat:pinned', (p) => handlers.onPinned && handlers.onPinned(p));
+    socket.on('chat:changed', (p) => handlers.onChatChanged && handlers.onChatChanged(p));
+    socket.on('call:incoming', (p) => handlers.onCallIncoming && handlers.onCallIncoming(p));
+    socket.on('call:ended', (p) => handlers.onCallEnded && handlers.onCallEnded(p));
+    socket.on('call:handled', (p) => handlers.onCallHandled && handlers.onCallHandled(p));
+    socket.on('chat:removed', (p) => handlers.onChatRemoved && handlers.onChatRemoved(p));
+    socket.on('friend:update', (p) => handlers.onFriendUpdate && handlers.onFriendUpdate(p));
+    extraListeners.forEach((l) => socket.on(l[0], l[1]));
+    socket.on('auth:login-code', (d) => handlers.onLoginCode && handlers.onLoginCode(d));
+    socket.on('auth:new-device', (d) => handlers.onNewDevice && handlers.onNewDevice(d));
+  }
+
+  function disconnect() {
+    if (socket) { socket.disconnect(); socket = null; }
+    everConnected = false;
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    // сервер не шлёт пуш, пока приложение на экране, и шлёт, когда свёрнуто
+    if (socket && socket.connected) socket.emit('app:visibility', document.visibilityState === 'visible');
+  });
+
+  const newClientId = () => 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+
+  /**
+   * Отправка: сначала сокет с подтверждением; если сокет недоступен — REST (тот же clientId → без дублей).
+   * extra: { kind: 'VOICE'|'VIDEO_NOTE'|'IMAGE', mediaId, durationSec, replyToId }
+   */
+  function sendMessage(chatId, text, clientId, extra) {
+    clientId = clientId || newClientId();
+    const payload = Object.assign({ text: text || '', clientId: clientId }, extra || {});
+    return new Promise((resolve, reject) => {
+      const viaRest = () =>
+        api('/chats/' + encodeURIComponent(chatId) + '/messages', { method: 'POST', body: payload })
+          .then((r) => resolve(r.message), reject);
+      if (!socket || !socket.connected) return viaRest();
+      socket.timeout(8000).emit('message:send', Object.assign({ chatId: chatId }, payload), (err, res) => {
+        if (err) return viaRest(); // таймаут → повтор по REST, дубль исключён идемпотентностью
+        if (res && res.ok) return resolve(res.message);
+        const e = new Error((res && res.error) || 'server_error');
+        e.code = res && res.error;
+        reject(e);
+      });
+    });
+  }
+
+  /** Загрузка файла: тело запроса — сам файл. kind: voice | videonote | image | track */
+  /** Загрузка файла. opts.onProgress(0..100) — для полосы загрузки. Документы уходят как octet-stream. */
+  function uploadMedia(kind, blob, opts) {
+    opts = opts || {};
+    const qs = new URLSearchParams({ kind: kind });
+    if (opts.duration) qs.set('duration', String(Math.round(opts.duration)));
+    if (opts.name) qs.set('name', opts.name);
+    if (opts.hd) qs.set('hd', '1');
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/media?' + qs.toString());
+      xhr.withCredentials = true;
+      xhr.setRequestHeader('Content-Type', kind === 'file' ? 'application/octet-stream' : (blob.type || 'application/octet-stream'));
+      if (opts.onProgress && xhr.upload) {
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) opts.onProgress(Math.round((e.loaded / e.total) * 100)); };
+      }
+      xhr.onload = () => {
+        let data = null; try { data = JSON.parse(xhr.responseText); } catch (e) { /* пусто */ }
+        if (xhr.status >= 200 && xhr.status < 300 && data && data.media) return resolve(data.media);
+        const err = new Error((data && data.error) || 'http_' + xhr.status);
+        err.status = xhr.status;
+        err.code = (data && data.error) || (xhr.status === 413 ? 'too_large' : xhr.status === 415 ? 'unsupported_type' : undefined);
+        reject(err);
+      };
+      xhr.onerror = () => { const err = new Error('network'); err.status = 0; reject(err); };
+      xhr.send(blob);
+    });
+  }
+
+  let typingOn = false, typingTimer = null;
+  function sendTyping(chatId) {
+    if (!socket || !socket.connected) return;
+    if (!typingOn) { typingOn = true; socket.emit('typing', { chatId: chatId, isTyping: true }); }
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => { typingOn = false; socket && socket.emit('typing', { chatId: chatId, isTyping: false }); }, 2500);
+  }
+
+  // ---------- Web Push ----------
+  const b64ToU8 = (b64) => {
+    const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+    const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+  };
+  const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+
+  async function registerSW() {
+    if (!('serviceWorker' in navigator)) return null;
+    try { return await navigator.serviceWorker.register('/sw.js', { scope: '/' }); } catch (e) { return null; }
+  }
+
+  /** Включить пуши. Вызывать по нажатию пользователя (iOS/Safari требуют жест). */
+  async function enablePush() {
+    if (!pushSupported()) throw Object.assign(new Error('push_unsupported'), { code: 'push_unsupported' });
+    const reg = await navigator.serviceWorker.ready;
+    let perm = Notification.permission;
+    if (perm === 'default') perm = await Notification.requestPermission();
+    if (perm !== 'granted') throw Object.assign(new Error('push_denied'), { code: 'push_denied' });
+    const key = (await api('/push/key')).publicKey;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      try { sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) }); }
+      catch (e) { // подписка со старым ключом — пересоздаём
+        const old = await reg.pushManager.getSubscription(); if (old) await old.unsubscribe();
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) });
+      }
+    }
+    await api('/push/subscribe', { method: 'POST', body: sub.toJSON() });
+  }
+
+  async function disablePush() {
+    if (!pushSupported()) return;
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) { await api('/push/unsubscribe', { method: 'POST', body: { endpoint: sub.endpoint } }); await sub.unsubscribe(); }
+  }
+
+  /** Тихо привязать подписку к текущему пользователю, если разрешение уже выдано. */
+  async function syncPush() {
+    if (pushSupported() && Notification.permission === 'granted') { try { await enablePush(); } catch (e) { /* не критично */ } }
+  }
+
+  // Service Worker → страница (клик по уведомлению)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'open-chat' && handlers.onOpenChat) handlers.onOpenChat(e.data.chatId);
+      if (e.data && e.data.type === 'answer-call' && window.mxAcceptCallFromPush) window.mxAcceptCallFromPush(e.data);
+    });
+    registerSW();
+  }
+
+  // ---------- публичный интерфейс ----------
+  window.MchatAPI = {
+    handlers: handlers,
+    errorText: errorText,
+    newClientId: newClientId,
+
+    // auth
+    startGoogle: (username, admin) => { window.location.href = '/api/auth/google/start?username=' + encodeURIComponent(username || '') + (admin ? '&admin=1' : ''); },
+    pending: () => api('/auth/pending'),
+    verifyCode: (code) => api('/auth/verify-code', { method: 'POST', body: { code: code } }),
+    sendEmailCode: () => api('/auth/send-email-code', { method: 'POST', body: {} }),
+    logout: () => api('/auth/logout', { method: 'POST', body: {} }),
+
+    // профиль
+    me: () => api('/me'),
+    updateMe: (patch) => api('/me', { method: 'PATCH', body: patch }),
+    deleteMe: () => api('/me', { method: 'DELETE' }),
+    getUser: (username) => api('/users/' + encodeURIComponent(username)),
+    searchUsers: (q) => api('/users/search?q=' + encodeURIComponent(q)),
+    devices: () => api('/me/devices'),
+    revokeDevice: (id) => api('/me/devices/' + encodeURIComponent(id), { method: 'DELETE' }),
+
+    // чаты
+    listChats: () => api('/chats'),
+    startDirectChat: (username) => api('/chats/direct', { method: 'POST', body: { username: username } }),
+    listMessages: (chatId, before) => api('/chats/' + encodeURIComponent(chatId) + '/messages?limit=50' + (before ? '&before=' + encodeURIComponent(before) : '')),
+    markRead: (chatId) => api('/chats/' + encodeURIComponent(chatId) + '/read', { method: 'POST', body: {} }).catch(() => {}),
+    sendMessage: sendMessage,
+    sendTyping: sendTyping,
+    editMessage: (id, text) => api('/messages/' + encodeURIComponent(id), { method: 'PATCH', body: { text: text } }).then((r) => r.message),
+    deleteMessage: (id, scope) => api('/messages/' + encodeURIComponent(id) + '?scope=' + (scope || 'all'), { method: 'DELETE' }),
+    react: (id, emoji) => api('/messages/' + encodeURIComponent(id) + '/reaction', { method: 'PUT', body: { emoji: emoji } }),
+    forward: (id, chatId) => api('/messages/' + encodeURIComponent(id) + '/forward', { method: 'POST', body: { chatId: chatId, clientId: newClientId() } }).then((r) => r.message),
+    pin: (chatId, messageId) => api('/chats/' + encodeURIComponent(chatId) + '/pin', { method: 'PUT', body: { messageId: messageId } }),
+    // ── звонки (LiveKit) ──
+    callStatus: () => api('/calls/status'),
+    startCall: (chatId, video) => api('/calls', { method: 'POST', body: { chatId: chatId, video: !!video } }),
+    acceptCall: (id) => api('/calls/' + encodeURIComponent(id) + '/accept', { method: 'POST', body: {} }),
+    declineCall: (id) => api('/calls/' + encodeURIComponent(id) + '/decline', { method: 'POST', body: {} }),
+    leaveCall: (id) => api('/calls/' + encodeURIComponent(id) + '/leave', { method: 'POST', body: {} }),
+    inviteToCall: (id, userIds) => api('/calls/' + encodeURIComponent(id) + '/invite', { method: 'POST', body: { userIds: userIds } }),
+    chatContacts: () => api('/chats/contacts'),
+    searchChannels: (q) => api('/chats/search?q=' + encodeURIComponent(q)),
+    archiveChat: (id, archived) => api('/chats/' + encodeURIComponent(id) + '/archive', { method: 'PUT', body: { archived: !!archived } }),
+    pinChat: (id, pinned) => api('/chats/' + encodeURIComponent(id) + '/pin-chat', { method: 'PUT', body: { pinned: !!pinned } }),
+    storiesFeed: () => api('/stories/feed'),
+    sendSupport: (text) => api('/support', { method: 'POST', body: { text: text, clientId: newClientId() } }),
+    adminGrantVerification: (username, days) => api('/verification/grant', { method: 'POST', body: { username: username, days: days } }),
+    adminFindUsers: (q) => api('/verification/users?q=' + encodeURIComponent(q)),
+    // Титул «Генерал Mchat»
+    generalSetStyle: (glow, anim) => api('/titles/general/style', { method: 'PUT', body: { glow: glow, anim: anim } }),
+    generalSeen: () => api('/titles/general/seen', { method: 'POST', body: {} }),
+    adminGenerals: () => api('/titles/general'),
+    adminGeneralFind: (q) => api('/titles/general/users?q=' + encodeURIComponent(q)),
+    adminGeneralGrant: (username) => api('/titles/general/grant', { method: 'POST', body: { username: username } }),
+    adminGeneralRevoke: (userId) => api('/titles/general/revoke', { method: 'POST', body: { userId: userId } }),
+    // Одноразовые медиа, удаление чатов, выход владельца
+    openOnce: (id) => api('/messages/' + encodeURIComponent(id) + '/view-once/open', { method: 'POST', body: {} }),
+    closeOnce: (id) => api('/messages/' + encodeURIComponent(id) + '/view-once/close', { method: 'POST', body: {} }),
+    hideChat: (id) => api('/chats/' + encodeURIComponent(id) + '/hide', { method: 'POST', body: {} }),
+    clearChat: (id) => api('/chats/' + encodeURIComponent(id) + '/clear', { method: 'POST', body: {} }),
+    leaveChat: (id, body) => api('/chats/' + encodeURIComponent(id) + '/leave', { method: 'POST', body: body || {} }),
+    channelPreview: (id) => api('/chats/' + encodeURIComponent(id) + '/preview'),
+    checkUsername: (u) => api('/auth/check-username?u=' + encodeURIComponent(u)),
+    joinChannel: (id) => api('/chats/' + encodeURIComponent(id) + '/join', { method: 'POST', body: {} }),
+    // muted=false — включить; muted=true + duration ('1h' | '2h' | '8h' | 'forever') — выключить на время / навсегда
+    muteChat: (id, muted, duration) => api('/chats/' + encodeURIComponent(id) + '/mute', { method: 'PUT', body: { muted: !!muted, duration: duration || 'forever' } }),
+    setAutoDelete: (id, enabled) => api('/chats/' + encodeURIComponent(id) + '/autodelete', { method: 'PUT', body: { enabled: !!enabled } }),
+    openSavedChat: () => api('/chats/saved', { method: 'POST', body: {} }),
+    createGroup: (b) => api('/chats/group', { method: 'POST', body: b }),
+    joinChat: (code) => api('/chats/join', { method: 'POST', body: { code: code } }),
+    // ссылки-приглашения и заявки на вступление в приватные каналы/группы
+    invitePreview: (code) => api('/chats/invite/' + encodeURIComponent(code)),
+    joinRequests: () => api('/chats/requests'),
+    chatJoinRequests: (id) => api('/chats/' + encodeURIComponent(id) + '/requests'),
+    decideJoinRequest: (chatId, rid, approve) => api('/chats/' + encodeURIComponent(chatId) + '/requests/' + encodeURIComponent(rid) + '/' + (approve ? 'approve' : 'decline'), { method: 'POST', body: {} }),
+    chatMentionCandidates: (id, q) => api('/chats/' + encodeURIComponent(id) + '/mention-candidates?q=' + encodeURIComponent(q || '')),
+    // коллекции стикеров
+    stickerPacks: () => api('/stickers'),
+    stickerPack: (id) => api('/stickers/packs/' + encodeURIComponent(id)),
+    createStickerPack: (title) => api('/stickers/packs', { method: 'POST', body: { title: title } }),
+    renameStickerPack: (id, title) => api('/stickers/packs/' + encodeURIComponent(id), { method: 'PATCH', body: { title: title } }),
+    deleteStickerPack: (id) => api('/stickers/packs/' + encodeURIComponent(id), { method: 'DELETE' }),
+    saveStickerPack: (id) => api('/stickers/packs/' + encodeURIComponent(id) + '/save', { method: 'PUT', body: {} }),
+    unsaveStickerPack: (id) => api('/stickers/packs/' + encodeURIComponent(id) + '/save', { method: 'DELETE' }),
+    addSticker: (body) => api('/stickers', { method: 'POST', body: body }),
+    deleteSticker: (id) => api('/stickers/' + encodeURIComponent(id), { method: 'DELETE' }),
+
+    // черновики (личные, по чатам)
+    listDrafts: () => api('/chats/drafts'),
+    saveDraft: (id, text) => api('/chats/' + encodeURIComponent(id) + '/draft', { method: 'PUT', body: { text: text } }),
+    // друзья
+    setChatBackground: (id, background) => api('/chats/' + encodeURIComponent(id) + '/background', { method: 'PUT', body: { background: background } }),
+    // ── посты, истории, профиль ──
+    listPosts: (username) => api('/posts' + (username ? '?username=' + encodeURIComponent(username) : '')),
+    getPost: (id) => api('/posts/' + id),
+    searchPosts: (q) => api('/posts/search?q=' + encodeURIComponent(q)),
+    listReposts: (username) => api('/posts/reposts?username=' + encodeURIComponent(username)),
+    createPost: (body) => api('/posts', { method: 'POST', body: body }),
+    deletePost: (id) => api('/posts/' + id, { method: 'DELETE' }),
+    likePost: (id, liked) => api('/posts/' + id + '/like', { method: 'PUT', body: { liked: !!liked } }),
+    commentPost: (id, text, replyToId) => api('/posts/' + id + '/comments', { method: 'POST', body: { text: text, replyToId: replyToId || undefined } }),
+    likeComment: (id, cid, liked) => api('/posts/' + id + '/comments/' + cid + '/like', { method: 'PUT', body: { liked: !!liked } }),
+    mentionCandidates: (id, q) => api('/posts/' + id + '/mention-candidates?q=' + encodeURIComponent(q || '')),
+    repostPost: (id) => api('/posts/' + id + '/repost', { method: 'POST', body: {} }),
+    listStories: (username) => api('/stories?username=' + encodeURIComponent(username)),
+    createStory: (body) => api('/stories', { method: 'POST', body: body }),
+    deleteStory: (id) => api('/stories/' + id, { method: 'DELETE' }),
+    likeStory: (id, liked) => api('/stories/' + id + '/like', { method: 'PUT', body: { liked: !!liked } }),
+    commentStory: (id, text) => api('/stories/' + id + '/comments', { method: 'POST', body: { text: text } }),
+    // ── верификация (галочка со сроком) ──
+    myVerification: () => api('/verification/mine'),
+    requestVerification: (reason) => api('/verification/requests', { method: 'POST', body: { reason: reason } }),
+    verifyAdmin: () => api('/verification/admin'),
+    verifyApprove: (id, days) => api('/verification/requests/' + id + '/approve', { method: 'POST', body: { days: days } }),
+    verifyReject: (id) => api('/verification/requests/' + id + '/reject', { method: 'POST', body: {} }),
+    verifyRevoke: (userId) => api('/verification/users/' + encodeURIComponent(userId) + '/revoke', { method: 'POST', body: {} }),
+    updateChat: (id, patch) => api('/chats/' + encodeURIComponent(id), { method: 'PATCH', body: patch }),
+    chatMembers: (id) => api('/chats/' + encodeURIComponent(id) + '/members'),
+    addMembers: (id, userIds) => api('/chats/' + encodeURIComponent(id) + '/members', { method: 'POST', body: { userIds: userIds } }),
+    removeMember: (id, userId) => api('/chats/' + encodeURIComponent(id) + '/members/' + encodeURIComponent(userId), { method: 'DELETE' }),
+    setMemberRole: (id, userId, role) => api('/chats/' + encodeURIComponent(id) + '/members/' + encodeURIComponent(userId) + '/role', { method: 'PUT', body: { role: role } }),
+    friends: () => api('/friends'),
+    follow: (username) => api('/friends/follow', { method: 'POST', body: { username: username } }),
+    unfollow: (username) => api('/friends/follow/' + encodeURIComponent(username), { method: 'DELETE' }),
+    chatShared: (id, tab) => api('/chats/' + encodeURIComponent(id) + '/shared?tab=' + encodeURIComponent(tab)),
+    // списки подписчиков / подписок и чёрный список
+    followsOf: (username, kind) => api('/friends/of/' + encodeURIComponent(username) + '/' + (kind === 'following' ? 'following' : 'followers')),
+    blockedUsers: () => api('/friends/blocked'),
+    blockUser: (username) => api('/friends/block', { method: 'POST', body: { username: username } }),
+    unblockUser: (username) => api('/friends/block/' + encodeURIComponent(username), { method: 'DELETE' }),
+    // история звонков
+    callHistory: () => api('/calls/history'),
+
+    // файлы и треки («нота»)
+    uploadMedia: uploadMedia,
+    deleteMedia: (id) => api('/media/' + encodeURIComponent(id), { method: 'DELETE' }),
+    myTracks: () => api('/me/tracks'),
+    userTracks: (username) => api('/users/' + encodeURIComponent(username) + '/tracks'),
+    savedTracks: () => api('/me/saved-tracks'),
+    saveTrack: (id) => api('/media/' + encodeURIComponent(id) + '/save', { method: 'PUT', body: {} }),
+    unsaveTrack: (id) => api('/media/' + encodeURIComponent(id) + '/save', { method: 'DELETE' }),
+
+    // ── «Момент» (REST) ──
+    listMoments: (username, before) => api('/moments?username=' + encodeURIComponent(username) + (before ? '&before=' + before : '')),
+    getMoment: (id) => api('/moments/' + id),
+    createMoment: (body) => api('/moments', { method: 'POST', body: body }),
+    deleteMoment: (id) => api('/moments/' + id, { method: 'DELETE' }),
+    setMomentComments: (id, enabled) => api('/moments/' + id, { method: 'PATCH', body: { commentsEnabled: !!enabled } }),
+    viewMoment: (id) => api('/moments/' + id + '/view', { method: 'POST', body: {} }),
+    momentComments: (id) => api('/moments/' + id + '/comments'),
+    addMomentComment: (id, text) => api('/moments/' + id + '/comments', { method: 'POST', body: { text: text } }),
+    deleteMomentComment: (id, commentId) => api('/moments/' + id + '/comments/' + commentId, { method: 'DELETE' }),
+
+    // ── подтверждение входа с нового устройства (карточка «Mchat — Безопасность») ──
+    securityConfirm: (alertId) => api('/security/alerts/' + encodeURIComponent(alertId) + '/confirm', { method: 'POST', body: {} }),
+    securityDeny: (alertId) => api('/security/alerts/' + encodeURIComponent(alertId) + '/deny', { method: 'POST', body: {} }),
+    // ── новости (только администратор; права проверяет сервер) ──
+    newsList: () => api('/news'),
+    newsPublish: (text, mediaId) => api('/news', { method: 'POST', body: Object.assign({ text: text || '' }, mediaId ? { mediaId: mediaId } : {}) }),
+    newsSetOfficialAvatar: (kind, mediaId) => api('/news/avatar/' + encodeURIComponent(kind), { method: 'PUT', body: { mediaId: mediaId } }),
+    newsDelete: (id) => api('/news/' + encodeURIComponent(id), { method: 'DELETE' }),
+    newsStory: (body) => api('/news/story', { method: 'POST', body: body }),
+
+    // ── произвольные события сокета (WebSocket-часть «Момента») ──
+    on: onSocket,
+    emit: emitSocket,
+
+    // realtime
+    connect: connect,
+    disconnect: disconnect,
+
+    // push
+    enablePush: enablePush,
+    disablePush: disablePush,
+    syncPush: syncPush,
+    pushSupported: pushSupported,
+  };
 })();
