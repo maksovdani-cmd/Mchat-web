@@ -96,9 +96,10 @@ mediaRouter.get('/:id', wrap(async (req, res) => {
     headers['Content-Disposition'] = `attachment; filename="${name.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`;
     headers['Content-Security-Policy'] = "sandbox; default-src 'none'";
   }
-  // Файл лежит в облаке с публичным адресом: после проверки доступа отправляем прямо туда — трафик не идёт через сервер.
-  // Документы (FILE) отдаём только через сервер: им нужны заголовки «attachment» и sandbox.
-  if (storageMode !== 'disk' && m.url && m.kind !== 'FILE' && vo !== 'ok' && !prot) {
+  // Аудио и видео проксируем через сервер даже в облачном режиме: он выставляет MIME из БД и передаёт Range.
+  // Прямая CDN-переадресация может вернуть generic MIME (особенно для старых raw Cloudinary uploads), из-за чего
+  // браузерные audio/video-плееры завершаются MEDIA_ERR_SRC_NOT_SUPPORTED. Документы тоже всегда остаются на сервере.
+  if (storageMode !== 'disk' && m.url && !['FILE', 'VOICE', 'TRACK', 'VIDEO_NOTE', 'VIDEO'].includes(m.kind) && vo !== 'ok' && !prot) {
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.redirect(302, publicUrlFor(m.file) ?? m.url); // адрес считаем от текущих настроек: смена S3_PUBLIC_URL не ломает старые файлы
     return;

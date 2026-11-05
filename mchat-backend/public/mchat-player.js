@@ -212,7 +212,12 @@
     v.addEventListener('loadedmetadata', function () { if (typeof window.mxFixWebmDuration === 'function') window.mxFixWebmDuration(v); v.playbackRate = rate; });
     v.addEventListener('timeupdate', function () { if (v.duration && isFinite(v.duration)) ring.style.strokeDashoffset = String(301.6 * (1 - v.currentTime / v.duration)); });
     v.addEventListener('ended', function () { closeCircle(); });
-    v.addEventListener('error', function () { if (!zoom) return; toast('Не удалось воспроизвести кружок'); closeCircle(); });
+    v.addEventListener('error', function () {
+      if (!zoom) return;
+      var code = v.error && v.error.code;
+      toast(code === 2 ? 'Не удалось загрузить кружок — проверьте соединение' : code === 4 ? 'Файл кружка недоступен или его формат не поддерживается' : 'Не удалось воспроизвести кружок');
+      closeCircle();
+    });
     cur = { kind: 'video', id: wrap.getAttribute('data-mid') || '', chatId: curChatId(), el: v, title: 'Кружок' };
     var rateBtn = zoom.querySelector('.mx-vnz-rate');
     rateBtn.onclick = function (e) { e.stopPropagation(); var i = circleRates.indexOf(rate); setRate(circleRates[(i + 1) % circleRates.length]); rateBtn.textContent = rateLabel(rate); };
@@ -224,10 +229,10 @@
     zoom.addEventListener('click', function (e) {
       var rb = e.target.closest('[data-rate]');
       if (rb) return;
-      if (e.target.closest('.mx-vnz-pause')) { e.stopPropagation(); if (v.paused) v.play().catch(function () {}); else v.pause(); btn.innerHTML = v.paused ? PLAY_ICO.replace(/16/g, '26') : PAUSE_ICO.replace(/16/g, '26'); return; }
+      if (e.target.closest('.mx-vnz-pause')) { e.stopPropagation(); if (v.paused) { v.play().catch(function () {}); btn.innerHTML = PAUSE_ICO.replace(/16/g, '26'); } else { v.pause(); btn.innerHTML = PLAY_ICO.replace(/16/g, '26'); } return; }
       if (e.target.closest('.mx-vnz-circle')) {
         if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; return; }
-        tapTimer = setTimeout(function () { tapTimer = null; if (v.paused) v.play().catch(function () {}); else v.pause(); btn.innerHTML = v.paused ? PLAY_ICO.replace(/16/g, '26') : PAUSE_ICO.replace(/16/g, '26'); }, 230);
+        tapTimer = setTimeout(function () { tapTimer = null; if (v.paused) { v.play().catch(function () {}); btn.innerHTML = PAUSE_ICO.replace(/16/g, '26'); } else { v.pause(); btn.innerHTML = PLAY_ICO.replace(/16/g, '26'); } }, 230);
       } else if (e.target === zoom) closeCircle();
     });
     var pr = v.play(); if (pr && pr.catch) pr.catch(function () { toast('Не удалось воспроизвести кружок'); closeCircle(); });

@@ -3038,7 +3038,7 @@ function mxGlobalBox() {
 }
 function mxOfficialSubscriberLabel(ch) {
   const n = String(ch && ch.name || '').replace(/[—–]/g, '-').replace(/\s+/g, ' ').trim().toLowerCase();
-  return ch && ch.type === 'CHANNEL' && (/^mchat\s*-\s*(новости|безопасность)$/.test(n) || /^mchat (news|security)$/.test(n)) ? '0 0 0' : null;
+  return ch && ch.type === 'CHANNEL' && (/^mchat(?:\s*-\s*(новости|безопасность|админ(?:истрация)?|admin))?$/.test(n) || /^mchat (news|security|admin)$/.test(n)) ? '0 0 0' : null;
 }
 function mxSearchGlobalChannels(q) {
   clearTimeout(mxGlobalTimer);
@@ -5991,7 +5991,7 @@ async function mxAttachChosen(evt) {
   // Несколько фото/видео за раз → один альбом: общий префикс clientId собирает их в единый блок у обоих собеседников
   const isMedia = (f) => { const k = mxKindOfFile(f); return k === 'image' || k === 'video'; };
   const albumId = files.filter(isMedia).length >= 2 ? 'a' + Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 5) : null;
-  if (files.length > 1 && files.every((f) => mxKindOfFile(f) === 'image' && f.type !== 'image/gif')) {
+  if (files.length > 1 && files.every((f) => mxKindOfFile(f) === 'image')) {
     await mxMultiPhotoPrepare(files, chatId, albumId); return;
   }
   let n = 0;
@@ -6005,7 +6005,7 @@ async function mxAttachChosen(evt) {
 }
 
 async function mxMultiPhotoPrepare(files, chatId, albumId) {
-  const items = files.map((file) => ({ file, caption: '', hd: mxHdPref(), url: URL.createObjectURL(file) }));
+  const items = files.map((file, index) => ({ file, caption: '', hd: mxHdPref(), url: URL.createObjectURL(file), clientId: albumId + '_' + index + '_' + Math.random().toString(36).slice(2, 6), sent: false }));
   const overlay = document.createElement('div'); overlay.className = 'mx-multi-photo';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:2100;background:rgba(0,0,0,.94);display:flex;flex-direction:column;color:#fff;padding:calc(env(safe-area-inset-top) + 14px) 14px calc(env(safe-area-inset-bottom) + 12px);box-sizing:border-box';
   overlay.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:16px;padding:4px 2px 14px"><span>Подготовка фото · ' + items.length + '</span><button type="button" data-close style="border:0;background:none;color:#fff;font-size:24px">×</button></div><div class="mx-multi-stage" style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center"><img style="max-width:100%;max-height:100%;object-fit:contain;border-radius:12px"></div><div class="mx-multi-thumbs" style="display:flex;gap:8px;overflow-x:auto;padding:12px 0 10px"></div><button type="button" data-send style="border:0;border-radius:14px;padding:13px;background:var(--accent);color:#fff;font:700 14px var(--font)">Отправить ' + items.length + ' фото</button>';
@@ -6018,7 +6018,7 @@ async function mxMultiPhotoPrepare(files, chatId, albumId) {
   overlay.querySelector('[data-close]').onclick = () => { cancelled = true; cleanup(); };
   overlay.querySelector('[data-send]').onclick = async function () {
     if (busy || cancelled) return; busy = true; this.disabled = true; this.textContent = 'Отправка…';
-    try { for (let i = 0; i < items.length; i++) { const id = albumId + '_' + i + '_' + Math.random().toString(36).slice(2, 6); await mxSendAttachment(chatId, items[i].file, { caption: items[i].caption, hd: items[i].hd, clientId: id }); } cleanup(); }
+    try { for (let i = 0; i < items.length; i++) { if (items[i].sent) continue; const ok = await mxSendAttachment(chatId, items[i].file, { caption: items[i].caption, hd: items[i].hd, clientId: items[i].clientId }); if (!ok) throw new Error('upload_failed'); items[i].sent = true; this.textContent = 'Отправлено ' + items.filter((x) => x.sent).length + ' из ' + items.length; } cleanup(); }
     catch (e) { busy = false; this.disabled = false; this.textContent = 'Повторить отправку'; }
   };
 }
@@ -6104,10 +6104,12 @@ async function mxSendAttachment(chatId, file, opts) {
     const media = await MchatAPI.uploadMedia(kind, file, { name: file.name, hd: !!opts.hd && (kind === 'image' || kind === 'video'), onProgress: (p) => { local.progress = p; mxUpdateProgress(clientId, p); } });
     const saved = await MchatAPI.sendMessage(chatId, caption, clientId, { kind: MX_ATTACH_KIND[kind], mediaId: media.id });
     onIncomingMessage(saved); // склеится с заглушкой по clientId
+    return true;
   } catch (e) {
     messages[chatId] = (messages[chatId] || []).filter((x) => x !== local);
     if (currentChatId === chatId) renderMessages(chatId);
     showToast(MchatAPI.errorText(e));
+    return false;
   }
 }
 
