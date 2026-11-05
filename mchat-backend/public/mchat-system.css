@@ -35,7 +35,7 @@
 .mx-archive-pull-indicator.ready { color:#fff; background:rgba(74,74,240,.34); box-shadow:inset 0 0 0 1.5px var(--accent,#4a4af0); }
 .mx-archive-pull-icon { width:34px; height:34px; display:grid; place-items:center; flex:none; }
 .mx-archive-pull-icon svg { width:22px; height:22px; }
-.mx-news-sound { border:0; border-radius:999px; padding:9px 18px; color:var(--text); background:rgba(255,255,255,.12); -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px); font:600 13px var(--font); cursor:pointer; }
+.mx-news-sound { min-width:140px; min-height:48px; border:0; border-radius:999px; padding:12px 24px; color:var(--text); background:rgba(255,255,255,.12); -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px); font:600 15px var(--font); cursor:pointer; }
 
 /* кнопки раздела новостей в админ-панели */
 .mx-adm-btn { padding: 8px 12px; border-radius: 8px; border: 0; color: #fff; cursor: pointer; font-size: 12px; font-family: inherit; }

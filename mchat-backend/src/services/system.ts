@@ -14,7 +14,7 @@ import type { OfficialKind } from './official';
  * Это обычные строки в таблице User с isSystem=true, но:
  *   • в них нельзя войти (googleId/почта — заглушки, сессии не создаются);
  *   • системные аккаунты не могут отправлять обычные сообщения; пользователи могут писать в личный чат SECURITY,
- *     но звонки и сообщения в NEWS остаются закрыты (проверка на сервере);
+ *     публикации NEWS доступны только владельцу-администратору Mchat (проверка на сервере);
  *   • значок и признак «официальный» выставляет только этот файл — клиент их подделать не может.
  * Это НЕ админ-аккаунт владельца (@mchat): тот остаётся отдельным пользователем и работает как раньше.
  */
@@ -31,7 +31,7 @@ export const SYSTEM_ACCOUNTS: Record<OfficialKind, { username: string; googleId:
     googleId: 'system:mchat-news',
     email: 'news@system.mchat.invalid',
     bio: 'Официальные новости и обновления Mchat',
-    welcome: 'Это официальный аккаунт новостей Mchat. Здесь появляются новости и обновления приложения. Писать в этот аккаунт нельзя.',
+    welcome: 'Официальные новости и обновления Mchat публикуются здесь. Новые публикации приходят всем пользователям.',
   },
 };
 const KINDS = Object.keys(SYSTEM_ACCOUNTS) as OfficialKind[];
@@ -168,7 +168,7 @@ export async function publishNews(adminId: string, input: NewsInput) {
 
   const recipients = await prisma.user.count({ where: { isSystem: false } });
   const post = await prisma.newsPost.create({ data: { authorId: adminId, kind, text, mediaId, recipients } });
-  void deliverNews(post.id, kind, text, mediaId).catch((e) => console.error('news delivery failed:', (e as Error).message));
+  await deliverNews(post.id, kind, text, mediaId);
   return post;
 }
 

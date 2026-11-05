@@ -88,6 +88,7 @@
     var _ro = window.mxReadonlyHtml;
     if (typeof _ro !== 'function') return;
     window.mxReadonlyHtml = function (ch) {
+      if (kindOfChat(ch) === 'NEWS' && typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'ADMIN' && ch.dm && ch.dm.canSend) return _ro.apply(this, arguments);
       if (kindOfChat(ch) === 'NEWS') return '<button class="mx-news-sound" type="button" onclick="event.stopPropagation();mxNewsToggleSound(\'' + esc(ch.id) + '\')">' + (ch.muted ? 'Вкл. звук' : 'Выкл. звук') + '</button>';
       if (ch && ch.dm && ch.dm.reason === 'system_readonly') return 'Это официальный аккаунт Mchat — писать в него нельзя';
       return _ro.apply(this, arguments);

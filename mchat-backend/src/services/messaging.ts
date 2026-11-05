@@ -1,13 +1,33 @@
 import { prisma } from '../db';
 import { emitToChat, emitToUser, isActive, joinUserToChat } from '../realtime/hub';
 import {
-  createCallMessage, createMessage, deleteMessage, editMessage, forwardMessage, isMutedNow, markRead, pinMessage, previewOf, purgeAllChats, setReaction, toMessageDTO,
+  assertMember, createCallMessage, createMessage, deleteMessage, editMessage, forwardMessage, isMutedNow, markRead, messageInclude, pinMessage, previewOf, purgeAllChats, setReaction, toMessageDTO,
   type CallCardDTO, type CreateInput, type MessageDTO,
 } from './chat';
 import { sendPushToUser } from './push';
+import { publishNews, systemChatId } from './system';
+import { HttpError } from '../utils/errors';
 
 /** Единая точка отправки: и REST, и Socket.IO идут сюда. */
 export async function sendAndDispatch(userId: string, chatId: string, input: CreateInput): Promise<MessageDTO> {
+  const member = await assertMember(chatId, userId);
+  if (member.chat.type === 'DIRECT') {
+    const [me, peer] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId }, select: { role: true } }),
+      prisma.chatMember.findFirst({ where: { chatId, userId: { not: userId }, user: { isSystem: true, officialKind: 'NEWS' } }, select: { userId: true } }),
+    ]);
+    if (me?.role === 'ADMIN' && peer) {
+      if (!['TEXT', 'IMAGE', 'VIDEO'].includes(input.kind ?? 'TEXT') || input.viewOnce || input.replyToId || input.stickerId) {
+        throw new HttpError(400, 'news_post_type_not_supported');
+      }
+      const post = await publishNews(userId, { text: input.text ?? '', mediaId: input.mediaId });
+      const newsChatId = await systemChatId(userId, 'NEWS');
+      const message = await prisma.message.findFirstOrThrow({
+        where: { chatId: newsChatId, clientId: `news:${post.id}:${userId}` }, include: messageInclude,
+      });
+      return toMessageDTO(message);
+    }
+  }
   return dispatchNew(userId, chatId, await createMessage(userId, chatId, input));
 }
 
