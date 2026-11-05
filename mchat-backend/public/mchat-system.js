@@ -230,7 +230,7 @@
     sec.id = 'adm-news'; sec.style.cssText = 'margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)';
     sec.innerHTML = '<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Mchat — Новости</div>'
       + '<textarea id="adm-news-text" maxlength="4000" placeholder="Текст новости" style="width:100%;box-sizing:border-box;min-height:70px;padding:10px 12px;border-radius:10px;border:none;background:var(--surf);color:var(--text);font-family:var(--font);font-size:13px;resize:vertical;margin-bottom:6px"></textarea>'
-      + '<input type="file" id="adm-news-file" accept="image/*" style="font-size:12px;margin-bottom:8px;max-width:100%">'
+      + '<input type="file" id="adm-news-file" accept="image/*,video/mp4,video/webm,video/quicktime" style="font-size:12px;margin-bottom:8px;max-width:100%">'
       + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin:-2px 0 8px;color:var(--text2);font-size:12px"><label><input id="adm-news-hd" type="checkbox" checked> HD качество</label><label><input id="adm-news-story-too" type="checkbox"> Также добавить в истории</label></div>'
       + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 8px">'
       + '<label style="font-size:12px;color:var(--text2)">Аватар Безопасности <input type="file" id="adm-security-avatar" accept="image/*"></label>'
@@ -243,8 +243,12 @@
     var list = sec.querySelector('#adm-news-list');
     async function upload() {
       var f = sec.querySelector('#adm-news-file').files[0]; if (!f) return null;
-      var file = typeof window.mxCompressImage === 'function' ? await window.mxCompressImage(f, true) : f;
-      return (await MchatAPI.uploadMedia('image', file, { hd: !!sec.querySelector('#adm-news-hd').checked })).id;
+      var hd = !!sec.querySelector('#adm-news-hd').checked;
+      var kind = (f.type && f.type.indexOf('video/') === 0) || /\.(mp4|webm|mov)$/i.test(f.name || '') ? 'video' : 'image';
+      var file = kind === 'video'
+        ? (typeof window.mxCompressVideoFile === 'function' ? await window.mxCompressVideoFile(f, hd) : f)
+        : (typeof window.mxCompressImage === 'function' ? await window.mxCompressImage(f, hd) : f);
+      return (await MchatAPI.uploadMedia(kind, file, { hd: hd, name: file.name })).id;
     }
     [['SECURITY', 'adm-security-avatar'], ['NEWS', 'adm-news-avatar']].forEach(function (pair) {
       var btn = sec.querySelector('#' + pair[1] + '-save');
@@ -262,7 +266,8 @@
       try {
         var d = await MchatAPI.newsList();
         list.innerHTML = d.posts.length ? d.posts.map(function (p) {
-          return '<div style="background:var(--surf);border-radius:10px;padding:8px 10px;margin-bottom:6px;display:flex;gap:8px;align-items:center"><div style="flex:1;min-width:0;color:var(--text)">' + esc((p.text || (p.kind === 'IMAGE' ? '📷 Фото' : '')).slice(0, 90)) + '<div style="color:var(--text2);font-size:11px">' + esc(fmtAt(p.createdAt)) + ' · получателей: ' + p.recipients + '</div></div><button data-del="' + esc(p.id) + '" class="mx-adm-btn" style="background:#dc2626">Удалить</button></div>';
+          var fallback = p.kind === 'IMAGE' ? '📷 Фото' : p.kind === 'VIDEO' ? '🎥 Видео' : '';
+          return '<div style="background:var(--surf);border-radius:10px;padding:8px 10px;margin-bottom:6px;display:flex;gap:8px;align-items:center"><div style="flex:1;min-width:0;color:var(--text)">' + esc((p.text || fallback).slice(0, 90)) + '<div style="color:var(--text2);font-size:11px">' + esc(fmtAt(p.createdAt)) + ' · получателей: ' + p.recipients + '</div></div><button data-del="' + esc(p.id) + '" class="mx-adm-btn" style="background:#dc2626">Удалить</button></div>';
         }).join('') : 'Публикаций пока нет';
         list.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = async function () { if (!confirm('Удалить эту новость у всех пользователей?')) return; try { await MchatAPI.newsDelete(b.getAttribute('data-del')); toast('Новость удалена'); load(); } catch (e) { toast(MchatAPI.errorText(e)); } }; });
       } catch (e) { list.textContent = MchatAPI.errorText(e); }
@@ -271,7 +276,7 @@
       var text = sec.querySelector('#adm-news-text').value.trim();
       try {
         var mediaId = await upload();
-        if (!text && !mediaId) { toast('Напишите текст или добавьте фото'); return; }
+        if (!text && !mediaId) { toast('Напишите текст или добавьте фото/видео'); return; }
         await MchatAPI.newsPublish(text, mediaId);
         if (mediaId && sec.querySelector('#adm-news-story-too').checked) await MchatAPI.newsStory({ mediaId: mediaId, textBlocks: [] });
         sec.querySelector('#adm-news-text').value = ''; sec.querySelector('#adm-news-file').value = '';

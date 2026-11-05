@@ -374,10 +374,6 @@
   function secureViewer(v) {
     if (!v || v._mxSecure) return; v._mxSecure = true;
     v.classList.add('mx-secure');
-    const u = me(); const label = u ? '@' + (u.username || u.name || '') : '';
-    const wm = document.createElement('div'); wm.className = 'mx-wm'; wm.setAttribute('aria-hidden', 'true');
-    wm.innerHTML = Array.from({ length: 36 }, () => '<span>' + E(label) + '</span>').join('');
-    v.appendChild(wm);
     ['contextmenu', 'dragstart', 'selectstart', 'copy', 'cut'].forEach((t) => v.addEventListener(t, (e) => e.preventDefault()));
     const hide = () => v.classList.add('mx-blank');
     const show = () => { if (!document.hidden) v.classList.remove('mx-blank'); };

@@ -72,7 +72,6 @@
 .mx-secure img,.mx-secure video{-webkit-user-drag:none;pointer-events:auto;}
 .mx-secure.mx-blank #mx-once-media,.mx-secure.mx-blank video,.mx-secure.mx-blank img{visibility:hidden !important;}
 .mx-secure.mx-blank::before{content:"Содержимое скрыто";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.7);font-size:15px;z-index:5;}
-.mx-wm{position:absolute;inset:-20%;display:flex;flex-wrap:wrap;gap:34px 46px;align-content:center;justify-content:center;transform:rotate(-24deg);pointer-events:none;z-index:4;opacity:.11;color:#fff;font-size:15px;font-weight:700;font-family:var(--font);overflow:hidden;}
 @media print{#mx-once-viewer{display:none !important;}}
 
 /* ── Комментарии: ответы, лайки, упоминания ── */

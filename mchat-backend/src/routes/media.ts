@@ -1,152 +1,152 @@
-import crypto from 'node:crypto';
-import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
-import { z } from 'zod';
-import { viewOnceMediaAllowed } from '../services/viewonce';
-import { prisma } from '../db';
-import { authOf, requireAuth } from '../middleware/auth';
-import {
-  canAccessMedia, cleanFileName, cleanTitle, FILE_EXTS, fileExt, isProtectedMedia, MAX_TRACKS_PER_USER, MEDIA_RULES, toMediaDTO,
-} from '../services/media';
-import { ensureUploadDir, publicUrlFor, removeFile, saveUpload, sendFile, storageMode } from '../services/storage';
-import { HttpError, wrap } from '../utils/errors';
+  import crypto from 'node:crypto';
+  import { Router } from 'express';
+  import rateLimit from 'express-rate-limit';
+  import { z } from 'zod';
+  import { viewOnceMediaAllowed } from '../services/viewonce';
+  import { prisma } from '../db';
+  import { authOf, requireAuth } from '../middleware/auth';
+  import {
+    canAccessMedia, cleanFileName, cleanTitle, FILE_EXTS, fileExt, isProtectedMedia, MAX_TRACKS_PER_USER, MEDIA_RULES, toMediaDTO,
+  } from '../services/media';
+  import { ensureUploadDir, publicUrlFor, removeFile, saveUpload, sendFile, storageMode } from '../services/storage';
+  import { HttpError, wrap } from '../utils/errors';
 
-export const mediaRouter = Router();
-mediaRouter.use(requireAuth);
+  export const mediaRouter = Router();
+  mediaRouter.use(requireAuth);
 
-const uploadLimiter = rateLimit({
-  windowMs: 10 * 60_000, limit: 60, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'rate_limited' },
-});
-
-const KIND = { voice: 'VOICE', videonote: 'VIDEO_NOTE', image: 'IMAGE', track: 'TRACK', video: 'VIDEO', file: 'FILE' } as const;
-
-/**
- * Загрузка: тело запроса — сам файл (Content-Type = его MIME-тип).
- *   POST /api/media?kind=voice|videonote|image|track|video|file&duration=12&name=Моя песня
- * Файл пишется на диск потоком и обрывается, как только превышен лимит размера.
- */
-mediaRouter.post('/', uploadLimiter, wrap(async (req, res) => {
-  const { userId } = authOf(req);
-  const q = z.object({
-    kind: z.enum(['voice', 'videonote', 'image', 'track', 'video', 'file']),
-    duration: z.coerce.number().min(0).max(3600).optional(),
-    name: z.string().max(200).optional(),
-    hd: z.enum(['0', '1']).optional(),
-  }).parse(req.query);
-  const kind = KIND[q.kind];
-  const rule = MEDIA_RULES[kind];
-
-  let mime = (req.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
-  if (kind === 'FILE') {
-    // документ: тип не доверяем браузеру — смотрим на расширение из белого списка
-    if (!FILE_EXTS.has(fileExt(q.name ?? ''))) throw new HttpError(415, 'unsupported_type');
-    mime = 'application/octet-stream';
-  }
-  const ext = rule.mimes[mime];
-  if (!ext) throw new HttpError(415, 'unsupported_type');
-  const declared = Number(req.get('content-length') ?? 0);
-  if (declared > rule.maxBytes) throw new HttpError(413, 'too_large');
-
-  if (kind === 'TRACK') {
-    const count = await prisma.media.count({ where: { ownerId: userId, kind: 'TRACK' } });
-    if (count >= MAX_TRACKS_PER_USER) throw new HttpError(409, 'too_many_tracks');
-  }
-
-  ensureUploadDir();
-  const file = `${crypto.randomUUID()}${ext}`;
-  const size = await saveUpload(req, file, mime, rule.maxBytes);
-
-  const media = await prisma.media.create({
-    data: {
-      ownerId: userId, kind, mime, size, file,
-      url: publicUrlFor(file), // облако: постоянная публичная ссылка; диск: null (отдаём через /api/media/:id)
-      title: kind === 'TRACK' ? cleanTitle(q.name ?? '') || 'Без названия' : kind === 'FILE' ? cleanFileName(q.name ?? '') : null,
-      durationSec: q.duration ? Math.round(q.duration) : null,
-      hd: q.hd === '1' && (kind === 'IMAGE' || kind === 'VIDEO' || kind === 'VIDEO_NOTE'),
-    },
+  const uploadLimiter = rateLimit({
+    windowMs: 10 * 60_000, limit: 60, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'rate_limited' },
   });
-  res.json({ media: toMediaDTO(media) });
-}));
 
-/** Отдача файла (с поддержкой Range — перемотка аудио/видео). Доступ проверяется на КАЖДЫЙ запрос. */
-mediaRouter.get('/:id', wrap(async (req, res) => {
-  const m = await prisma.media.findUnique({ where: { id: String(req.params.id) } });
-  if (!m || !(await canAccessMedia(authOf(req).userId, m))) throw new HttpError(404, 'media_not_found');
-  // Одноразовое медиа: только по временной ссылке, выданной получателю при открытии; никаких кэшей и редиректов на публичное облако
-  const vo = await viewOnceMediaAllowed(authOf(req).userId, m.id, typeof req.query.vo === 'string' ? req.query.vo : undefined);
-  if (vo === 'deny') throw new HttpError(404, 'media_not_found');
-  // Приватный канал/группа: никакого скачивания. Прямое открытие файла в адресной строке/новой вкладке/как документа — отказ;
-  // в самом приложении картинки и видео идут как image/video/audio и работают. Кэш браузера выключен, редиректа на публичное облако нет.
-  const prot = vo !== 'ok' && (await isProtectedMedia(m.id));
-  if (prot) {
-    const dest = String(req.get('sec-fetch-dest') ?? '').toLowerCase();
-    if (m.kind === 'FILE' || ['document', 'iframe', 'embed', 'object', 'frame', 'fencedframe'].includes(dest) || req.query.download !== undefined) {
-      throw new HttpError(403, 'content_protected');
+  const KIND = { voice: 'VOICE', videonote: 'VIDEO_NOTE', image: 'IMAGE', track: 'TRACK', video: 'VIDEO', file: 'FILE' } as const;
+
+  /**
+   * Загрузка: тело запроса — сам файл (Content-Type = его MIME-тип).
+   *   POST /api/media?kind=voice|videonote|image|track|video|file&duration=12&name=Моя песня
+   * Файл пишется на диск потоком и обрывается, как только превышен лимит размера.
+   */
+  mediaRouter.post('/', uploadLimiter, wrap(async (req, res) => {
+    const { userId } = authOf(req);
+    const q = z.object({
+      kind: z.enum(['voice', 'videonote', 'image', 'track', 'video', 'file']),
+      duration: z.coerce.number().min(0).max(3600).optional(),
+      name: z.string().max(200).optional(),
+      hd: z.enum(['0', '1']).optional(),
+    }).parse(req.query);
+    const kind = KIND[q.kind];
+    const rule = MEDIA_RULES[kind];
+
+    let mime = (req.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+    if (kind === 'FILE') {
+      // документ: тип не доверяем браузеру — смотрим на расширение из белого списка
+      if (!FILE_EXTS.has(fileExt(q.name ?? ''))) throw new HttpError(415, 'unsupported_type');
+      mime = 'application/octet-stream';
     }
-  }
-  const headers: Record<string, string> = {
-    'Content-Type': m.mime, // тип берём из нашей БД (белый список), а не «угадываем» по файлу
-    'Cache-Control': vo === 'ok' || prot ? 'no-store, private' : 'private, max-age=86400',
-    'Content-Disposition': 'inline',
-    ...(prot ? { 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin' } : {}),
-  };
-  if (m.kind === 'FILE') {
-    // документы — только скачивание, никогда не открываются в браузере; песочница закрывает любые скрипты
-    const name = m.title || 'file';
-    headers['Content-Disposition'] = `attachment; filename="${name.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`;
-    headers['Content-Security-Policy'] = "sandbox; default-src 'none'";
-  }
-  // Аудио и видео проксируем через сервер даже в облачном режиме: он выставляет MIME из БД и передаёт Range.
-  // Прямая CDN-переадресация может вернуть generic MIME (особенно для старых raw Cloudinary uploads), из-за чего
-  // браузерные audio/video-плееры завершаются MEDIA_ERR_SRC_NOT_SUPPORTED. Документы тоже всегда остаются на сервере.
-  if (storageMode !== 'disk' && m.url && !['FILE', 'VOICE', 'TRACK', 'VIDEO_NOTE', 'VIDEO'].includes(m.kind) && vo !== 'ok' && !prot) {
-    res.setHeader('Cache-Control', 'private, max-age=3600');
-    res.redirect(302, publicUrlFor(m.file) ?? m.url); // адрес считаем от текущих настроек: смена S3_PUBLIC_URL не ломает старые файлы
-    return;
-  }
-  await sendFile(req, res, m.file, headers);
-}));
+    const ext = rule.mimes[mime];
+    if (!ext) throw new HttpError(415, 'unsupported_type');
+    const declared = Number(req.get('content-length') ?? 0);
+    if (declared > rule.maxBytes) throw new HttpError(413, 'too_large');
 
-/**
- * Удалить свой трек из профиля. Если его сохранили к себе другие люди или поставили в профиль, файл НЕ стираем:
- * он переходит к одному из них, и у остальных музыка не пропадает.
- */
-mediaRouter.delete('/:id', wrap(async (req, res) => {
-  const { userId } = authOf(req);
-  const m = await prisma.media.findUnique({ where: { id: String(req.params.id) } });
-  if (!m || m.ownerId !== userId || m.kind !== 'TRACK') throw new HttpError(404, 'media_not_found');
-  const savers = await prisma.savedTrack.findMany({ where: { mediaId: m.id, userId: { not: userId } }, select: { userId: true }, orderBy: { createdAt: 'asc' } });
-  const users = await prisma.user.findMany({ where: { musicTrack: m.id, id: { not: userId } }, select: { id: true } });
-  const heir = savers[0]?.userId ?? users[0]?.id;
-  await prisma.user.updateMany({ where: { id: userId, musicTrack: m.id }, data: { musicTrack: null } });
-  if (heir) {
-    await prisma.$transaction([
-      prisma.media.update({ where: { id: m.id }, data: { ownerId: heir } }),
-      prisma.savedTrack.deleteMany({ where: { mediaId: m.id, userId: heir } }), // стал владельцем — «сохранённой» копии больше нет
-    ]);
-    return void res.json({ ok: true, kept: true });
-  }
-  await prisma.media.delete({ where: { id: m.id } });
-  await removeFile(m.file);
-  res.json({ ok: true });
-}));
+    if (kind === 'TRACK') {
+      const count = await prisma.media.count({ where: { ownerId: userId, kind: 'TRACK' } });
+      if (count >= MAX_TRACKS_PER_USER) throw new HttpError(409, 'too_many_tracks');
+    }
 
-/** Сохранить трек из чужого профиля к себе: его можно слушать и ставить в свой профиль. */
-mediaRouter.put('/:id/save', wrap(async (req, res) => {
-  const { userId } = authOf(req);
-  const m = await prisma.media.findUnique({ where: { id: String(req.params.id) } });
-  if (!m || m.kind !== 'TRACK') throw new HttpError(404, 'media_not_found');
-  if (m.ownerId !== userId) {
-    await prisma.savedTrack.upsert({ where: { userId_mediaId: { userId, mediaId: m.id } }, create: { userId, mediaId: m.id }, update: {} });
-  }
-  res.json({ saved: true });
-}));
+    ensureUploadDir();
+    const file = `${crypto.randomUUID()}${ext}`;
+    const size = await saveUpload(req, file, mime, rule.maxBytes);
 
-/** Убрать сохранённый трек (если он стоял в профиле — убираем и оттуда). */
-mediaRouter.delete('/:id/save', wrap(async (req, res) => {
-  const { userId } = authOf(req);
-  const mediaId = String(req.params.id);
-  await prisma.savedTrack.deleteMany({ where: { userId, mediaId } });
-  await prisma.user.updateMany({ where: { id: userId, musicTrack: mediaId }, data: { musicTrack: null } });
-  res.json({ saved: false });
-}));
+    const media = await prisma.media.create({
+      data: {
+        ownerId: userId, kind, mime, size, file,
+        url: publicUrlFor(file), // облако: постоянная публичная ссылка; диск: null (отдаём через /api/media/:id)
+        title: kind === 'TRACK' ? cleanTitle(q.name ?? '') || 'Без названия' : kind === 'FILE' ? cleanFileName(q.name ?? '') : null,
+        durationSec: q.duration ? Math.round(q.duration) : null,
+        hd: q.hd === '1' && (kind === 'IMAGE' || kind === 'VIDEO' || kind === 'VIDEO_NOTE'),
+      },
+    });
+    res.json({ media: toMediaDTO(media) });
+  }));
+
+  /** Отдача файла (с поддержкой Range — перемотка аудио/видео). Доступ проверяется на КАЖДЫЙ запрос. */
+  mediaRouter.get('/:id', wrap(async (req, res) => {
+    const m = await prisma.media.findUnique({ where: { id: String(req.params.id) } });
+    if (!m || !(await canAccessMedia(authOf(req).userId, m))) throw new HttpError(404, 'media_not_found');
+    // Одноразовое медиа: только по временной ссылке, выданной получателю при открытии; никаких кэшей и редиректов на публичное облако
+    const vo = await viewOnceMediaAllowed(authOf(req).userId, m.id, typeof req.query.vo === 'string' ? req.query.vo : undefined);
+    if (vo === 'deny') throw new HttpError(404, 'media_not_found');
+    // Приватный канал/группа: никакого скачивания. Прямое открытие файла в адресной строке/новой вкладке/как документа — отказ;
+    // в самом приложении картинки и видео идут как image/video/audio и работают. Кэш браузера выключен, редиректа на публичное облако нет.
+    const prot = vo !== 'ok' && (await isProtectedMedia(m.id));
+    if (prot) {
+      const dest = String(req.get('sec-fetch-dest') ?? '').toLowerCase();
+      if (m.kind === 'FILE' || ['document', 'iframe', 'embed', 'object', 'frame', 'fencedframe'].includes(dest) || req.query.download !== undefined) {
+        throw new HttpError(403, 'content_protected');
+      }
+    }
+    const headers: Record<string, string> = {
+      'Content-Type': m.mime, // тип берём из нашей БД (белый список), а не «угадываем» по файлу
+      'Cache-Control': vo === 'ok' || prot ? 'no-store, private' : 'private, max-age=86400',
+      'Content-Disposition': 'inline',
+      ...(prot ? { 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin' } : {}),
+    };
+    if (m.kind === 'FILE') {
+      // документы — только скачивание, никогда не открываются в браузере; песочница закрывает любые скрипты
+      const name = m.title || 'file';
+      headers['Content-Disposition'] = `attachment; filename="${name.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+      headers['Content-Security-Policy'] = "sandbox; default-src 'none'";
+    }
+    // Аудио и видео проксируем через сервер даже в облачном режиме: он выставляет MIME из БД и передаёт Range.
+    // Прямая CDN-переадресация может вернуть generic MIME (особенно для старых raw Cloudinary uploads), из-за чего
+    // браузерные audio/video-плееры завершаются MEDIA_ERR_SRC_NOT_SUPPORTED. Документы тоже всегда остаются на сервере.
+    if (storageMode !== 'disk' && m.url && !['FILE', 'VOICE', 'TRACK', 'VIDEO_NOTE', 'VIDEO'].includes(m.kind) && vo !== 'ok' && !prot) {
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+      res.redirect(302, publicUrlFor(m.file) ?? m.url); // адрес считаем от текущих настроек: смена S3_PUBLIC_URL не ломает старые файлы
+      return;
+    }
+    await sendFile(req, res, m.file, headers);
+  }));
+
+  /**
+   * Удалить свой трек из профиля. Если его сохранили к себе другие люди или поставили в профиль, файл НЕ стираем:
+   * он переходит к одному из них, и у остальных музыка не пропадает.
+   */
+  mediaRouter.delete('/:id', wrap(async (req, res) => {
+    const { userId } = authOf(req);
+    const m = await prisma.media.findUnique({ where: { id: String(req.params.id) } });
+    if (!m || m.ownerId !== userId || m.kind !== 'TRACK') throw new HttpError(404, 'media_not_found');
+    const savers = await prisma.savedTrack.findMany({ where: { mediaId: m.id, userId: { not: userId } }, select: { userId: true }, orderBy: { createdAt: 'asc' } });
+    const users = await prisma.user.findMany({ where: { musicTrack: m.id, id: { not: userId } }, select: { id: true } });
+    const heir = savers[0]?.userId ?? users[0]?.id;
+    await prisma.user.updateMany({ where: { id: userId, musicTrack: m.id }, data: { musicTrack: null } });
+    if (heir) {
+      await prisma.$transaction([
+        prisma.media.update({ where: { id: m.id }, data: { ownerId: heir } }),
+        prisma.savedTrack.deleteMany({ where: { mediaId: m.id, userId: heir } }), // стал владельцем — «сохранённой» копии больше нет
+      ]);
+      return void res.json({ ok: true, kept: true });
+    }
+    await prisma.media.delete({ where: { id: m.id } });
+    await removeFile(m.file);
+    res.json({ ok: true });
+  }));
+
+  /** Сохранить трек из чужого профиля к себе: его можно слушать и ставить в свой профиль. */
+  mediaRouter.put('/:id/save', wrap(async (req, res) => {
+    const { userId } = authOf(req);
+    const m = await prisma.media.findUnique({ where: { id: String(req.params.id) } });
+    if (!m || m.kind !== 'TRACK') throw new HttpError(404, 'media_not_found');
+    if (m.ownerId !== userId) {
+      await prisma.savedTrack.upsert({ where: { userId_mediaId: { userId, mediaId: m.id } }, create: { userId, mediaId: m.id }, update: {} });
+    }
+    res.json({ saved: true });
+  }));
+
+  /** Убрать сохранённый трек (если он стоял в профиле — убираем и оттуда). */
+  mediaRouter.delete('/:id/save', wrap(async (req, res) => {
+    const { userId } = authOf(req);
+    const mediaId = String(req.params.id);
+    await prisma.savedTrack.deleteMany({ where: { userId, mediaId } });
+    await prisma.user.updateMany({ where: { id: userId, musicTrack: mediaId }, data: { musicTrack: null } });
+    res.json({ saved: false });
+  }));

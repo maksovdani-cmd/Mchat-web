@@ -387,7 +387,6 @@
      • скрытый архив не виден, пока не потянуть список вниз от самого верха (на компьютере — прокрутить вверх колесом);
      • скрытие архива содержимое не трогает. */
   let archiveOpen = false;     // открыт экран архива
-  let archiveReveal = false;   // скрытый архив временно показан жестом «потянуть вниз»
   const archiveHidden = () => { try { return !!(currentUser && currentUser.settings && currentUser.settings.archiveHidden); } catch (e) { return false; } };   // currentUser — let из script.js, не свойство window
   const ARCHIVE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>';
   const searchVal = () => ($('chat-search') ? $('chat-search').value.toLowerCase() : '');
@@ -407,7 +406,7 @@
         <div class="chat-info"><div class="chat-name">Архив</div><div class="chat-last">${archived.length} ${archived.length === 1 ? 'чат' : 'чатов'} · нажмите, чтобы вернуться</div></div></div>`;
     } else {
       list = chats.filter((ch) => !ch.archived);
-      if (archived.length && (!archiveHidden() || archiveReveal)) {
+      if (archived.length && !archiveHidden()) {
         const unread = archived.reduce((n, ch) => n + (ch.unread || 0), 0);
         const names = archived.slice(0, 3).map((ch) => ch.name).join(', ');
         head = `<div class="chat-item mx-archive-row" data-chat-id="__archive" onclick="mxOpenArchive()">
@@ -441,7 +440,7 @@
     try {
       await MchatAPI.updateMe({ archiveHidden: !!hidden });
       currentUser.settings = Object.assign({}, currentUser.settings, { archiveHidden: !!hidden });
-      archiveReveal = false; archiveOpen = false;
+      archiveOpen = false;
       renderChats(searchVal());
       toast(hidden ? 'Архив скрыт. Потяните список вниз от самого верха, чтобы показать' : 'Архив снова показывается в списке');
     } catch (e) { toast(MchatAPI.errorText(e)); }
@@ -458,45 +457,66 @@
       toast(ch.archived ? 'Чат перемещён в архив' : 'Чат возвращён из архива');
     } catch (e) { toast(MchatAPI.errorText(e)); }
   };
-  // «Потянуть вниз от самого верха» (телефон) / прокрутить вверх колесом (компьютер) → показать скрытый архив
-  function revealArchive() {
-    if (archiveOpen || archiveReveal || !archiveHidden() || !chats.some((ch) => ch.archived)) return;
-    archiveReveal = true;
-    renderChats(searchVal());
-  }
+  // Скрытый архив открывается только после отпускания достаточного жеста.
   (function bindArchivePull() {
     const list = $('chats-list');
     if (!list) return;
-    let y0 = null, wheel = 0, revealedByGesture = false, buzzed = false;
+    const LIMIT = 108;
+    let y0 = null, wheel = 0, mode = null, buzzed = false, indicator = null, lastDy = 0, maxDy = 0, reversed = false;
+    function clearIndicator() { if (indicator) indicator.remove(); indicator = null; }
+    function ensureIndicator() {
+      if (indicator) return indicator;
+      indicator = document.createElement('div'); indicator.className = 'mx-archive-pull-indicator';
+      indicator.innerHTML = '<span class="mx-archive-pull-icon">' + ARCHIVE_SVG + '</span><span>Архив</span>';
+      list.insertBefore(indicator, list.firstChild);
+      return indicator;
+    }
+    function openArchive() { clearIndicator(); archiveOpen = true; renderChats(searchVal()); list.scrollTop = 0; }
+    function closeArchive() { clearIndicator(); archiveOpen = false; renderChats(searchVal()); list.scrollTop = 0; }
     list.addEventListener('touchstart', (e) => {
       y0 = list.scrollTop <= 0 ? e.touches[0].clientY : null;
-      revealedByGesture = false; buzzed = false;
+      mode = !searchVal() && list.scrollTop <= 0 && archiveOpen ? 'close'
+        : !searchVal() && !archiveOpen && archiveHidden() && chats.some((ch) => ch.archived) ? 'open' : null;
+      if (y0 == null) mode = null;
+      buzzed = false; lastDy = 0; maxDy = 0; reversed = false; clearIndicator();
     }, { passive: true });
     list.addEventListener('touchmove', (e) => {
-      if (y0 == null || list.scrollTop > 0) return;
+      if (y0 == null || !mode || list.scrollTop > 0) return;
       const dy = e.touches[0].clientY - y0;
-      if (dy >= 72 && !archiveReveal && !archiveOpen) {
-        if (!buzzed && navigator.vibrate) { navigator.vibrate(12); buzzed = true; }
-        revealArchive(); revealedByGesture = true;
-      } else if (revealedByGesture && dy < 38) {
-        archiveReveal = false; revealedByGesture = false; renderChats(searchVal());
+      if (mode === 'open') {
+        if (maxDy > 12 && dy < lastDy - 8) reversed = true;
+        maxDy = Math.max(maxDy, dy); lastDy = dy;
       }
+      const distance = mode === 'open' ? (reversed ? 0 : Math.max(0, dy)) : Math.abs(dy);
+      if (distance > 10) {
+        const el = ensureIndicator();
+        el.style.height = Math.min(58, distance * 0.55) + 'px';
+        el.classList.toggle('ready', distance >= LIMIT);
+      } else clearIndicator();
+      if (distance >= LIMIT && !buzzed) { if (navigator.vibrate) navigator.vibrate(12); buzzed = true; }
     }, { passive: true });
-    list.addEventListener('touchend', () => {
-      y0 = null;
-      if (revealedByGesture && archiveReveal) { archiveOpen = true; archiveReveal = false; renderChats(searchVal()); list.scrollTop = 0; }
-      revealedByGesture = false;
+    list.addEventListener('touchend', (e) => {
+      const dy = y0 == null ? 0 : e.changedTouches[0].clientY - y0;
+      const distance = mode === 'open' ? Math.max(0, dy) : mode === 'close' ? Math.abs(dy) : 0;
+      const action = mode && !reversed && distance >= LIMIT ? mode : null;
+      y0 = null; mode = null; clearIndicator();
+      if (action === 'open') openArchive();
+      else if (action === 'close') closeArchive();
     }, { passive: true });
     list.addEventListener('touchcancel', () => {
-      y0 = null;
-      if (revealedByGesture) { archiveReveal = false; renderChats(searchVal()); }
-      revealedByGesture = false;
+      y0 = null; mode = null; clearIndicator();
     }, { passive: true });
-    list.addEventListener('wheel', (e) => { if (list.scrollTop <= 0 && e.deltaY < 0) { wheel += -e.deltaY; if (wheel > 150) { wheel = 0; if (navigator.vibrate) navigator.vibrate(12); revealArchive(); } } else wheel = 0; }, { passive: true });
+    list.addEventListener('wheel', (e) => {
+      if (list.scrollTop > 0 || searchVal()) { wheel = 0; return; }
+      if (!archiveOpen && archiveHidden() && chats.some((ch) => ch.archived) && e.deltaY < 0) {
+        wheel += -e.deltaY;
+        if (wheel >= 150) { wheel = 0; openArchive(); }
+      } else if (archiveOpen && e.deltaY > 0) {
+        wheel += e.deltaY;
+        if (wheel >= 150) { wheel = 0; closeArchive(); }
+      } else wheel = 0;
+    }, { passive: true });
   })();
-  // открыли чат — временно показанный архив снова прячется
-  (function () { const _oc = window.openChat; if (typeof _oc === 'function') window.openChat = function () { archiveReveal = false; return _oc.apply(this, arguments); }; })();
-
   // Закрепить/открепить: ПКМ на компьютере, долгое нажатие на телефоне
   function openChatPinMenu(chatId, evt) {
     mxCloseFloating();

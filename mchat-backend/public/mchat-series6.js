@@ -30,7 +30,6 @@
     const on = isProt();
     const root = document.documentElement;
     if (root.classList.contains('mx-prot') !== on) root.classList.toggle('mx-prot', on);
-    ensureWatermark(on);
     // в нативной оболочке (Android FLAG_SECURE / iOS) экран можно закрыть от скриншотов по-настоящему
     const secure = on || onceOpen();
     if (secure !== nativeState) {
@@ -42,15 +41,6 @@
       if (v._mx6) return; v._mx6 = true;
       v.setAttribute('controlslist', 'nodownload noremoteplayback'); v.setAttribute('disablepictureinpicture', ''); v.setAttribute('disableremoteplayback', '');
     });
-  }
-  function ensureWatermark(on) {
-    let w = $('mx6-wm');
-    if (!on) { if (w) w.remove(); return; }
-    if (w) return;
-    const u = me(); const label = u ? '@' + (u.username || u.name || '') : '';
-    w = document.createElement('div'); w.id = 'mx6-wm'; w.setAttribute('aria-hidden', 'true');
-    w.innerHTML = Array.from({ length: 40 }, () => '<span>' + E(label) + '</span>').join('');
-    appEl().appendChild(w);
   }
   setInterval(() => { if (!document.hidden) syncProt(); }, 900);
   ['openChat', 'goTo'].forEach((n) => { if (typeof window[n] === 'function') { const o = window[n]; window[n] = function () { const r = o.apply(this, arguments); setTimeout(syncProt, 30); return r; }; } });

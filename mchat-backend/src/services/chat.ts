@@ -200,15 +200,15 @@ export interface DirectAccess { ok: boolean; reason?: DmReason; otherId: string 
  *  • аккаунт-администратор Mchat (техподдержка) доступен всегда.
  * Чёрный список закрывает всё в обе стороны.
  */
-export async function directAccess(userId: string, chatId: string): Promise<DirectAccess> {
+export async function directAccess(userId: string, chatId: string, allowSecurityMessages = false): Promise<DirectAccess> {
   const other = await prisma.chatMember.findFirst({
     where: { chatId, userId: { not: userId } },
     select: { userId: true, user: { select: { role: true, isSystem: true, officialKind: true } } },
   });
   if (!other) return { ok: false, reason: 'dm_follow_required', otherId: null, blockedByMe: false, blockedMe: false };
   const otherId = other.userId;
-  // Новости — канал только для публикаций администратора; в персональную Безопасность пользователи могут писать.
-  if (other.user.isSystem && other.user.officialKind !== 'SECURITY') return { ok: false, reason: 'system_readonly', otherId, blockedByMe: false, blockedMe: false };
+  // Новости остаются read-only. Security принимает только обычные сообщения пользователя; звонки закрыты.
+  if (other.user.isSystem && !(allowSecurityMessages && other.user.officialKind === 'SECURITY')) return { ok: false, reason: 'system_readonly', otherId, blockedByMe: false, blockedMe: false };
   const [blocks, follows, me, theirMsg] = await Promise.all([
     prisma.block.findMany({
       where: { OR: [{ blockerId: userId, blockedId: otherId }, { blockerId: otherId, blockedId: userId }] },
@@ -383,7 +383,7 @@ export async function getChatDTO(userId: string, chatId: string) {
           include: { user: { select: { ...publicUserSelect, hideOnline: true, hideRead: true, lastSeenAt: true } } },
         })
       : null,
-    chat.type === 'DIRECT' ? directAccess(userId, chatId) : null,
+    chat.type === 'DIRECT' ? directAccess(userId, chatId, true) : null,
   ]);
 
   // группа: «прочитано» = хотя бы один другой участник (без скрытого статуса прочтения) дошёл до этого сообщения
@@ -499,7 +499,7 @@ export async function createMessage(userId: string, chatId: string, input: Creat
   if (await prisma.user.findUnique({ where: { id: userId }, select: { isSystem: true } }).then((u) => !!u?.isSystem)) throw new HttpError(403, 'channel_read_only');
   if (!canPost(member.chat.type, member.role)) throw new HttpError(403, 'channel_read_only');
   if (member.chat.type === 'DIRECT') {
-    const acc = await directAccess(userId, chatId);
+    const acc = await directAccess(userId, chatId, true);
     if (!acc.ok) throw new HttpError(403, acc.reason ?? 'dm_follow_required');
   }
 

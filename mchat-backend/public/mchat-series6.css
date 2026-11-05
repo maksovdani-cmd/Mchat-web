@@ -85,6 +85,4 @@
 .mx-prot #messages-container img,.mx-prot #messages-container video,.mx-prot #avatar-fullscreen img{-webkit-user-drag:none;}
 .mx-prot .mx-vw-more,.mx-prot .mx-vw-menu,.mx-prot .mx-dl-btn{display:none !important;}
 .mx-prot-blank #messages-container,.mx-prot-blank #avatar-fullscreen,.mx-prot-blank #mx-once-viewer{visibility:hidden !important;}
-#mx6-wm{position:absolute;inset:0;z-index:600;pointer-events:none;overflow:hidden;display:flex;flex-wrap:wrap;align-content:space-around;justify-content:space-around;opacity:.07;transform:rotate(-24deg) scale(1.5);}
-#mx6-wm span{color:#fff;font-size:13px;font-weight:700;padding:18px 22px;white-space:nowrap;font-family:var(--font);}
 @media print{.mx-prot #app,.mx-prot #messages-container{display:none !important;}}
