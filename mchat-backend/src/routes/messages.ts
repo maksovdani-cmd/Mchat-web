@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import { getMessageDTO, MAX_TEXT, stopLiveLocation, updateLiveLocation, voteOnPoll } from '../services/chat';
-import { deleteAndDispatch, editAndDispatch, forwardAndDispatch, reactAndDispatch } from '../services/messaging';
+import { addPollOptionAndDispatch, deleteAndDispatch, editAndDispatch, forwardAndDispatch, reactAndDispatch } from '../services/messaging';
 import { emitToChat } from '../realtime/hub';
 import { closeViewOnce, openViewOnce } from '../services/viewonce';
 import { wrap } from '../utils/errors';
@@ -36,10 +36,16 @@ messagesRouter.put('/:id/reaction', wrap(async (req, res) => {
 }));
 
 messagesRouter.post('/:id/poll-vote', wrap(async (req, res) => {
-  const { optionIds } = z.object({ optionIds: z.array(z.string().min(1).max(40)).min(1).max(10) }).parse(req.body);
+  const { optionIds } = z.object({ optionIds: z.array(z.string().min(1).max(40)).min(1).max(12) }).parse(req.body);
   const message = await voteOnPoll(authOf(req).userId, mid(req), optionIds);
-  const broadcast = message.poll ? { ...message, poll: { ...message.poll, options: message.poll.options.map((o) => ({ ...o, voted: false })) } } : message;
+  const broadcast = message.poll ? { ...message, poll: { ...message.poll, voted: false, correctOptionPosition: null, options: message.poll.options.map((o) => ({ ...o, voted: false, correct: false })) } } : message;
   emitToChat(message.chatId, 'message:edited', broadcast);
+  res.json({ message });
+}));
+
+messagesRouter.post('/:id/poll-options', wrap(async (req, res) => {
+  const { text } = z.object({ text: z.string().trim().min(1).max(100) }).parse(req.body);
+  const message = await addPollOptionAndDispatch(authOf(req).userId, mid(req), text);
   res.json({ message });
 }));
 

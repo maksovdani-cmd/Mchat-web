@@ -35,6 +35,7 @@ export const messageInclude = {
   reactions: { select: { emoji: true, userId: true, user: { select: { id: true, name: true, username: true, avatarUrl: true } } } },
   media: { select: { title: true, size: true, hd: true } },
   sticker: { select: { id: true, packId: true, pack: { select: { title: true } } } },
+  poll: { include: { options: { include: { votes: { select: { userId: true, user: { select: { id: true, name: true, username: true, avatarUrl: true } } } }, orderBy: { position: 'asc' } } } },
   poll: {
     include: {
       options: {
@@ -86,6 +87,21 @@ export interface MessageDTO {
   /** карточка официального аккаунта (kind === 'SYSTEM_CARD'), например подтверждение входа */
   card: SystemCardDTO | null;
   poll: { question: string; multiple: boolean; anonymous: boolean; options: { id: string; text: string; votes: number; voted: boolean; voters: { id: string; name: string; username: string; avatar: string | null }[] }[] } | null;
+  poll: {
+    question: string;
+    description: string;
+    multiple: boolean;
+    anonymous: boolean;
+    allowAdding: boolean;
+    allowRevote: boolean;
+    shuffleOptions: boolean;
+    quiz: boolean;
+    correctOptionPosition: number | null;
+    closesAt: string | null;
+    closed: boolean;
+    voted: boolean;
+    options: { id: string; text: string; votes: number; voted: boolean; correct: boolean; voters: { id: string; name: string; username: string; avatar: string | null }[] }[];
+  } | null;
   location: { latitude: number; longitude: number; expiresAt: string; active: boolean } | null;
 }
 
@@ -185,6 +201,33 @@ export const toMessageDTO = (m: FullMessage, viewerId?: string): MessageDTO => (
   poll: m.poll ? { question: m.poll.question, multiple: m.poll.multiple, anonymous: m.poll.anonymous,
     options: m.poll.options.map((o) => ({ id: o.id, text: o.text, votes: o.votes.length, voted: !!viewerId && o.votes.some((v) => v.userId === viewerId),
       voters: m.poll!.anonymous ? [] : o.votes.map((v) => ({ id: v.user.id, name: v.user.name, username: v.user.username, avatar: v.user.avatarUrl })) })) } : null,
+  poll: m.poll ? (() => {
+    const poll = m.poll!;
+    const voted = !!viewerId && poll.options.some((o) => o.votes.some((v) => v.userId === viewerId));
+    const closed = !!poll.closesAt && poll.closesAt.getTime() <= Date.now();
+    return {
+      question: poll.question,
+      description: poll.description,
+      multiple: poll.multiple,
+      anonymous: poll.anonymous,
+      allowAdding: poll.allowAdding,
+      allowRevote: poll.allowRevote,
+      shuffleOptions: poll.shuffleOptions,
+      quiz: poll.quiz,
+      correctOptionPosition: poll.quiz && voted ? poll.correctOptionPosition : null,
+      closesAt: poll.closesAt?.toISOString() ?? null,
+      closed,
+      voted,
+      options: poll.options.map((o) => ({
+        id: o.id,
+        text: o.text,
+        votes: o.votes.length,
+        voted: !!viewerId && o.votes.some((v) => v.userId === viewerId),
+        correct: poll.quiz && voted && o.position === poll.correctOptionPosition,
+        voters: poll.anonymous ? [] : o.votes.map((v) => ({ id: v.user.id, name: v.user.name, username: v.user.username, avatar: v.user.avatarUrl })),
+      })),
+    };
+  })() : null,
   location: m.location ? { latitude: m.location.latitude, longitude: m.location.longitude, expiresAt: m.location.expiresAt.toISOString(), active: m.location.expiresAt.getTime() > Date.now() } : null,
 });
 
@@ -606,11 +649,36 @@ export async function createMessage(userId: string, chatId: string, input: Creat
 }
 
 export async function createPollMessage(userId: string, chatId: string, raw: { question: string; options: string[]; multiple?: boolean; anonymous?: boolean }) {
+export async function createPollMessage(userId: string, chatId: string, raw: {
+  question: string; description?: string; options: string[]; multiple?: boolean; anonymous?: boolean;
+  allowAdding?: boolean; allowRevote?: boolean; shuffleOptions?: boolean; quiz?: boolean;
+  correctOptionPosition?: number | null; closesAt?: string | null;
+}) {
   const question = raw.question.trim();
+  const description = (raw.description ?? '').trim();
   const options = raw.options.map((x) => x.trim());
+  const correctOptionPosition = raw.correctOptionPosition ?? null;
+  const closesAt = raw.closesAt ? new Date(raw.closesAt) : null;
   if (!question || question.length > 240 || options.length < 2 || options.length > 10 || options.some((x) => !x || x.length > 100) || new Set(options.map((x) => x.toLocaleLowerCase())).size !== options.length) throw new HttpError(400, 'bad_poll');
+  if (!question || question.length > 240 || description.length > 500 || options.length < 2 || options.length > 12 || options.some((x) => !x || x.length > 100) || new Set(options.map((x) => x.toLocaleLowerCase())).size !== options.length) throw new HttpError(400, 'bad_poll');
+  if (raw.quiz && (!Number.isInteger(correctOptionPosition) || correctOptionPosition! < 0 || correctOptionPosition! >= options.length)) throw new HttpError(400, 'bad_poll');
+  if (closesAt && (!Number.isFinite(closesAt.getTime()) || closesAt.getTime() < Date.now() + 60_000 || closesAt.getTime() > Date.now() + 365 * 24 * 60 * 60_000)) throw new HttpError(400, 'bad_poll_deadline');
   const { message } = await createMessage(userId, chatId, { kind: 'POLL', clientId: randomToken(16) });
   await prisma.messagePoll.create({ data: { messageId: message.id, question, multiple: !!raw.multiple, anonymous: raw.anonymous !== false, options: { create: options.map((text, position) => ({ text, position })) } } });
+  await prisma.messagePoll.create({ data: {
+    messageId: message.id,
+    question,
+    description,
+    multiple: raw.quiz ? false : !!raw.multiple,
+    anonymous: raw.anonymous !== false,
+    allowAdding: !!raw.allowAdding,
+    allowRevote: raw.allowRevote !== false,
+    shuffleOptions: !!raw.shuffleOptions,
+    quiz: !!raw.quiz,
+    correctOptionPosition: raw.quiz ? correctOptionPosition : null,
+    closesAt,
+    options: { create: options.map((text, position) => ({ text, position })) },
+  } });
   const saved = await prisma.message.findUniqueOrThrow({ where: { id: message.id }, include: messageInclude });
   return toMessageDTO(saved, userId);
 }
@@ -618,6 +686,9 @@ export async function createPollMessage(userId: string, chatId: string, raw: { q
 export async function voteOnPoll(userId: string, messageId: string, optionIds: string[]) {
   const { msg } = await loadVisibleMessage(userId, messageId);
   if (msg.kind !== 'POLL' || !msg.poll) throw new HttpError(400, 'poll_not_found');
+  if (msg.poll.closesAt && msg.poll.closesAt.getTime() <= Date.now()) throw new HttpError(400, 'poll_closed');
+  const previousVote = msg.poll.options.some((option) => option.votes.some((vote) => vote.userId === userId));
+  if (previousVote && !msg.poll.allowRevote) throw new HttpError(400, 'poll_vote_locked');
   const chosen = [...new Set(optionIds)];
   if (!chosen.length || chosen.length > (msg.poll.multiple ? msg.poll.options.length : 1)) throw new HttpError(400, 'bad_poll_vote');
   if (chosen.some((id) => !msg.poll!.options.some((o) => o.id === id))) throw new HttpError(400, 'bad_poll_vote');
@@ -625,6 +696,20 @@ export async function voteOnPoll(userId: string, messageId: string, optionIds: s
     prisma.pollVote.deleteMany({ where: { userId, option: { pollId: messageId } } }),
     prisma.pollVote.createMany({ data: chosen.map((optionId) => ({ optionId, userId })) }),
   ]);
+  const updated = await prisma.message.findUniqueOrThrow({ where: { id: messageId }, include: messageInclude });
+  return toMessageDTO(updated, userId);
+}
+
+export async function addPollOption(userId: string, messageId: string, text: string) {
+  const clean = text.trim();
+  if (!clean || clean.length > 100) throw new HttpError(400, 'bad_poll_option');
+  const { msg } = await loadVisibleMessage(userId, messageId);
+  if (msg.kind !== 'POLL' || !msg.poll) throw new HttpError(400, 'poll_not_found');
+  if (!msg.poll.allowAdding) throw new HttpError(403, 'poll_add_option_forbidden');
+  if (msg.poll.closesAt && msg.poll.closesAt.getTime() <= Date.now()) throw new HttpError(400, 'poll_closed');
+  if (msg.poll.options.length >= 12) throw new HttpError(400, 'poll_options_limit');
+  if (msg.poll.options.some((option) => option.text.toLocaleLowerCase() === clean.toLocaleLowerCase())) throw new HttpError(400, 'bad_poll_option');
+  await prisma.pollOption.create({ data: { pollId: messageId, text: clean, position: msg.poll.options.length } });
   const updated = await prisma.message.findUniqueOrThrow({ where: { id: messageId }, include: messageInclude });
   return toMessageDTO(updated, userId);
 }
@@ -678,6 +763,18 @@ export async function forwardMessage(userId: string, messageId: string, targetCh
   if (forwarded.duplicate) return forwarded;
   if (msg.kind === 'POLL' && msg.poll) {
     await prisma.messagePoll.create({ data: { messageId: forwarded.message.id, question: msg.poll.question, multiple: msg.poll.multiple, anonymous: msg.poll.anonymous,
+    await prisma.messagePoll.create({ data: {
+      messageId: forwarded.message.id,
+      question: msg.poll.question,
+      description: msg.poll.description,
+      multiple: msg.poll.multiple,
+      anonymous: msg.poll.anonymous,
+      allowAdding: msg.poll.allowAdding,
+      allowRevote: msg.poll.allowRevote,
+      shuffleOptions: msg.poll.shuffleOptions,
+      quiz: msg.poll.quiz,
+      correctOptionPosition: msg.poll.correctOptionPosition,
+      closesAt: msg.poll.closesAt,
       options: { create: msg.poll.options.map((o, position) => ({ text: o.text, position })) } } });
   } else if (msg.kind === 'LOCATION' && msg.location) {
     await prisma.liveLocation.create({ data: { messageId: forwarded.message.id, latitude: msg.location.latitude, longitude: msg.location.longitude, expiresAt: msg.location.expiresAt } });

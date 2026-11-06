@@ -384,13 +384,20 @@ model Message {
 }
 
 model MessagePoll {
-  messageId String          @id
-  message   Message         @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  question  String
-  multiple  Boolean         @default(false)
-  anonymous Boolean        @default(true)
-  options   PollOption[]
-  createdAt DateTime        @default(now())
+  messageId              String          @id
+  message                Message         @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  question               String
+  description            String          @default("")
+  multiple               Boolean         @default(false)
+  anonymous              Boolean         @default(true)
+  allowAdding            Boolean         @default(false)
+  allowRevote            Boolean         @default(true)
+  shuffleOptions         Boolean         @default(false)
+  quiz                   Boolean         @default(false)
+  correctOptionPosition  Int?
+  closesAt               DateTime?
+  options                PollOption[]
+  createdAt              DateTime        @default(now())
 }
 
 model PollOption {

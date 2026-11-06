@@ -136,22 +136,126 @@
   window._mx1StopLocationWatcher = (id) => { const stop = locationWatchers.get(id); if (stop) stop(); };
 
   function showPollComposer() {
-    const modal = document.createElement('div'); modal.className = 'mx1-modal';
-    modal.innerHTML = '<div class="mx1-modal-card"><b>Новый опрос</b><input class="mx1-poll-question" maxlength="240" placeholder="Вопрос"><div class="mx1-poll-options"><input maxlength="100" placeholder="Вариант 1"><input maxlength="100" placeholder="Вариант 2"></div><button class="mx1-add-option">Добавить вариант</button><div class="mx1-poll-checks"><label><input type="checkbox" data-multiple> Несколько ответов</label><label><input type="checkbox" data-anon checked> Анонимный опрос</label></div><div class="mx1-modal-actions"><button class="mx1-cancel">Отмена</button><button class="mx1-send">Создать</button></div></div>';
-    document.body.appendChild(modal); modal.onclick = (e) => { if (e.target === modal) modal.remove(); }; modal.querySelector('.mx1-cancel').onclick = () => modal.remove();
-    modal.querySelector('.mx1-add-option').onclick = () => { const n = modal.querySelectorAll('.mx1-poll-options input').length; if (n >= 10) return; const i = document.createElement('input'); i.maxLength = 100; i.placeholder = 'Вариант ' + (n + 1); modal.querySelector('.mx1-poll-options').appendChild(i); };
-    modal.querySelector('.mx1-send').onclick = async function () {
+    const modal = document.createElement('div'); modal.className = 'mx1-modal mx1-poll-modal';
+    modal.innerHTML = `<section class="mx1-poll-composer">
+      <header class="mx1-poll-head"><button type="button" class="mx1-poll-close" aria-label="Назад">‹</button><div><small>Вопрос</small><h2>Новый опрос</h2></div><button type="button" class="mx1-send">Создать</button></header>
+      <div class="mx1-poll-scroll">
+        <div class="mx1-poll-section mx1-poll-question-section"><label class="mx1-section-title" for="mx1-poll-question">Вопрос</label><input id="mx1-poll-question" class="mx1-poll-question" maxlength="240" placeholder="Текст вопроса"><textarea class="mx1-poll-description" maxlength="500" placeholder="Описание (необязательно)"></textarea></div>
+        <div class="mx1-poll-section"><label class="mx1-section-title">Варианты ответа</label><div class="mx1-poll-options"></div><button type="button" class="mx1-add-option"><span>＋</span> Добавить ответ...</button><small class="mx1-option-counter"></small></div>
+        <div class="mx1-poll-section mx1-poll-settings"><label class="mx1-section-title">Настройки</label>
+          <label class="mx1-poll-setting"><span class="mx1-setting-icon blue">◉</span><span class="mx1-setting-copy"><b>Имена участников</b><small>Рядом с ответами отображаются имена всех голосовавших</small></span><input type="checkbox" data-setting="showVoters" checked><i></i></label>
+          <label class="mx1-poll-setting"><span class="mx1-setting-icon amber">▦</span><span class="mx1-setting-copy"><b>Несколько ответов</b><small>Участники могут выбрать более одного варианта</small></span><input type="checkbox" data-setting="multiple" checked><i></i></label>
+          <label class="mx1-poll-setting"><span class="mx1-setting-icon cyan">＋</span><span class="mx1-setting-copy"><b>Добавление вариантов</b><small>Участники могут предлагать новые варианты</small></span><input type="checkbox" data-setting="allowAdding" checked><i></i></label>
+          <label class="mx1-poll-setting"><span class="mx1-setting-icon violet">⟳</span><span class="mx1-setting-copy"><b>Изменение ответа</b><small>Участники могут изменить выбранный ответ</small></span><input type="checkbox" data-setting="allowRevote" checked><i></i></label>
+          <label class="mx1-poll-setting"><span class="mx1-setting-icon orange">⤨</span><span class="mx1-setting-copy"><b>Случайный порядок</b><small>Ответы отображаются в случайном порядке</small></span><input type="checkbox" data-setting="shuffleOptions" checked><i></i></label>
+          <label class="mx1-poll-setting"><span class="mx1-setting-icon green">✓</span><span class="mx1-setting-copy"><b>Правильный ответ</b><small>Отметьте правильный вариант</small></span><input type="checkbox" data-setting="quiz"><i></i></label>
+          <div class="mx1-poll-extra" data-extra="quiz" hidden><select class="mx1-correct-option" aria-label="Правильный вариант"></select></div>
+          <label class="mx1-poll-setting"><span class="mx1-setting-icon rose">◴</span><span class="mx1-setting-copy"><b>Ограничение срока</b><small>Опрос завершится в заданное время</small></span><input type="checkbox" data-setting="deadline"><i></i></label>
+          <div class="mx1-poll-extra" data-extra="deadline" hidden><input class="mx1-poll-deadline" type="datetime-local" aria-label="Дата и время завершения опроса"></div>
+        </div>
+      </div>
+    </section>`;
+    document.body.appendChild(modal);
+    const rows = modal.querySelector('.mx1-poll-options');
+    let nextKey = 0;
+    const addRow = (value = '') => {
+      if (rows.children.length >= 12) return;
+      const row = document.createElement('div'); row.className = 'mx1-poll-option-row'; row.dataset.key = String(nextKey++);
+      row.innerHTML = '<span class="mx1-option-grip" aria-hidden="true">☰</span><input maxlength="100" placeholder="Ответ" value=""><button type="button" data-move="up" aria-label="Переместить вверх">↑</button><button type="button" data-move="down" aria-label="Переместить вниз">↓</button><button type="button" data-remove aria-label="Удалить вариант">×</button>';
+      row.querySelector('input').value = value;
+      rows.appendChild(row); updateOptions();
+    };
+    const updateOptions = () => {
+      const count = rows.children.length;
+      modal.querySelector('.mx1-option-counter').textContent = count < 12 ? `Можно добавить ещё ${12 - count} вариантов ответа.` : 'Достигнут лимит: 12 вариантов.';
+      modal.querySelector('.mx1-add-option').disabled = count >= 12;
+      const select = modal.querySelector('.mx1-correct-option'), previous = select.value;
+      const optionRows = [...rows.children].filter((row) => row.querySelector('input').value.trim());
+      select.innerHTML = optionRows.map((row, index) => `<option value="${esc(row.dataset.key)}">${esc(row.querySelector('input').value.trim() || `Вариант ${index + 1}`)}</option>`).join('');
+      if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+    };
+    addRow(); addRow();
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    modal.querySelector('.mx1-poll-close').onclick = () => modal.remove();
+    modal.querySelector('.mx1-add-option').onclick = () => addRow();
+    rows.addEventListener('input', updateOptions);
+    rows.addEventListener('click', (e) => {
+      const row = e.target.closest('.mx1-poll-option-row'); if (!row) return;
+      if (e.target.closest('[data-remove]')) { if (rows.children.length <= 2) { if (window.showToast) showToast('Нужно оставить минимум два ответа'); return; } row.remove(); updateOptions(); return; }
+      const move = e.target.closest('[data-move]')?.dataset.move;
+      if (move === 'up' && row.previousElementSibling) rows.insertBefore(row, row.previousElementSibling);
+      if (move === 'down' && row.nextElementSibling) rows.insertBefore(row.nextElementSibling, row);
+      updateOptions();
+    });
+    modal.querySelectorAll('[data-setting]').forEach((toggle) => toggle.addEventListener('change', () => {
+      const key = toggle.dataset.setting;
+      if (key === 'quiz') modal.querySelector('[data-extra="quiz"]').hidden = !toggle.checked;
+      if (key === 'deadline') modal.querySelector('[data-extra="deadline"]').hidden = !toggle.checked;
+      const multiple = modal.querySelector('[data-setting="multiple"]');
+      const quiz = modal.querySelector('[data-setting="quiz"]');
+      if (key === 'quiz' && toggle.checked) { multiple.checked = false; multiple.disabled = true; }
+      if (key === 'quiz' && !toggle.checked) multiple.disabled = false;
+      if (key === 'multiple' && toggle.checked && quiz.checked) { quiz.checked = false; quiz.disabled = false; modal.querySelector('[data-extra="quiz"]').hidden = true; }
+    }));
+    modal.querySelectorAll('.mx1-send').forEach((button) => button.onclick = async function () {
       const question = modal.querySelector('.mx1-poll-question').value.trim();
-      const options = [...modal.querySelectorAll('.mx1-poll-options input')].map((i) => i.value.trim()).filter(Boolean);
+      const optionRows = [...rows.children].map((row) => ({ key: row.dataset.key, text: row.querySelector('input').value.trim() })).filter((row) => row.text);
+      const options = optionRows.map((row) => row.text);
+      const values = Object.fromEntries([...modal.querySelectorAll('[data-setting]')].map((input) => [input.dataset.setting, input.checked]));
       if (!question || options.length < 2) { if (window.showToast) showToast('Добавьте вопрос и минимум два варианта'); return; }
+      if (new Set(options.map((text) => text.toLocaleLowerCase())).size !== options.length) { if (window.showToast) showToast('Варианты ответа должны отличаться'); return; }
+      let closesAt = null;
+      if (values.deadline) {
+        const deadlineValue = modal.querySelector('.mx1-poll-deadline').value;
+        const deadline = deadlineValue ? new Date(deadlineValue) : null;
+        if (!deadline || deadline.getTime() < Date.now() + 60_000) { if (window.showToast) showToast('Выберите время завершения позже чем через минуту'); return; }
+        closesAt = deadline.toISOString();
+      }
+      const selectedCorrectKey = modal.querySelector('.mx1-correct-option').value;
+      const correctOptionPosition = values.quiz ? optionRows.findIndex((row) => row.key === selectedCorrectKey) : null;
+      if (values.quiz && correctOptionPosition < 0) { if (window.showToast) showToast('Заполните варианты ответа'); return; }
+      modal.querySelectorAll('.mx1-send').forEach((item) => { item.disabled = true; });
+      try {
+        const msg = await MchatAPI.createPoll(currentChatId, {
+          question,
+          description: modal.querySelector('.mx1-poll-description').value.trim(),
+          options,
+          multiple: values.multiple,
+          anonymous: !values.showVoters,
+          allowAdding: values.allowAdding,
+          allowRevote: values.allowRevote,
+          shuffleOptions: values.shuffleOptions,
+          quiz: values.quiz,
+          correctOptionPosition,
+          closesAt,
+        });
+        if (typeof window.onIncomingMessage === 'function') window.onIncomingMessage(msg);
+        modal.remove();
+      } catch (err) { modal.querySelectorAll('.mx1-send').forEach((item) => { item.disabled = false; }); if (window.showToast) showToast(MchatAPI.errorText(err)); }
+    });
+  }
+
+  window.mx1AddPollOption = function (messageId) {
+    const modal = document.createElement('div'); modal.className = 'mx1-modal';
+    modal.innerHTML = '<section class="mx1-poll-add-option"><b>Добавить ответ</b><input maxlength="100" placeholder="Новый вариант"><footer><button type="button" data-cancel>Отмена</button><button type="button" data-save>Добавить</button></footer></section>';
+    document.body.appendChild(modal); modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    modal.querySelector('[data-cancel]').onclick = () => modal.remove();
+    modal.querySelector('[data-save]').onclick = async function () {
+      const text = modal.querySelector('input').value.trim();
+      if (!text) { modal.querySelector('input').focus(); return; }
       this.disabled = true;
       try {
-        const msg = await MchatAPI.createPoll(currentChatId, { question, options, multiple: !!modal.querySelector('[data-multiple]').checked, anonymous: !!modal.querySelector('[data-anon]').checked });
-        if (typeof window.onIncomingMessage === 'function') window.onIncomingMessage(msg);
+        const message = await MchatAPI.addPollOption(messageId, text);
+        const list = messages[message.chatId] || [], index = list.findIndex((item) => item.id === message.id);
+        if (index >= 0) {
+          list[index] = msgFromServer(message);
+          if (currentChatId === message.chatId) renderMessages(message.chatId);
+        }
         modal.remove();
       } catch (err) { this.disabled = false; if (window.showToast) showToast(MchatAPI.errorText(err)); }
     };
-  }
+    modal.querySelector('input').focus();
+  };
 
   // Enable tap-to-photo and press-to-record when the camera is opened from Gallery.
   document.addEventListener('click', (e) => { if (e.target.closest('#mx-camera')) closeAttachPanel(); }, true);

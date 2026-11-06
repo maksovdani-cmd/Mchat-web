@@ -201,7 +201,19 @@ chatsRouter.post('/:id/messages', wrap(async (req, res) => {
 }));
 
 chatsRouter.post('/:id/polls', wrap(async (req, res) => {
-  const b = z.object({ question: z.string().trim().min(1).max(240), options: z.array(z.string().trim().min(1).max(100)).min(2).max(10), multiple: z.boolean().default(false), anonymous: z.boolean().default(true) }).parse(req.body);
+  const b = z.object({
+    question: z.string().trim().min(1).max(240),
+    description: z.string().max(500).optional(),
+    options: z.array(z.string().trim().min(1).max(100)).min(2).max(12),
+    multiple: z.boolean().default(false),
+    anonymous: z.boolean().default(true),
+    allowAdding: z.boolean().default(false),
+    allowRevote: z.boolean().default(true),
+    shuffleOptions: z.boolean().default(false),
+    quiz: z.boolean().default(false),
+    correctOptionPosition: z.number().int().min(0).max(11).nullable().optional(),
+    closesAt: z.string().datetime().nullable().optional(),
+  }).parse(req.body);
   const chatId = String(req.params.id);
   const message = await createPollAndDispatch(authOf(req).userId, chatId, b);
   res.json({ message });

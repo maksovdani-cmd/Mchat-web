@@ -1,7 +1,7 @@
 import { prisma } from '../db';
 import { emitToChat, emitToUser, isActive, joinUserToChat } from '../realtime/hub';
 import {
-  assertMember, createCallMessage, createLocationMessage, createMessage, createPollMessage, deleteMessage, editMessage, forwardMessage, isMutedNow, listPinnedMessages, markRead, messageInclude, pinMessage, previewOf, purgeAllChats, setReaction, toMessageDTO,
+  addPollOption, assertMember, createCallMessage, createLocationMessage, createMessage, createPollMessage, deleteMessage, editMessage, forwardMessage, isMutedNow, listPinnedMessages, markRead, messageInclude, pinMessage, previewOf, purgeAllChats, setReaction, toMessageDTO,
   type CallCardDTO, type CreateInput, type MessageDTO,
 } from './chat';
 import { sendPushToUser } from './push';
@@ -31,10 +31,21 @@ export async function sendAndDispatch(userId: string, chatId: string, input: Cre
   return dispatchNew(userId, chatId, await createMessage(userId, chatId, input));
 }
 
-export async function createPollAndDispatch(userId: string, chatId: string, input: { question: string; options: string[]; multiple?: boolean; anonymous?: boolean }) {
+export async function createPollAndDispatch(userId: string, chatId: string, input: {
+  question: string; description?: string; options: string[]; multiple?: boolean; anonymous?: boolean;
+  allowAdding?: boolean; allowRevote?: boolean; shuffleOptions?: boolean; quiz?: boolean;
+  correctOptionPosition?: number | null; closesAt?: string | null;
+}) {
   const message = await createPollMessage(userId, chatId, input);
   emitToChat(chatId, 'message:new', message);
   notifyRecipients(userId, chatId, message).catch((e) => console.error('notify error', e));
+  return message;
+}
+
+export async function addPollOptionAndDispatch(userId: string, messageId: string, text: string) {
+  const message = await addPollOption(userId, messageId, text);
+  const broadcast = message.poll ? { ...message, poll: { ...message.poll, voted: false, correctOptionPosition: null, options: message.poll.options.map((option) => ({ ...option, voted: false, correct: false })) } } : message;
+  emitToChat(message.chatId, 'message:edited', broadcast);
   return message;
 }
 

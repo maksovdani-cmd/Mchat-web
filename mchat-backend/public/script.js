@@ -653,7 +653,19 @@ function bindRealtimeHandlers() {
   h.onEdited = (m) => {
     const list = messages[m.chatId]; if (!list) return;
     const idx = list.findIndex(x => x.id === m.id);
-    if (idx >= 0) { list[idx] = msgFromServer(m); if (currentChatId === m.chatId) renderMessages(m.chatId); }
+    if (idx >= 0) {
+      const previous = list[idx], updated = msgFromServer(m);
+      if (previous.poll && updated.poll) {
+        updated.poll.voted = previous.poll.voted;
+        updated.poll.correctOptionPosition = previous.poll.correctOptionPosition;
+        updated.poll.options.forEach((option) => {
+          const prior = previous.poll.options.find((item) => item.id === option.id);
+          if (prior) { option.voted = prior.voted; option.correct = prior.correct; }
+        });
+      }
+      list[idx] = updated;
+      if (currentChatId === m.chatId) renderMessages(m.chatId);
+    }
     const ch = chats.find(c => c.id === m.chatId);
     if (ch) { ch.lastMessage = msgPreview(m); renderChats(); }
   };
@@ -3327,12 +3339,28 @@ function bubbleBodyHtml(m) {
 }
 function mxPollHtml(m) {
   const p = m.poll, total = p.options.reduce((n, o) => n + o.votes, 0);
-  return `<div class="mx1-poll-card" onclick="event.stopPropagation()"><div class="mx1-poll-q">${esc(p.question)}</div><div class="mx1-poll-options">${p.options.map((o) => {
+  const pollClosed = !!p.closed || (!!p.closesAt && new Date(p.closesAt).getTime() <= Date.now());
+  const showResults = !!p.voted || pollClosed;
+  const canSelect = !pollClosed && (!p.voted || p.allowRevote);
+  const options = [...p.options];
+  if (p.shuffleOptions) {
+    const stableHash = (value) => { let h = 2166136261; for (let i = 0; i < value.length; i++) { h ^= value.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+    options.sort((a, b) => stableHash(m.id + a.id) - stableHash(m.id + b.id));
+  }
+  const rows = options.map((o) => {
     const percent = total ? Math.round(o.votes * 100 / total) : 0;
     const input = p.multiple ? 'checkbox' : 'radio';
-    const voters = !p.anonymous && o.voters && o.voters.length ? `<small>${o.voters.map((u) => '@' + esc(u.username)).join(', ')}</small>` : '';
-    return `<label class="mx1-poll-option${o.voted ? ' voted' : ''}"><input type="${input}" name="poll-${esc(m.id)}" value="${esc(o.id)}" ${o.voted ? 'checked' : ''}><span>${esc(o.text)}${voters}</span><b>${o.votes}</b><i style="width:${percent}%"></i></label>`;
-  }).join('')}</div><button type="button" class="mx1-vote-btn" onclick="event.stopPropagation();mxVotePoll('${esc(m.id)}',this)">Голосовать</button><small>${total} голосов · ${p.anonymous ? 'анонимный' : 'публичный'}${p.multiple ? ' · можно выбрать несколько' : ''}</small></div>`;
+    const marker = !canSelect ? (o.correct ? '<span class="mx1-poll-mark correct">✓</span>' : o.voted ? '<span class="mx1-poll-mark selected">✓</span>' : '<span class="mx1-poll-mark empty"></span>') : `<input type="${input}" name="poll-${esc(m.id)}" value="${esc(o.id)}" ${o.voted ? 'checked' : ''}>`;
+    const avatars = !p.anonymous && o.voters?.length ? `<span class="mx1-poll-avatars">${o.voters.slice(0, 4).map((u) => u.avatar ? `<img src="${esc(u.avatar)}" alt="" title="${esc(u.name)}">` : `<i title="${esc(u.name)}">${esc((u.name || u.username || '?').slice(0, 1).toUpperCase())}</i>`).join('')}</span>` : '';
+    return `<label class="mx1-poll-option${o.voted ? ' voted' : ''}${o.correct ? ' is-correct' : ''}${showResults ? ' results' : ''}"><i class="mx1-poll-fill" style="width:${showResults ? percent : 0}%"></i>${marker}<span class="mx1-poll-answer">${esc(o.text)}</span>${avatars}<b class="mx1-poll-result">${showResults ? percent + '%' : o.votes}</b></label>`;
+  }).join('');
+  const footerMeta = `${mxPlural(total, ['голос', 'голоса', 'голосов'])}${p.anonymous ? ' · анонимный' : ' · публичный'}${p.multiple ? ' · несколько ответов' : ''}${pollClosed ? ' · завершён' : ''}`;
+  const deadline = p.closesAt && !pollClosed ? `<small class="mx1-poll-deadline-label">До ${esc(new Date(p.closesAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</small>` : '';
+  const voteButton = canSelect ? `<button type="button" class="mx1-vote-btn" onclick="event.stopPropagation();mxVotePoll('${esc(m.id)}',this)">${p.voted ? 'Изменить ответ' : p.quiz ? 'Ответить' : 'Голосовать'}</button>` : '';
+  const changeHint = p.voted && !p.allowRevote && !pollClosed ? '<small class="mx1-poll-lock">Ответ уже отправлен</small>' : '';
+  const addOption = p.allowAdding && !pollClosed && p.options.length < 12 ? `<button type="button" class="mx1-add-answer" onclick="event.stopPropagation();mx1AddPollOption('${esc(m.id)}')">＋ Добавить ответ</button>` : '';
+  const votersButton = !p.anonymous && total ? `<button type="button" class="mx1-voter-list-button" onclick="event.stopPropagation();mxShowPollVoters('${esc(m.id)}')">Посмотреть голоса (${total})</button>` : '';
+  return `<div class="mx1-poll-card" onclick="event.stopPropagation()"><div class="mx1-poll-kind">Опрос${p.quiz ? ' · викторина' : ''}</div><div class="mx1-poll-q">${esc(p.question)}</div>${p.description ? `<div class="mx1-poll-description">${esc(p.description)}</div>` : ''}<div class="mx1-poll-options">${rows}</div>${addOption}${voteButton}${changeHint}${votersButton}<div class="mx1-poll-meta"><small>${footerMeta}</small>${deadline}</div></div>`;
 }
 async function mxVotePoll(messageId, button) {
   const card = button.closest('.mx1-poll-card');
@@ -3345,6 +3373,14 @@ async function mxVotePoll(messageId, button) {
     if (at >= 0) list[at] = msgFromServer(saved);
     renderMessages(currentChatId);
   } catch (e) { showToast(MchatAPI.errorText(e)); button.disabled = false; }
+}
+function mxShowPollVoters(messageId) {
+  const message = (messages[currentChatId] || []).find((item) => item.id === messageId);
+  if (!message?.poll || message.poll.anonymous) return;
+  const modal = document.createElement('div'); modal.className = 'mx1-modal';
+  const groups = message.poll.options.map((option) => `<section><b>${esc(option.text)}</b>${option.voters?.length ? option.voters.map((user) => `<div class="mx1-voter-row">${user.avatar ? `<img src="${esc(user.avatar)}" alt="">` : `<i>${esc((user.name || user.username || '?').slice(0, 1).toUpperCase())}</i>`}<span>${esc(user.name)} <small>@${esc(user.username)}</small></span>${option.voted && user.id === currentUser?.id ? '<em>Ваш ответ</em>' : ''}</div>`).join('') : '<small>Пока никто не выбрал этот ответ</small>'}</section>`).join('');
+  modal.innerHTML = `<div class="mx1-voters-card"><header><b>Голоса</b><button type="button" aria-label="Закрыть">×</button></header><div class="mx1-voters-scroll">${groups}</div></div>`;
+  document.body.appendChild(modal); modal.onclick = (event) => { if (event.target === modal) modal.remove(); }; modal.querySelector('header button').onclick = () => modal.remove();
 }
 function mxLocationHtml(m) {
   const p = m.location, url = 'https://maps.google.com/?q=' + encodeURIComponent(p.latitude + ',' + p.longitude);
