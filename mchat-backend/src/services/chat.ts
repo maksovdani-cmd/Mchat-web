@@ -35,7 +35,21 @@ export const messageInclude = {
   reactions: { select: { emoji: true, userId: true, user: { select: { id: true, name: true, username: true, avatarUrl: true } } } },
   media: { select: { title: true, size: true, hd: true } },
   sticker: { select: { id: true, packId: true, pack: { select: { title: true } } } },
-  poll: { include: { options: { include: { votes: { select: { userId: true, user: { select: { id: true, name: true, username: true, avatarUrl: true } } } }, orderBy: { position: 'asc' } } } },
+  poll: {
+    include: {
+      options: {
+        include: {
+          votes: {
+            select: {
+              userId: true,
+              user: { select: { id: true, name: true, username: true, avatarUrl: true } },
+            },
+          },
+        },
+        orderBy: { position: 'asc' },
+      },
+    },
+  },
   location: true,
 } satisfies Prisma.MessageInclude;
 export type FullMessage = Prisma.MessageGetPayload<{ include: typeof messageInclude }>;
