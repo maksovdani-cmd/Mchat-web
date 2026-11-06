@@ -3,10 +3,10 @@ import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
 import {
   addMembers, createGroupOrChannel, getChannelPreview, listShared, getChatDTO, getOrCreateDirectChat, getOrCreateSavedChat, joinPublicChannel, listChats, listContacts, mentionCandidatesForChat,
-  clearChatForMe, hideChat, listDrafts, setDraft, MAX_DRAFT, leaveChat, listMembers, listMessages, removeMember, searchPublicChannels, setChatArchived, setChatAutoDelete, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
+  clearChatForMe, hideChat, listDrafts, setDraft, MAX_DRAFT, leaveChat, listMembers, listMessages, listPinnedMessages, unpinMessage, removeMember, searchPublicChannels, setChatArchived, setChatAutoDelete, setChatBackground, setChatMuted, setChatPinned, setMemberRole, updateChatInfo,
 } from '../services/chat';
 import { emitToChat, emitToUser, leaveUserFromChat } from '../realtime/hub';
-import { joinAllToChat, pinAndDispatch, readAndBroadcast, sendAndDispatch } from '../services/messaging';
+import { createLocationAndDispatch, createPollAndDispatch, joinAllToChat, pinAndDispatch, readAndBroadcast, sendAndDispatch } from '../services/messaging';
 import { decideRequest, invitePreview, listAllPending, listRequests, requestJoin } from '../services/joinRequests';
 import { wrap } from '../utils/errors';
 import { ensureSystemChats } from '../services/system';
@@ -200,6 +200,20 @@ chatsRouter.post('/:id/messages', wrap(async (req, res) => {
   res.json({ message: await sendAndDispatch(authOf(req).userId, String(req.params.id), b) });
 }));
 
+chatsRouter.post('/:id/polls', wrap(async (req, res) => {
+  const b = z.object({ question: z.string().trim().min(1).max(240), options: z.array(z.string().trim().min(1).max(100)).min(2).max(10), multiple: z.boolean().default(false), anonymous: z.boolean().default(true) }).parse(req.body);
+  const chatId = String(req.params.id);
+  const message = await createPollAndDispatch(authOf(req).userId, chatId, b);
+  res.json({ message });
+}));
+
+chatsRouter.post('/:id/location', wrap(async (req, res) => {
+  const b = z.object({ latitude: z.number(), longitude: z.number(), durationMinutes: z.union([z.literal(30), z.literal(60), z.literal(480)]) }).parse(req.body);
+  const chatId = String(req.params.id);
+  const message = await createLocationAndDispatch(authOf(req).userId, chatId, b.latitude, b.longitude, b.durationMinutes);
+  res.json({ message });
+}));
+
 chatsRouter.post('/:id/read', wrap(async (req, res) => {
   await readAndBroadcast(authOf(req).userId, String(req.params.id));
   res.json({ ok: true });
@@ -209,6 +223,16 @@ chatsRouter.post('/:id/read', wrap(async (req, res) => {
 chatsRouter.put('/:id/pin', wrap(async (req, res) => {
   const { messageId } = z.object({ messageId: id.nullable() }).parse(req.body);
   res.json({ message: await pinAndDispatch(authOf(req).userId, String(req.params.id), messageId) });
+}));
+
+chatsRouter.get('/:id/pins', wrap(async (req, res) => {
+  res.json({ messages: await listPinnedMessages(authOf(req).userId, String(req.params.id)) });
+}));
+chatsRouter.delete('/:id/pins/:messageId', wrap(async (req, res) => {
+  const chatId = String(req.params.id);
+  const messages = await unpinMessage(authOf(req).userId, chatId, String(req.params.messageId));
+  emitToChat(chatId, 'chat:pinned', { chatId, message: messages[0] ?? null, messages });
+  res.json({ messages });
 }));
 
 /** Личный фон чата (виден только мне): пресет, фото из профиля или загруженная картинка. */

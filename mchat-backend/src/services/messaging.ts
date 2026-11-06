@@ -1,7 +1,7 @@
 import { prisma } from '../db';
 import { emitToChat, emitToUser, isActive, joinUserToChat } from '../realtime/hub';
 import {
-  assertMember, createCallMessage, createMessage, deleteMessage, editMessage, forwardMessage, isMutedNow, markRead, messageInclude, pinMessage, previewOf, purgeAllChats, setReaction, toMessageDTO,
+  assertMember, createCallMessage, createLocationMessage, createMessage, createPollMessage, deleteMessage, editMessage, forwardMessage, isMutedNow, listPinnedMessages, markRead, messageInclude, pinMessage, previewOf, purgeAllChats, setReaction, toMessageDTO,
   type CallCardDTO, type CreateInput, type MessageDTO,
 } from './chat';
 import { sendPushToUser } from './push';
@@ -29,6 +29,20 @@ export async function sendAndDispatch(userId: string, chatId: string, input: Cre
     }
   }
   return dispatchNew(userId, chatId, await createMessage(userId, chatId, input));
+}
+
+export async function createPollAndDispatch(userId: string, chatId: string, input: { question: string; options: string[]; multiple?: boolean; anonymous?: boolean }) {
+  const message = await createPollMessage(userId, chatId, input);
+  emitToChat(chatId, 'message:new', message);
+  notifyRecipients(userId, chatId, message).catch((e) => console.error('notify error', e));
+  return message;
+}
+
+export async function createLocationAndDispatch(userId: string, chatId: string, latitude: number, longitude: number, durationMinutes: 30 | 60 | 480) {
+  const message = await createLocationMessage(userId, chatId, latitude, longitude, durationMinutes);
+  emitToChat(chatId, 'message:new', message);
+  notifyRecipients(userId, chatId, message).catch((e) => console.error('notify error', e));
+  return message;
 }
 
 export async function forwardAndDispatch(userId: string, messageId: string, targetChatId: string, clientId?: string) {
@@ -107,7 +121,8 @@ export async function reactAndDispatch(userId: string, messageId: string, emoji:
 
 export async function pinAndDispatch(userId: string, chatId: string, messageId: string | null) {
   const dto = await pinMessage(userId, chatId, messageId);
-  emitToChat(chatId, 'chat:pinned', { chatId, message: dto });
+  const messages = await listPinnedMessages(userId, chatId);
+  emitToChat(chatId, 'chat:pinned', { chatId, message: dto, messages });
   return dto;
 }
 

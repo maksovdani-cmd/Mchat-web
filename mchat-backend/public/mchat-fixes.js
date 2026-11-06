@@ -1061,7 +1061,7 @@
     get messages() { return typeof messages !== 'undefined' && messages ? messages : {}; },
     get chatId() { return typeof currentChatId !== 'undefined' ? currentChatId : null; },
     get meta() { return typeof currentChatMeta !== 'undefined' ? currentChatMeta : null; },
-    get pinned() { return typeof currentChatPinned !== 'undefined' ? currentChatPinned : null; },
+    get pinned() { return typeof currentChatPinnedMessages !== 'undefined' ? currentChatPinnedMessages : (typeof currentChatPinned !== 'undefined' && currentChatPinned ? [currentChatPinned] : []); },
     get call() { return typeof mxCall !== 'undefined' ? mxCall : null; },
     get user() { return typeof currentUser !== 'undefined' ? currentUser : null; },
   };
@@ -1271,7 +1271,7 @@
   new MutationObserver(initAvatars).observe(document.body, { childList: true, subtree: true });
 
   /* ═════════ 6. Открепление сообщений ═════════ */
-  window.mxUnpinFromMenu = function () { if (window.mxCloseFloating) mxCloseFloating(); if (typeof mxUnpin === 'function') mxUnpin(); };
+  window.mxUnpinFromMenu = function (id) { if (window.mxCloseFloating) mxCloseFloating(); if (typeof mxUnpinMessage === 'function') mxUnpinMessage(id); };
 
   /* Контекстное меню сообщения: «Открепить», «Сохранить», одноразовые */
   window.mxCtxAdjust = function (msg, buttons) {
@@ -1281,9 +1281,11 @@
       buttons.length = 0; keep.forEach((b) => buttons.push(b)); return;
     }
     const pinned = G.pinned;
-    const isPinned = !!(pinned && pinned.id === id);
+    const isPinned = Array.isArray(pinned) ? pinned.some((p) => p.id === id) : !!(pinned && pinned.id === id);
     const i = buttons.findIndex((b) => b.includes("mxPin('" + id + "')"));
-    const unpin = window.mxCtxItem(MX_ICO.pin, 'Открепить', 'mxUnpinFromMenu()');
+    const canManagePins = !G.meta || !['GROUP', 'CHANNEL'].includes(G.meta.type) || G.meta.canModerate;
+    if (!canManagePins) { if (i >= 0) buttons.splice(i, 1); return; }
+    const unpin = window.mxCtxItem(MX_ICO.pin, 'Открепить', `mxUnpinFromMenu('${esc(id)}')`);
     if (isPinned) { if (i >= 0) buttons[i] = unpin; else buttons.splice(Math.max(0, buttons.length - 1), 0, unpin); }
     if (['IMAGE', 'VIDEO', 'VIDEO_NOTE', 'FILE'].includes(msg.kind) && msg.mediaUrl) {
       buttons.splice(Math.max(0, buttons.length - 1), 0, window.mxCtxItem(DL_ICO, 'Сохранить', "mxDownloadMessage('" + esc(id) + "')"));

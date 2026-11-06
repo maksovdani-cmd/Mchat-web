@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authOf, requireAuth } from '../middleware/auth';
-import { MAX_TEXT } from '../services/chat';
+import { getMessageDTO, MAX_TEXT, stopLiveLocation, updateLiveLocation, voteOnPoll } from '../services/chat';
 import { deleteAndDispatch, editAndDispatch, forwardAndDispatch, reactAndDispatch } from '../services/messaging';
+import { emitToChat } from '../realtime/hub';
 import { closeViewOnce, openViewOnce } from '../services/viewonce';
 import { wrap } from '../utils/errors';
 
@@ -10,6 +11,10 @@ export const messagesRouter = Router();
 messagesRouter.use(requireAuth);
 
 const mid = (req: { params: Record<string, unknown> }) => String(req.params.id);
+
+messagesRouter.get('/:id', wrap(async (req, res) => {
+  res.json({ message: await getMessageDTO(authOf(req).userId, mid(req)) });
+}));
 
 /** Изменить свой текст. */
 messagesRouter.patch('/:id', wrap(async (req, res) => {
@@ -28,6 +33,27 @@ messagesRouter.delete('/:id', wrap(async (req, res) => {
 messagesRouter.put('/:id/reaction', wrap(async (req, res) => {
   const { emoji } = z.object({ emoji: z.string().max(16).nullable() }).parse(req.body);
   res.json(await reactAndDispatch(authOf(req).userId, mid(req), emoji));
+}));
+
+messagesRouter.post('/:id/poll-vote', wrap(async (req, res) => {
+  const { optionIds } = z.object({ optionIds: z.array(z.string().min(1).max(40)).min(1).max(10) }).parse(req.body);
+  const message = await voteOnPoll(authOf(req).userId, mid(req), optionIds);
+  const broadcast = message.poll ? { ...message, poll: { ...message.poll, options: message.poll.options.map((o) => ({ ...o, voted: false })) } } : message;
+  emitToChat(message.chatId, 'message:edited', broadcast);
+  res.json({ message });
+}));
+
+messagesRouter.patch('/:id/location', wrap(async (req, res) => {
+  const { latitude, longitude } = z.object({ latitude: z.number(), longitude: z.number() }).parse(req.body);
+  const message = await updateLiveLocation(authOf(req).userId, mid(req), latitude, longitude);
+  emitToChat(message.chatId, 'message:edited', message);
+  res.json({ message });
+}));
+
+messagesRouter.delete('/:id/location', wrap(async (req, res) => {
+  const message = await stopLiveLocation(authOf(req).userId, mid(req));
+  emitToChat(message.chatId, 'message:edited', { ...message, location: message.location ? { ...message.location, active: false } : null });
+  res.json({ message });
 }));
 
 /** Переслать в другой чат, где я участник. */

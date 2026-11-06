@@ -35,6 +35,8 @@ export const messageInclude = {
   reactions: { select: { emoji: true, userId: true, user: { select: { id: true, name: true, username: true, avatarUrl: true } } } },
   media: { select: { title: true, size: true, hd: true } },
   sticker: { select: { id: true, packId: true, pack: { select: { title: true } } } },
+  poll: { include: { options: { include: { votes: { select: { userId: true, user: { select: { id: true, name: true, username: true, avatarUrl: true } } } }, orderBy: { position: 'asc' } } } },
+  location: true,
 } satisfies Prisma.MessageInclude;
 export type FullMessage = Prisma.MessageGetPayload<{ include: typeof messageInclude }>;
 
@@ -69,6 +71,8 @@ export interface MessageDTO {
   sticker: { id: string; packId: string; packTitle: string } | null;
   /** карточка официального аккаунта (kind === 'SYSTEM_CARD'), например подтверждение входа */
   card: SystemCardDTO | null;
+  poll: { question: string; multiple: boolean; anonymous: boolean; options: { id: string; text: string; votes: number; voted: boolean; voters: { id: string; name: string; username: string; avatar: string | null }[] }[] } | null;
+  location: { latitude: number; longitude: number; expiresAt: string; active: boolean } | null;
 }
 
 /** Карточка подтверждения входа с нового устройства. Сервер хранит JSON в text; клиенту отдаём разобранным, без IP. */
@@ -120,7 +124,7 @@ const parseCard = (text: string): SystemCardDTO | null => {
 
 export const previewOf = (kind: MessageKind, text: string) =>
   kind === 'TEXT' ? text : kind === 'VOICE' ? '🎤 Голосовое сообщение' : kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение'
-    : kind === 'VIDEO' ? '🎬 Видео' : kind === 'FILE' ? '📎 Файл' : kind === 'CALL' ? '📞 Звонок' : kind === 'SYSTEM_CARD' ? '🔐 Вход в аккаунт' : '📷 Фото';
+    : kind === 'VIDEO' ? '🎬 Видео' : kind === 'FILE' ? '📎 Файл' : kind === 'POLL' ? '📊 Опрос' : kind === 'LOCATION' ? '📍 Геопозиция' : kind === 'CALL' ? '📞 Звонок' : kind === 'SYSTEM_CARD' ? '🔐 Вход в аккаунт' : '📷 Фото';
 
 type ReactionRow = { emoji: string; userId: string; user?: { id: string; name: string; username: string; avatarUrl: string | null } | null };
 export const groupReactions = (list: ReactionRow[]): ReactionDTO[] => {
@@ -134,7 +138,7 @@ export const groupReactions = (list: ReactionRow[]): ReactionDTO[] => {
   return [...map.values()];
 };
 
-export const toMessageDTO = (m: FullMessage): MessageDTO => ({
+export const toMessageDTO = (m: FullMessage, viewerId?: string): MessageDTO => ({
   id: m.id,
   chatId: m.chatId,
   senderId: m.senderId,
@@ -164,6 +168,10 @@ export const toMessageDTO = (m: FullMessage): MessageDTO => ({
   viewOnceOpened: !!m.viewOnceOpenedAt,
   sticker: m.sticker ? { id: m.sticker.id, packId: m.sticker.packId, packTitle: m.sticker.pack.title } : null,
   card: m.kind === 'SYSTEM_CARD' ? parseCard(m.text) : null,
+  poll: m.poll ? { question: m.poll.question, multiple: m.poll.multiple, anonymous: m.poll.anonymous,
+    options: m.poll.options.map((o) => ({ id: o.id, text: o.text, votes: o.votes.length, voted: !!viewerId && o.votes.some((v) => v.userId === viewerId),
+      voters: m.poll!.anonymous ? [] : o.votes.map((v) => ({ id: v.user.id, name: v.user.name, username: v.user.username, avatar: v.user.avatarUrl })) })) } : null,
+  location: m.location ? { latitude: m.location.latitude, longitude: m.location.longitude, expiresAt: m.location.expiresAt.toISOString(), active: m.location.expiresAt.getTime() > Date.now() } : null,
 });
 
 // ───────────────────────── права ─────────────────────────
@@ -237,7 +245,7 @@ export async function directAccess(userId: string, chatId: string, allowSecurity
 
 /** Сообщение, которое пользователь вправе видеть (участник чата, не удалено). */
 async function loadVisibleMessage(userId: string, messageId: string) {
-  const msg = await prisma.message.findUnique({ where: { id: messageId } });
+  const msg = await prisma.message.findUnique({ where: { id: messageId }, include: messageInclude });
   if (!msg || msg.deletedAt) throw new HttpError(404, 'message_not_found');
   const member = await assertMember(msg.chatId, userId);
   return { msg, member };
@@ -367,8 +375,14 @@ export async function getChatDTO(userId: string, chatId: string) {
     where: { id: chatId },
     include: { _count: { select: { members: true } } },
   });
+  if (chat.pinnedMessageId) {
+    await prisma.chatPinnedMessage.upsert({
+      where: { chatId_messageId: { chatId, messageId: chat.pinnedMessageId } },
+      create: { chatId, messageId: chat.pinnedMessageId }, update: {},
+    });
+  }
 
-  const [last, unread, pinned, peerMember, dm] = await Promise.all([
+  const [last, unread, pinned, pinnedRows, peerMember, dm] = await Promise.all([
     prisma.message.findFirst({
       where: { chatId, deletedAt: null, hides: { none: { userId } } },
       orderBy: { createdAt: 'desc' },
@@ -380,6 +394,7 @@ export async function getChatDTO(userId: string, chatId: string) {
     chat.pinnedMessageId
       ? prisma.message.findFirst({ where: { id: chat.pinnedMessageId, chatId, deletedAt: null }, include: messageInclude })
       : null,
+    prisma.chatPinnedMessage.findMany({ where: { chatId, message: { deletedAt: null } }, orderBy: { pinnedAt: 'asc' }, include: { message: { include: messageInclude } } }),
     chat.type === 'DIRECT'
       ? prisma.chatMember.findFirst({
           where: { chatId, userId: { not: userId } },
@@ -439,7 +454,8 @@ export async function getChatDTO(userId: string, chatId: string) {
     lastMessage: last && { text: lastText, createdAt: last.createdAt.toISOString(), senderId: last.senderId },
     lastMessageAt: chat.lastMessageAt.toISOString(),
     unread,
-    pinned: pinned && toMessageDTO(pinned),
+    pinned: pinned && toMessageDTO(pinned, userId),
+    pinnedMessages: pinnedRows.map((p) => toMessageDTO(p.message, userId)),
   };
 }
 
@@ -476,7 +492,7 @@ export async function listMessages(userId: string, chatId: string, before: strin
   // одноразовые медиа: «открыто» — это состояние именно этого зрителя (в группе у каждого получателя своё)
   const onceIds = page.filter((m) => m.viewOnce).map((m) => m.id);
   const opened = onceIds.length ? new Set((await prisma.viewOnceView.findMany({ where: { userId, messageId: { in: onceIds } }, select: { messageId: true } })).map((v) => v.messageId)) : null;
-  return { messages: page.map((m) => { const d = toMessageDTO(m); if (opened && m.viewOnce && m.senderId !== userId) d.viewOnceOpened = opened.has(m.id) || m.viewOnceOpenedBy === userId; return d; }), hasMore };
+  return { messages: page.map((m) => { const d = toMessageDTO(m, userId); if (opened && m.viewOnce && m.senderId !== userId) d.viewOnceOpened = opened.has(m.id) || m.viewOnceOpenedBy === userId; return d; }), hasMore };
 }
 
 // ───────────────────────── сообщения ─────────────────────────
@@ -522,7 +538,7 @@ export async function createMessage(userId: string, chatId: string, input: Creat
     if (!st) throw new HttpError(404, 'sticker_not_found');
     stickerId = st.id;
     mediaId = st.mediaId;
-  } else if (kind !== 'TEXT') {
+  } else if (kind !== 'TEXT' && kind !== 'POLL' && kind !== 'LOCATION') {
     if (!input.mediaId) throw new HttpError(400, 'media_required');
     const media = await prisma.media.findUnique({ where: { id: input.mediaId } });
     if (!media) throw new HttpError(404, 'media_not_found');
@@ -575,12 +591,67 @@ export async function createMessage(userId: string, chatId: string, input: Creat
   }
 }
 
+export async function createPollMessage(userId: string, chatId: string, raw: { question: string; options: string[]; multiple?: boolean; anonymous?: boolean }) {
+  const question = raw.question.trim();
+  const options = raw.options.map((x) => x.trim());
+  if (!question || question.length > 240 || options.length < 2 || options.length > 10 || options.some((x) => !x || x.length > 100) || new Set(options.map((x) => x.toLocaleLowerCase())).size !== options.length) throw new HttpError(400, 'bad_poll');
+  const { message } = await createMessage(userId, chatId, { kind: 'POLL', clientId: randomToken(16) });
+  await prisma.messagePoll.create({ data: { messageId: message.id, question, multiple: !!raw.multiple, anonymous: raw.anonymous !== false, options: { create: options.map((text, position) => ({ text, position })) } } });
+  const saved = await prisma.message.findUniqueOrThrow({ where: { id: message.id }, include: messageInclude });
+  return toMessageDTO(saved, userId);
+}
+
+export async function voteOnPoll(userId: string, messageId: string, optionIds: string[]) {
+  const { msg } = await loadVisibleMessage(userId, messageId);
+  if (msg.kind !== 'POLL' || !msg.poll) throw new HttpError(400, 'poll_not_found');
+  const chosen = [...new Set(optionIds)];
+  if (!chosen.length || chosen.length > (msg.poll.multiple ? msg.poll.options.length : 1)) throw new HttpError(400, 'bad_poll_vote');
+  if (chosen.some((id) => !msg.poll!.options.some((o) => o.id === id))) throw new HttpError(400, 'bad_poll_vote');
+  await prisma.$transaction([
+    prisma.pollVote.deleteMany({ where: { userId, option: { pollId: messageId } } }),
+    prisma.pollVote.createMany({ data: chosen.map((optionId) => ({ optionId, userId })) }),
+  ]);
+  const updated = await prisma.message.findUniqueOrThrow({ where: { id: messageId }, include: messageInclude });
+  return toMessageDTO(updated, userId);
+}
+
+export async function createLocationMessage(userId: string, chatId: string, latitude: number, longitude: number, durationMinutes: 30 | 60 | 480) {
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) throw new HttpError(400, 'bad_location');
+  if (![30, 60, 480].includes(durationMinutes)) throw new HttpError(400, 'bad_location_duration');
+  const { message } = await createMessage(userId, chatId, { kind: 'LOCATION', clientId: randomToken(16) });
+  await prisma.liveLocation.create({ data: { messageId: message.id, latitude, longitude, expiresAt: new Date(Date.now() + durationMinutes * 60_000) } });
+  const saved = await prisma.message.findUniqueOrThrow({ where: { id: message.id }, include: messageInclude });
+  return toMessageDTO(saved, userId);
+}
+
+export async function updateLiveLocation(userId: string, messageId: string, latitude: number, longitude: number) {
+  const { msg } = await loadVisibleMessage(userId, messageId);
+  if (msg.kind !== 'LOCATION' || msg.senderId !== userId || !msg.location || msg.location.expiresAt <= new Date()) throw new HttpError(400, 'location_expired');
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) throw new HttpError(400, 'bad_location');
+  await prisma.liveLocation.update({ where: { messageId }, data: { latitude, longitude } });
+  const updated = await prisma.message.findUniqueOrThrow({ where: { id: messageId }, include: messageInclude });
+  return toMessageDTO(updated, userId);
+}
+
+export async function getMessageDTO(userId: string, messageId: string) {
+  const { msg } = await loadVisibleMessage(userId, messageId);
+  return toMessageDTO(msg, userId);
+}
+
+export async function stopLiveLocation(userId: string, messageId: string) {
+  const { msg } = await loadVisibleMessage(userId, messageId);
+  if (msg.kind !== 'LOCATION' || msg.senderId !== userId || !msg.location) throw new HttpError(400, 'location_not_found');
+  await prisma.liveLocation.update({ where: { messageId }, data: { expiresAt: new Date() } });
+  const updated = await prisma.message.findUniqueOrThrow({ where: { id: messageId }, include: messageInclude });
+  return toMessageDTO(updated, userId);
+}
+
 export async function forwardMessage(userId: string, messageId: string, targetChatId: string, clientId?: string) {
   const { msg, member } = await loadVisibleMessage(userId, messageId); // видеть исходное сообщение обязан
   if (msg.kind === 'CALL' || msg.kind === 'SYSTEM_CARD' || msg.viewOnce) throw new HttpError(400, 'not_forwardable'); // карточки звонков создаёт сервер; одноразовое пересылать нельзя
   if (member.chat.isPrivate) throw new HttpError(403, 'content_protected'); // приватный канал/группа: пересылка запрещена
   const author = msg.senderId ? await prisma.user.findUnique({ where: { id: msg.senderId }, select: { name: true } }) : null;
-  return createMessage(userId, targetChatId, {
+  const forwarded = await createMessage(userId, targetChatId, {
     kind: msg.kind,
     text: msg.text,
     mediaId: msg.mediaId ?? undefined,
@@ -590,6 +661,15 @@ export async function forwardMessage(userId: string, messageId: string, targetCh
     clientId,
     stickerId: msg.stickerId ?? undefined,
   });
+  if (forwarded.duplicate) return forwarded;
+  if (msg.kind === 'POLL' && msg.poll) {
+    await prisma.messagePoll.create({ data: { messageId: forwarded.message.id, question: msg.poll.question, multiple: msg.poll.multiple, anonymous: msg.poll.anonymous,
+      options: { create: msg.poll.options.map((o, position) => ({ text: o.text, position })) } } });
+  } else if (msg.kind === 'LOCATION' && msg.location) {
+    await prisma.liveLocation.create({ data: { messageId: forwarded.message.id, latitude: msg.location.latitude, longitude: msg.location.longitude, expiresAt: msg.location.expiresAt } });
+  } else return forwarded;
+  const copied = await prisma.message.findUniqueOrThrow({ where: { id: forwarded.message.id }, include: messageInclude });
+  return { ...forwarded, message: copied };
 }
 
 export async function editMessage(userId: string, messageId: string, rawText: string) {
@@ -618,8 +698,11 @@ export async function deleteMessage(userId: string, messageId: string, scope: 'm
   // «у всех»: автор, а в группах/каналах ещё владелец и админы
   if (msg.senderId !== userId && !canModerate(member.chat.type, member.role)) throw new HttpError(403, 'forbidden');
   await prisma.message.update({ where: { id: messageId }, data: { deletedAt: new Date(), text: '', mediaId: null } });
-  const unpinned = member.chat.pinnedMessageId === messageId;
-  if (unpinned) await prisma.chat.update({ where: { id: msg.chatId }, data: { pinnedMessageId: null } });
+  const link = await prisma.chatPinnedMessage.findUnique({ where: { chatId_messageId: { chatId: msg.chatId, messageId } } });
+  if (link) await prisma.chatPinnedMessage.delete({ where: { chatId_messageId: { chatId: msg.chatId, messageId } } });
+  const pins = await prisma.chatPinnedMessage.findMany({ where: { chatId: msg.chatId }, orderBy: { pinnedAt: 'asc' }, select: { messageId: true } });
+  const unpinned = member.chat.pinnedMessageId === messageId || !!link;
+  if (unpinned) await prisma.chat.update({ where: { id: msg.chatId }, data: { pinnedMessageId: pins[0]?.messageId ?? null } });
   if (msg.mediaId) await gcMedia(msg.mediaId);
   return { scope, chatId: msg.chatId, id: messageId, unpinned };
 }
@@ -649,10 +732,34 @@ export async function pinMessage(userId: string, chatId: string, messageId: stri
   if (messageId) {
     const msg = await prisma.message.findUnique({ where: { id: messageId }, include: messageInclude });
     if (!msg || msg.chatId !== chatId || msg.deletedAt) throw new HttpError(400, 'bad_message');
-    dto = toMessageDTO(msg);
+    const existing = await prisma.chatPinnedMessage.findUnique({ where: { chatId_messageId: { chatId, messageId } } });
+    if (!existing) {
+      const count = await prisma.chatPinnedMessage.count({ where: { chatId } });
+      if (count >= 3) throw new HttpError(400, 'too_many_pinned_messages');
+      await prisma.chatPinnedMessage.create({ data: { chatId, messageId } });
+    }
+    dto = toMessageDTO(msg, userId);
+  } else {
+    await prisma.chatPinnedMessage.deleteMany({ where: { chatId } });
   }
-  await prisma.chat.update({ where: { id: chatId }, data: { pinnedMessageId: messageId } });
+  const pins = await prisma.chatPinnedMessage.findMany({ where: { chatId }, orderBy: { pinnedAt: 'asc' }, select: { messageId: true } });
+  await prisma.chat.update({ where: { id: chatId }, data: { pinnedMessageId: pins[0]?.messageId ?? null } });
   return dto;
+}
+
+export async function unpinMessage(userId: string, chatId: string, messageId: string) {
+  const m = await assertMember(chatId, userId);
+  if (isGroupType(m.chat.type) && m.role === 'MEMBER') throw new HttpError(403, 'forbidden');
+  await prisma.chatPinnedMessage.deleteMany({ where: { chatId, messageId } });
+  const pins = await prisma.chatPinnedMessage.findMany({ where: { chatId }, orderBy: { pinnedAt: 'asc' }, select: { messageId: true } });
+  await prisma.chat.update({ where: { id: chatId }, data: { pinnedMessageId: pins[0]?.messageId ?? null } });
+  return listPinnedMessages(userId, chatId);
+}
+
+export async function listPinnedMessages(userId: string, chatId: string) {
+  await assertMember(chatId, userId);
+  const rows = await prisma.chatPinnedMessage.findMany({ where: { chatId, message: { deletedAt: null } }, orderBy: { pinnedAt: 'asc' }, include: { message: { include: messageInclude } } });
+  return rows.map((p) => toMessageDTO(p.message, userId));
 }
 
 export async function markRead(userId: string, chatId: string) {
@@ -831,7 +938,7 @@ export async function getChannelPreview(userId: string, chatId: string, limit = 
       memberCount: chat._count.members, isPublic: chat.isPublic,
       joined: !!mine, muted: mine ? isMutedNow(mine) : false,
     },
-    messages: rows.reverse().map(toMessageDTO),
+    messages: rows.reverse().map((m) => toMessageDTO(m, userId)),
   };
 }
 
@@ -844,11 +951,16 @@ export async function joinPublicChannel(userId: string, chatId: string) {
 }
 
 export const MAX_PINNED_CHATS = 10;
+export const MAX_PINNED_CHANNELS = 4;
 
 /** Закрепить чат вверху списка (или открепить). Закрепление личное: у собеседников список не меняется. */
 export async function setChatPinned(userId: string, chatId: string, pinned: boolean) {
-  await assertMember(chatId, userId);
+  const member = await assertMember(chatId, userId);
   if (pinned) {
+    if (member.chat.type === 'CHANNEL') {
+      const channelCount = await prisma.chatMember.count({ where: { userId, pinnedAt: { not: null }, chat: { type: 'CHANNEL', id: { not: chatId } } } });
+      if (channelCount >= MAX_PINNED_CHANNELS) throw new HttpError(400, 'too_many_pinned_channels');
+    }
     const count = await prisma.chatMember.count({ where: { userId, pinnedAt: { not: null }, chatId: { not: chatId } } });
     if (count >= MAX_PINNED_CHATS) throw new HttpError(400, 'too_many_pinned_chats');
   }
@@ -913,9 +1025,13 @@ async function purgeWhere(chatWhere: Prisma.ChatWhereInput): Promise<PurgeResult
     });
     if (!rows.length) continue;
     const ids = rows.map((r) => r.id);
+    const pinnedExpired = await prisma.chatPinnedMessage.count({ where: { chatId: c.id, messageId: { in: ids } } });
     await prisma.message.deleteMany({ where: { id: { in: ids } } });
-    const unpinned = !!c.pinnedMessageId && ids.includes(c.pinnedMessageId);
-    if (unpinned) await prisma.chat.update({ where: { id: c.id }, data: { pinnedMessageId: null } });
+    const unpinned = (!!c.pinnedMessageId && ids.includes(c.pinnedMessageId)) || pinnedExpired > 0;
+    if (unpinned) {
+      const pins = await prisma.chatPinnedMessage.findMany({ where: { chatId: c.id, messageId: { notIn: ids } }, orderBy: { pinnedAt: 'asc' }, select: { messageId: true } });
+      await prisma.chat.update({ where: { id: c.id }, data: { pinnedMessageId: pins[0]?.messageId ?? null } });
+    }
     for (const r of rows) if (r.mediaId) await gcMedia(r.mediaId);
     out.push({ chatId: c.id, ids, unpinned });
   }
@@ -958,7 +1074,7 @@ export async function listShared(userId: string, chatId: string, tab: SharedTab,
   else if (tab === 'files') { where.kind = 'FILE'; where.NOT = audioFile(); }
   else Object.assign(where, { kind: 'TEXT', OR: [{ text: { contains: 'http://' } }, { text: { contains: 'https://' } }] });
   const rows = await prisma.message.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: limit, include: messageInclude });
-  return rows.map(toMessageDTO);
+  return rows.map((m) => toMessageDTO(m, userId));
 } 
 
 // ───────────────────────── удаление чата из списка и выход владельца ─────────────────────────

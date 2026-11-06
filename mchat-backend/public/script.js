@@ -7,7 +7,8 @@ let chats = [];
 let messages = {};
 let currentChatId = null;
 let currentChatPeer = null;   // { id, username } собеседника в открытом личном чате
-let currentChatPinned = null; // закреплённое сообщение открытого чата (MessageDTO | null)
+let currentChatPinned = null; // первое закреплённое сообщение (совместимость)
+let currentChatPinnedMessages = [];
 let currentChatMeta = null;   // canPost/canModerate/type открытого чата
 let upFriendState = { status: 'none', id: null }; // состояние дружбы в открытом чужом профиле
 let replyToMsg = null;        // сообщение, на которое отвечаем (объект из messages[])
@@ -667,9 +668,15 @@ function bindRealtimeHandlers() {
     if (msg) { msg.reactions = p.reactions || []; if (currentChatId === p.chatId) renderMessages(p.chatId); }
   };
   h.onPinned = (p) => {
-    if (currentChatId === p.chatId) renderPinnedBar(p.message || null);
-    const ch = chats.find(c => c.id === p.chatId);
-    if (ch) ch.pinned = p.message || null;
+    const applyPins = (rows) => {
+      const pins = rows || [];
+      if (currentChatId === p.chatId) renderPinnedBar(pins);
+      const ch = chats.find(c => c.id === p.chatId);
+      if (ch) { ch.pinnedMessages = pins; ch.pinned = pins[0] || null; }
+    };
+    if (Array.isArray(p.messages)) applyPins(p.messages);
+    else if (p.message) applyPins([p.message]);
+    else MchatAPI.listPins(p.chatId).then((r) => applyPins(r.messages)).catch(() => applyPins([]));
   };
   h.onFriendUpdate = (p) => {
     if (upViewedUsername && p.user && p.user.username === upViewedUsername) {
@@ -2996,7 +3003,7 @@ function chatFromServer(c) {
     pinnedChat: !!c.pinnedChat, pinnedChatAt: c.pinnedChatAt || null, archived: !!c.archived,
     id: c.id, type: c.type, name: c.name, description: c.description, avatar: c.avatar, peer: c.peer,
     unread: c.unread || 0, role: c.role, canPost: c.canPost !== false, canModerate: !!c.canModerate, muted: !!c.muted, isPublic: !!c.isPublic, isPrivate: !!c.isPrivate,
-    memberCount: c.memberCount || 0, inviteCode: c.inviteCode || null, pinned: c.pinned || null, background: c.background || null,
+    memberCount: c.memberCount || 0, inviteCode: c.inviteCode || null, pinned: c.pinned || null, pinnedMessages: c.pinnedMessages || (c.pinned ? [c.pinned] : []), background: c.background || null,
     dm: c.dm || null, autoDeleteSec: c.autoDeleteSec || null, mutedUntil: c.mutedUntil || null, peerReadAt: c.peerReadAt || null,
     lastMessage: c.lastMessage ? c.lastMessage.text : '',
     time: c.lastMessage ? fmtChatTime(c.lastMessage.createdAt) : '',
@@ -3011,6 +3018,7 @@ function msgFromServer(m) {
     replyTo: m.replyTo, forwardedFrom: m.forwardedFrom, call: m.call || null, card: m.card || null,
     viewOnce: !!m.viewOnce, viewOnceOpened: !!m.viewOnceOpened, sticker: m.sticker || null,
     reactions: m.reactions || [], editedAt: m.editedAt,
+    poll: m.poll || null, location: m.location || null,
     time: fmtClock(m.createdAt), createdAt: m.createdAt,
     outgoing: !!currentUser && m.senderId === currentUser.id, pending: false
   };
@@ -3164,7 +3172,7 @@ async function openChat(id) {
   // каждый шаг защищён: сбой в одном (например, в закреплённом сообщении) не должен мешать открыть чат
   try { updateChatStatus(ch); } catch (e) { console.warn('status', e); }
   try { mxApplyChatBackground(); } catch (e) { console.warn('background', e); }
-  try { renderPinnedBar(ch.pinned || null); } catch (e) { console.warn('pinned', e); }
+  try { renderPinnedBar(ch.pinnedMessages || (ch.pinned ? [ch.pinned] : [])); } catch (e) { console.warn('pinned', e); }
   mxApplyChatInputState(ch);
   try { renderMessages(id); } catch (e) { console.warn('render', e); }
   goTo('s-chat-open');
@@ -3277,6 +3285,8 @@ function mxCallCardHtml(m) {
 function bubbleBodyHtml(m) {
   if (m.kind === 'CALL') return mxCallCardHtml(m);
   if (m.kind === 'SYSTEM_CARD') return window.mxSystemCardHtml ? window.mxSystemCardHtml(m) : '';
+  if (m.kind === 'POLL' && m.poll) return mxPollHtml(m);
+  if (m.kind === 'LOCATION' && m.location) return mxLocationHtml(m);
   if (m.viewOnce && window.mxOnceBubble) return window.mxOnceBubble(m); // одноразовое медиа: файла в чате нет, только плашка
   if (m.kind === 'VOICE') {
     return `<div class="mx-voice" data-audio-url="${esc(m.mediaUrl||'')}" data-mid="${esc(m.id)}">
@@ -3314,6 +3324,41 @@ function bubbleBodyHtml(m) {
   const big = mxBigEmojiCount(m.text);
   if (big) return `<div class="mx-txt mx-bigemoji mx-be${big}">${esc(m.text)}</div>`;
   return `<div class="mx-txt">${esc(m.text)}</div>`;
+}
+function mxPollHtml(m) {
+  const p = m.poll, total = p.options.reduce((n, o) => n + o.votes, 0);
+  return `<div class="mx1-poll-card" onclick="event.stopPropagation()"><div class="mx1-poll-q">${esc(p.question)}</div><div class="mx1-poll-options">${p.options.map((o) => {
+    const percent = total ? Math.round(o.votes * 100 / total) : 0;
+    const input = p.multiple ? 'checkbox' : 'radio';
+    const voters = !p.anonymous && o.voters && o.voters.length ? `<small>${o.voters.map((u) => '@' + esc(u.username)).join(', ')}</small>` : '';
+    return `<label class="mx1-poll-option${o.voted ? ' voted' : ''}"><input type="${input}" name="poll-${esc(m.id)}" value="${esc(o.id)}" ${o.voted ? 'checked' : ''}><span>${esc(o.text)}${voters}</span><b>${o.votes}</b><i style="width:${percent}%"></i></label>`;
+  }).join('')}</div><button type="button" class="mx1-vote-btn" onclick="event.stopPropagation();mxVotePoll('${esc(m.id)}',this)">Голосовать</button><small>${total} голосов · ${p.anonymous ? 'анонимный' : 'публичный'}${p.multiple ? ' · можно выбрать несколько' : ''}</small></div>`;
+}
+async function mxVotePoll(messageId, button) {
+  const card = button.closest('.mx1-poll-card');
+  const selected = [...card.querySelectorAll('input:checked')].map((el) => el.value);
+  if (!selected.length) { showToast('Выберите вариант'); return; }
+  button.disabled = true;
+  try {
+    const saved = await MchatAPI.votePoll(messageId, selected);
+    const list = messages[currentChatId] || [], at = list.findIndex((m) => m.id === messageId);
+    if (at >= 0) list[at] = msgFromServer(saved);
+    renderMessages(currentChatId);
+  } catch (e) { showToast(MchatAPI.errorText(e)); button.disabled = false; }
+}
+function mxLocationHtml(m) {
+  const p = m.location, url = 'https://maps.google.com/?q=' + encodeURIComponent(p.latitude + ',' + p.longitude);
+  const remaining = Math.max(0, Math.ceil((new Date(p.expiresAt).getTime() - Date.now()) / 60000));
+  return `<div class="mx1-location"><a href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><span>⌖</span><div><b>${p.active ? 'Геопозиция в реальном времени' : 'Передача геопозиции завершена'}</b><small>${p.active ? 'Обновляется · ещё ' + remaining + ' мин.' : 'Последнее местоположение'}</small></div></a>${p.active && m.outgoing ? `<button type="button" onclick="event.stopPropagation();mxStopLocation('${esc(m.id)}')">Завершить</button>` : ''}</div>`;
+}
+async function mxStopLocation(messageId) {
+  try {
+    const saved = await MchatAPI.stopLocation(messageId);
+    if (window._mx1StopLocationWatcher) window._mx1StopLocationWatcher(messageId);
+    const list = messages[currentChatId] || [], at = list.findIndex((m) => m.id === messageId);
+    if (at >= 0) list[at] = msgFromServer(saved);
+    renderMessages(currentChatId);
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
 }
 function mxFmtSize(n) {
   if (!n) return '';
@@ -3372,8 +3417,20 @@ function renderMessages(id) {
   c.scrollTop = c.scrollHeight;
   if (window.mxAfterRender) window.mxAfterRender(c, id); // плавающая дата и кнопка «вниз»
 }
-function mxScrollToMessage(id) {
-  const el = document.querySelector(`#messages-container .msg[data-id="${CSS.escape(id)}"]`);
+async function mxScrollToMessage(id) {
+  let el = document.querySelector(`#messages-container .msg[data-id="${CSS.escape(id)}"]`);
+  if (!el && currentChatId) {
+    const chatId = currentChatId;
+    try {
+      const raw = await MchatAPI.getMessage(id);
+      if (currentChatId !== chatId || raw.chatId !== chatId) return;
+      const list = messages[chatId] || (messages[chatId] = []);
+      if (!list.some((m) => m.id === raw.id)) list.push(msgFromServer(raw));
+      list.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+      renderMessages(chatId);
+      el = document.querySelector(`#messages-container .msg[data-id="${CSS.escape(id)}"]`);
+    } catch (e) { showToast(MchatAPI.errorText(e)); return; }
+  }
   if (!el) return;
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   el.classList.add('mx-flash');
@@ -3421,7 +3478,7 @@ function mxGalleryStep(d) { // d = +1 вперёд (свайп влево), -1 �
   });
 })();
 
-const msgPreview = (m) => m.kind === 'VOICE' ? '🎤 Голосовое сообщение' : m.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : m.kind === 'IMAGE' ? '📷 Фото' : m.kind === 'VIDEO' ? '🎬 Видео' : m.kind === 'FILE' ? '📎 ' + (m.fileName || 'Файл') : m.kind === 'CALL' ? '📞 Звонок' : m.kind === 'SYSTEM_CARD' ? '🔐 Вход в аккаунт' : m.text;
+const msgPreview = (m) => m.kind === 'VOICE' ? '🎤 Голосовое сообщение' : m.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : m.kind === 'IMAGE' ? '📷 Фото' : m.kind === 'VIDEO' ? '🎬 Видео' : m.kind === 'FILE' ? '📎 ' + (m.fileName || 'Файл') : m.kind === 'POLL' ? '📊 ' + (m.poll?.question || 'Опрос') : m.kind === 'LOCATION' ? '📍 Геопозиция' : m.kind === 'CALL' ? '📞 Звонок' : m.kind === 'SYSTEM_CARD' ? '🔐 Вход в аккаунт' : m.text;
 
 // Новое сообщение (по сокету): своё с другого устройства, либо от собеседника
 function onIncomingMessage(m) {
@@ -5129,19 +5186,22 @@ function mxSetPresenceText(elId, online, lastSeenAt) {
 // ЗАКРЕПЛЁННОЕ СООБЩЕНИЕ
 // ============================================================
 function renderPinnedBar(pinned) {
-  currentChatPinned = pinned || null;
+  const items = Array.isArray(pinned) ? pinned : (pinned ? [pinned] : []);
+  currentChatPinnedMessages = items;
+  currentChatPinned = items[0] || null;
   const bar = document.getElementById('mx-pinned');
   if (!bar) return;
-  if (!pinned) { bar.style.display = 'none'; return; }
+  if (!items.length) { bar.style.display = 'none'; return; }
   bar.style.display = 'flex';
-  const textEl = document.getElementById('mx-pinned-text');
-  if (textEl) textEl.textContent = msgPreview(pinned);
-  const canUnpin = currentChatMeta && (currentChatMeta.canModerate || currentChatMeta.type === 'DIRECT' || currentChatMeta.type === 'SAVED'); // в личных чатах открепить может любой из двоих
+  const canUnpin = currentChatMeta && (currentChatMeta.canModerate || currentChatMeta.type === 'DIRECT' || currentChatMeta.type === 'SAVED');
+  const list = document.getElementById('mx-pinned-items');
+  if (list) list.innerHTML = items.map((m) => `<div class="mx-pin-item"><button type="button" onclick="mxScrollToPinned('${esc(m.id)}')">${esc(msgPreview(m))}</button>${canUnpin ? `<button type="button" class="mx-pin-remove" title="Открепить" onclick="event.stopPropagation();mxUnpinMessage('${esc(m.id)}')">×</button>` : ''}</div>`).join('');
   const xBtn = document.getElementById('mx-pinned-x');
   if (xBtn) xBtn.style.display = canUnpin ? 'flex' : 'none';
 }
-function mxScrollToPinned() {
-  if (currentChatPinned) mxScrollToMessage(currentChatPinned.id);
+function mxScrollToPinned(id) {
+  const target = id || (currentChatPinned && currentChatPinned.id);
+  if (target) mxScrollToMessage(target);
 }
 async function mxUnpin() {
   if (!currentChatId) return;
@@ -5151,10 +5211,20 @@ async function mxUnpin() {
 async function mxPin(id) {
   if (!currentChatId) return;
   try {
-    const msg = await MchatAPI.pin(currentChatId, id);
-    renderPinnedBar(msg);
+    await MchatAPI.pin(currentChatId, id);
+    const result = await MchatAPI.listPins(currentChatId);
+    renderPinnedBar(result.messages || []);
     const ch = chats.find(c => c.id === currentChatId);
-    if (ch) ch.pinned = msg;
+    if (ch) { ch.pinnedMessages = result.messages || []; ch.pinned = ch.pinnedMessages[0] || null; }
+  } catch (e) { showToast(MchatAPI.errorText(e)); }
+}
+async function mxUnpinMessage(id) {
+  if (!currentChatId || !id) return;
+  try {
+    const result = await MchatAPI.unpinMessage(currentChatId, id);
+    renderPinnedBar(result.messages || []);
+    const ch = chats.find(c => c.id === currentChatId);
+    if (ch) { ch.pinnedMessages = result.messages || []; ch.pinned = ch.pinnedMessages[0] || null; }
   } catch (e) { showToast(MchatAPI.errorText(e)); }
 }
 
@@ -6000,8 +6070,27 @@ async function mxAttachChosen(evt) {
     if (mxKindOfFile(f) === 'image' && f.type !== 'image/gif') {
       const r = await mxPreviewOpen(f); // полноэкранное редактирование; для подборки кадры остаются связанным альбомом
       if (r) await mxSendAttachment(chatId, r.file, { caption: r.caption, hd: r.hd, clientId: cid });
+    } else if (mxKindOfFile(f) === 'video') {
+      const r = await mxVideoPreviewOpen(f);
+      if (r) await mxSendAttachment(chatId, r.file, { caption: r.caption, hd: r.hd, clientId: cid });
     } else await mxSendAttachment(chatId, f, { hd: mxHdPref(), clientId: cid });
   }
+}
+
+function mxVideoPreviewOpen(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file), overlay = document.createElement('div');
+    overlay.className = 'mx1-video-preview';
+    overlay.innerHTML = '<header><button data-cancel aria-label="Закрыть">×</button><b>Подготовка видео</b><button data-hd>HD</button></header><video controls autoplay playsinline></video><footer><input placeholder="Добавить подпись…" maxlength="1000"><button data-send>Отправить</button></footer>';
+    overlay.querySelector('video').src = url;
+    document.body.appendChild(overlay);
+    let hd = mxHdPref(), closed = false;
+    const clean = (value) => { if (closed) return; closed = true; URL.revokeObjectURL(url); overlay.remove(); resolve(value); };
+    const hdButton = overlay.querySelector('[data-hd]'); hdButton.classList.toggle('on', hd);
+    hdButton.onclick = () => { hd = !hd; hdButton.classList.toggle('on', hd); mxSetHdPref(hd); };
+    overlay.querySelector('[data-cancel]').onclick = () => clean(null);
+    overlay.querySelector('[data-send]').onclick = () => clean({ file, hd, caption: overlay.querySelector('input').value.trim() });
+  });
 }
 
 async function mxMultiPhotoPrepare(files, chatId, albumId) {
@@ -6034,7 +6123,7 @@ function mxPreviewOpen(file) {
       const k = Math.min(1, 2560 / Math.max(img.naturalWidth, img.naturalHeight)); // рабочее разрешение холста
       cv.width = Math.max(1, Math.round(img.naturalWidth * k)); cv.height = Math.max(1, Math.round(img.naturalHeight * k));
       cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-      mxPv = { resolve, file, url, hd: false, marker: false, drawn: false, last: null };
+      mxPv = { resolve, file, url, hd: false, marker: false, stamp: null, drawn: false, last: null };
       document.getElementById('mx-pv-caption').value = '';
       mxPreviewBind(cv); mxPreviewSyncUi();
       document.getElementById('mx-preview').classList.add('active');
@@ -6052,7 +6141,14 @@ function mxPreviewBind(cv) {
     c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
     mxPv.drawn = true;
   };
-  cv.addEventListener('pointerdown', (e) => { if (!mxPv || !mxPv.marker) return; cv.setPointerCapture(e.pointerId); mxPv.last = pt(e); stroke(mxPv.last, mxPv.last); });
+  const stamp = (p) => {
+    if (!mxPv || !mxPv.stamp) return;
+    const c = cv.getContext('2d');
+    if (typeof mxPv.stamp === 'string') { c.save(); c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = Math.max(42, cv.width * .13) + 'px "Apple Color Emoji","Segoe UI Emoji",sans-serif'; c.fillText(mxPv.stamp, p.x, p.y); c.restore(); }
+    else { const size = Math.max(70, cv.width * .2); c.drawImage(mxPv.stamp, p.x - size / 2, p.y - size / 2, size, size); }
+    mxPv.drawn = true;
+  };
+  cv.addEventListener('pointerdown', (e) => { if (!mxPv) return; if (mxPv.marker) { cv.setPointerCapture(e.pointerId); mxPv.last = pt(e); stroke(mxPv.last, mxPv.last); } else if (mxPv.stamp) stamp(pt(e)); });
   cv.addEventListener('pointermove', (e) => { if (!mxPv || !mxPv.marker || !mxPv.last) return; const p = pt(e); stroke(mxPv.last, p); mxPv.last = p; });
   ['pointerup', 'pointercancel'].forEach((t) => cv.addEventListener(t, () => { if (mxPv) mxPv.last = null; }));
 }
@@ -6060,10 +6156,18 @@ function mxPreviewSyncUi() {
   const hd = document.getElementById('mx-pv-hd'), mk = document.getElementById('mx-pv-marker'), cv = document.getElementById('mx-pv-canvas');
   hd.style.background = mxPv.hd ? 'var(--accent)' : 'transparent'; hd.style.borderColor = mxPv.hd ? 'var(--accent)' : 'rgba(255,255,255,.5)';
   mk.style.background = mxPv.marker ? 'var(--accent)' : 'transparent';
-  cv.style.cursor = mxPv.marker ? 'crosshair' : 'default';
+  cv.style.cursor = mxPv.marker || mxPv.stamp ? 'crosshair' : 'default';
 }
 function mxPreviewToggleHD() { if (!mxPv) return; mxPv.hd = !mxPv.hd; mxPreviewSyncUi(); showToast(mxPv.hd ? 'HD: до 2560 px' : 'Обычное качество: до 1280 px'); }
-function mxPreviewToggleMarker() { if (!mxPv) return; mxPv.marker = !mxPv.marker; mxPreviewSyncUi(); }
+function mxPreviewToggleMarker() { if (!mxPv) return; mxPv.marker = !mxPv.marker; if (mxPv.marker) mxPv.stamp = null; mxPreviewSyncUi(); }
+function mxPreviewSetStamp(value) { if (!mxPv) return; mxPv.stamp = value; mxPv.marker = false; mxPreviewSyncUi(); showToast('Нажмите на фото, чтобы поставить эмодзи'); }
+function mxPreviewLoadSticker(event) {
+  const file = event.target.files && event.target.files[0]; event.target.value = '';
+  if (!mxPv || !file) return;
+  const url = URL.createObjectURL(file), img = new Image();
+  img.onload = () => { URL.revokeObjectURL(url); if (!mxPv) return; mxPv.stamp = img; mxPv.marker = false; mxPreviewSyncUi(); showToast('Нажмите на фото, чтобы поставить стикер'); };
+  img.onerror = () => URL.revokeObjectURL(url); img.src = url;
+}
 function mxPreviewClose() {
   if (!mxPv) return;
   const pv = mxPv; mxPv = null;

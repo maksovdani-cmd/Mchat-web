@@ -37,6 +37,8 @@ enum MessageKind {
   CALL
   /// служебная карточка официального аккаунта Mchat (уведомление о входе и т.п., JSON в text); создаётся только сервером
   SYSTEM_CARD
+  POLL
+  LOCATION
 }
 
 enum MediaKind {
@@ -105,6 +107,7 @@ model User {
   pushSubs       PushSubscription[]
   media          Media[]
   reactions      Reaction[]
+  pollVotes      PollVote[]
   hiddenMessages MessageHide[]
   friendsSent     Friendship[] @relation("FriendRequester")
   friendsReceived Friendship[] @relation("FriendAddressee")
@@ -230,7 +233,7 @@ model Chat {
   isPublic      Boolean      @default(false)
   /// приватный канал/группа: вход по ссылке только через заявку, содержимое защищено (нельзя пересылать, копировать, скачивать)
   isPrivate     Boolean      @default(false)
-  /// закреплённое сообщение (одно на чат)
+  /// первое закреплённое сообщение (legacy cache; полный список в ChatPinnedMessage)
   pinnedMessageId String?
   /// исчезающие сообщения: через сколько секунд удалять (null — выключено). Сейчас используется значение 86400 (24 часа)
   autoDeleteSec Int?
@@ -242,6 +245,7 @@ model Chat {
   members       ChatMember[]
   messages      Message[]
   joinRequests  ChatJoinRequest[]
+  pinnedMessages ChatPinnedMessage[]
 
   @@index([lastMessageAt])
 }
@@ -370,10 +374,65 @@ model Message {
   hides     MessageHide[]
   viewOnceViews ViewOnceView[]
   comments  ChannelComment[]
+  pins      ChatPinnedMessage[]
+  poll      MessagePoll?
+  location  LiveLocation?
 
   @@unique([senderId, clientId])
   @@index([chatId, createdAt])
   @@index([mediaId])
+}
+
+model MessagePoll {
+  messageId String          @id
+  message   Message         @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  question  String
+  multiple  Boolean         @default(false)
+  anonymous Boolean        @default(true)
+  options   PollOption[]
+  createdAt DateTime        @default(now())
+}
+
+model PollOption {
+  id        String          @id @default(cuid())
+  pollId    String
+  poll      MessagePoll     @relation(fields: [pollId], references: [messageId], onDelete: Cascade)
+  position  Int
+  text      String
+  votes     PollVote[]
+
+  @@unique([pollId, position])
+}
+
+model PollVote {
+  optionId String
+  option   PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@id([optionId, userId])
+  @@index([userId])
+}
+
+model LiveLocation {
+  messageId String   @id
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  latitude  Float
+  longitude Float
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+}
+
+model ChatPinnedMessage {
+  chatId    String
+  chat      Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  messageId String
+  message   Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  pinnedAt  DateTime  @default(now())
+
+  @@id([chatId, messageId])
+  @@index([chatId, pinnedAt])
 }
 
 /// Загруженный файл: голосовое, кружок, фото или трек профиля.
