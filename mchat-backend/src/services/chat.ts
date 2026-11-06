@@ -35,7 +35,6 @@ export const messageInclude = {
   reactions: { select: { emoji: true, userId: true, user: { select: { id: true, name: true, username: true, avatarUrl: true } } } },
   media: { select: { title: true, size: true, hd: true } },
   sticker: { select: { id: true, packId: true, pack: { select: { title: true } } } },
-  poll: { include: { options: { include: { votes: { select: { userId: true, user: { select: { id: true, name: true, username: true, avatarUrl: true } } } }, orderBy: { position: 'asc' } } } },
   poll: {
     include: {
       options: {
@@ -86,7 +85,6 @@ export interface MessageDTO {
   sticker: { id: string; packId: string; packTitle: string } | null;
   /** карточка официального аккаунта (kind === 'SYSTEM_CARD'), например подтверждение входа */
   card: SystemCardDTO | null;
-  poll: { question: string; multiple: boolean; anonymous: boolean; options: { id: string; text: string; votes: number; voted: boolean; voters: { id: string; name: string; username: string; avatar: string | null }[] }[] } | null;
   poll: {
     question: string;
     description: string;
@@ -198,9 +196,6 @@ export const toMessageDTO = (m: FullMessage, viewerId?: string): MessageDTO => (
   viewOnceOpened: !!m.viewOnceOpenedAt,
   sticker: m.sticker ? { id: m.sticker.id, packId: m.sticker.packId, packTitle: m.sticker.pack.title } : null,
   card: m.kind === 'SYSTEM_CARD' ? parseCard(m.text) : null,
-  poll: m.poll ? { question: m.poll.question, multiple: m.poll.multiple, anonymous: m.poll.anonymous,
-    options: m.poll.options.map((o) => ({ id: o.id, text: o.text, votes: o.votes.length, voted: !!viewerId && o.votes.some((v) => v.userId === viewerId),
-      voters: m.poll!.anonymous ? [] : o.votes.map((v) => ({ id: v.user.id, name: v.user.name, username: v.user.username, avatar: v.user.avatarUrl })) })) } : null,
   poll: m.poll ? (() => {
     const poll = m.poll!;
     const voted = !!viewerId && poll.options.some((o) => o.votes.some((v) => v.userId === viewerId));
@@ -648,7 +643,6 @@ export async function createMessage(userId: string, chatId: string, input: Creat
   }
 }
 
-export async function createPollMessage(userId: string, chatId: string, raw: { question: string; options: string[]; multiple?: boolean; anonymous?: boolean }) {
 export async function createPollMessage(userId: string, chatId: string, raw: {
   question: string; description?: string; options: string[]; multiple?: boolean; anonymous?: boolean;
   allowAdding?: boolean; allowRevote?: boolean; shuffleOptions?: boolean; quiz?: boolean;
@@ -659,12 +653,10 @@ export async function createPollMessage(userId: string, chatId: string, raw: {
   const options = raw.options.map((x) => x.trim());
   const correctOptionPosition = raw.correctOptionPosition ?? null;
   const closesAt = raw.closesAt ? new Date(raw.closesAt) : null;
-  if (!question || question.length > 240 || options.length < 2 || options.length > 10 || options.some((x) => !x || x.length > 100) || new Set(options.map((x) => x.toLocaleLowerCase())).size !== options.length) throw new HttpError(400, 'bad_poll');
   if (!question || question.length > 240 || description.length > 500 || options.length < 2 || options.length > 12 || options.some((x) => !x || x.length > 100) || new Set(options.map((x) => x.toLocaleLowerCase())).size !== options.length) throw new HttpError(400, 'bad_poll');
   if (raw.quiz && (!Number.isInteger(correctOptionPosition) || correctOptionPosition! < 0 || correctOptionPosition! >= options.length)) throw new HttpError(400, 'bad_poll');
   if (closesAt && (!Number.isFinite(closesAt.getTime()) || closesAt.getTime() < Date.now() + 60_000 || closesAt.getTime() > Date.now() + 365 * 24 * 60 * 60_000)) throw new HttpError(400, 'bad_poll_deadline');
   const { message } = await createMessage(userId, chatId, { kind: 'POLL', clientId: randomToken(16) });
-  await prisma.messagePoll.create({ data: { messageId: message.id, question, multiple: !!raw.multiple, anonymous: raw.anonymous !== false, options: { create: options.map((text, position) => ({ text, position })) } } });
   await prisma.messagePoll.create({ data: {
     messageId: message.id,
     question,
@@ -762,20 +754,24 @@ export async function forwardMessage(userId: string, messageId: string, targetCh
   });
   if (forwarded.duplicate) return forwarded;
   if (msg.kind === 'POLL' && msg.poll) {
-    await prisma.messagePoll.create({ data: { messageId: forwarded.message.id, question: msg.poll.question, multiple: msg.poll.multiple, anonymous: msg.poll.anonymous,
-    await prisma.messagePoll.create({ data: {
-      messageId: forwarded.message.id,
-      question: msg.poll.question,
-      description: msg.poll.description,
-      multiple: msg.poll.multiple,
-      anonymous: msg.poll.anonymous,
-      allowAdding: msg.poll.allowAdding,
-      allowRevote: msg.poll.allowRevote,
-      shuffleOptions: msg.poll.shuffleOptions,
-      quiz: msg.poll.quiz,
-      correctOptionPosition: msg.poll.correctOptionPosition,
-      closesAt: msg.poll.closesAt,
-      options: { create: msg.poll.options.map((o, position) => ({ text: o.text, position })) } } });
+    await prisma.messagePoll.create({
+      data: {
+        messageId: forwarded.message.id,
+        question: msg.poll.question,
+        description: msg.poll.description,
+        multiple: msg.poll.multiple,
+        anonymous: msg.poll.anonymous,
+        allowAdding: msg.poll.allowAdding,
+        allowRevote: msg.poll.allowRevote,
+        shuffleOptions: msg.poll.shuffleOptions,
+        quiz: msg.poll.quiz,
+        correctOptionPosition: msg.poll.correctOptionPosition,
+        closesAt: msg.poll.closesAt,
+        options: {
+          create: msg.poll.options.map((o, position) => ({ text: o.text, position })),
+        },
+      },
+    });
   } else if (msg.kind === 'LOCATION' && msg.location) {
     await prisma.liveLocation.create({ data: { messageId: forwarded.message.id, latitude: msg.location.latitude, longitude: msg.location.longitude, expiresAt: msg.location.expiresAt } });
   } else return forwarded;
