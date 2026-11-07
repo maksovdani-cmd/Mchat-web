@@ -53,6 +53,7 @@ export const messageInclude = {
   },
   location: true,
 } satisfies Prisma.MessageInclude;
+} as const;
 export type FullMessage = Prisma.MessageGetPayload<{ include: typeof messageInclude }>;
 
 export interface ReactionUserDTO { id: string; name: string; username: string; avatar: string | null }
