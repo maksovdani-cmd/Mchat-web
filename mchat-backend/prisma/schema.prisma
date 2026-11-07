@@ -31,6 +31,7 @@ enum MessageKind {
   VOICE
   VIDEO_NOTE
   IMAGE
+  STICKER
   VIDEO
   FILE
   /// служебная карточка завершённого звонка (JSON в text); создаётся только сервером

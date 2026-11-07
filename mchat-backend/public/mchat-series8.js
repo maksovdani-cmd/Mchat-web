@@ -349,14 +349,17 @@
     if (b.classList.contains('on') !== !!on) b.classList.toggle('on', !!on);
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
   }
+  let flashRevision = 0;
   async function applyFlash(announce) {
+    const revision = ++flashRevision;
     const cam = camNow(); if (!cam) { setScreenLight(false); paintFlashBtn(false); return; }
     const on = !!cam.flashOn, t = camTrackNow();
     let torch = false;
     if (t && torchCapable(t)) {
       if (on && cam.facing === 'environment') { try { await t.applyConstraints({ advanced: [{ torch: true }] }); torch = true; } catch (e) { console.warn('[camera] torch отклонён:', e && e.name); } }
-      else if (cam.torchOn) { try { await t.applyConstraints({ advanced: [{ torch: false }] }); } catch (e) { /* трек уже остановлен */ } }
+      else if (cam.torchOn || !on) { try { await t.applyConstraints({ advanced: [{ torch: false }] }); } catch (e) { /* трек уже остановлен */ } }
     }
+    if (revision !== flashRevision || cam !== camNow()) return applyFlash(false);
     cam.torchOn = torch;
     setScreenLight(on && !torch);
     paintFlashBtn(on);
@@ -365,9 +368,20 @@
   window.mxCameraFlash = function () {
     const cam = camNow(); if (!cam) return;
     cam.flashOn = !cam.flashOn;
+    // сразу обновляем состояние кнопки; CSS-позиция панели инструментов остаётся неподвижной
+    paintFlashBtn(cam.flashOn);
     return applyFlash(true);
   };
   window.mxCamOnTrack = function () { const cam = camNow(); if (cam && cam.flashOn) applyFlash(false); };
+  const _camStopRecording = window.mxCameraStopRecording;
+  if (typeof _camStopRecording === 'function') {
+    window.mxCameraStopRecording = function () {
+      const cam = camNow();
+      const result = _camStopRecording.apply(this, arguments);
+      if (cam && cam.flashOn) window.mxCameraFlash();
+      return result;
+    };
+  }
   // закрыли камеру — подсветка и кнопка сбрасываются (аппаратная вспышка гаснет вместе с остановкой трека)
   const _camClose = window.mxCameraClose;
   if (typeof _camClose === 'function') {

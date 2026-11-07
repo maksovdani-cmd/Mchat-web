@@ -210,7 +210,11 @@ function openUserProfile(username) {
     document.getElementById('up-following-count').textContent = u.following || 0;
     mxSetPresenceText('up-status', u.online, u.lastSeenAt);
     if (window.mxFeatOnUserLoaded) window.mxFeatOnUserLoaded(u);
-  }).catch(() => {});
+  }).catch((e) => {
+    if (upViewedUsername !== username || e.status !== 404) return;
+    closeUserProfile();
+    if (window.showToast) showToast('Этот системный аккаунт нельзя открыть как профиль');
+  });
 }
 
 function closeUserProfile() {
@@ -3255,7 +3259,7 @@ function reactionsHtml(m) {
 }
 function replyQuoteHtml(m) {
   if (!m.replyTo) return '';
-  const label = m.replyTo.deleted ? 'Сообщение удалено' : (m.replyTo.kind === 'VOICE' ? '🎤 Голосовое' : m.replyTo.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : m.replyTo.kind === 'IMAGE' ? '📷 Фото' : m.replyTo.text);
+  const label = m.replyTo.deleted ? 'Сообщение удалено' : (m.replyTo.kind === 'VOICE' ? '🎤 Голосовое' : m.replyTo.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : m.replyTo.kind === 'STICKER' ? '🎨 Стикер' : m.replyTo.kind === 'IMAGE' ? '📷 Фото' : m.replyTo.text);
   return `<div class="mx-quote" onclick="event.stopPropagation();mxScrollToMessage('${esc(m.replyTo.id)}')">
     <div class="mx-quote-name">${esc(m.replyTo.senderName || 'Собеседник')}</div><div class="mx-quote-text">${esc(label)}</div>
   </div>`;
@@ -3318,7 +3322,7 @@ function bubbleBodyHtml(m) {
       ${m.failed ? '<div class="mx-vn-retry" onclick="event.stopPropagation();mxVnRetry(\'' + esc(m.id) + '\')">Повторить</div>' : ''}
     </div>`;
   }
-  if (m.kind === 'IMAGE' && mxIsSticker(m)) {
+  if (m.kind === 'STICKER' || (m.kind === 'IMAGE' && mxIsSticker(m))) {
     // стикер: без рамки баббла; тап открывает меню сообщения (там же «Коллекция»), а не просмотрщик фото
     return `<img class="mx-img mx-stk-img" src="${esc(m.mediaUrl||'')}" draggable="false" alt="" onerror="mxMediaLost(this)">${mxUploadBar(m)}`;
   }
@@ -3410,7 +3414,7 @@ function mxMediaLost(el) {
   el.replaceWith(box);
 }
 /** Стикер — картинка, отправленная из редактора стикеров (clientId начинается с «stk_»): без рамки и фона баббла. */
-function mxIsSticker(m) { return !!(m && m.kind === 'IMAGE' && !m.viewOnce && (m.sticker || (typeof m.clientId === 'string' && m.clientId.indexOf('stk_') === 0))); }
+function mxIsSticker(m) { return !!(m && !m.viewOnce && (m.kind === 'STICKER' || (m.kind === 'IMAGE' && (m.sticker || (typeof m.clientId === 'string' && m.clientId.indexOf('stk_') === 0))))); }
 const MX_TICK_SVG = {
   clock: '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.8V8l2.2 1.4"/></svg>',
   one: '<svg viewBox="0 0 18 12" width="16" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l3.4 3.4L12 2.5"/></svg>',
@@ -3441,7 +3445,7 @@ function renderMessages(id) {
     const cls = ['msg', m.outgoing?'mo':'mi'];
     if (m.kind === 'TEXT' && mxBigEmojiCount(m.text)) cls.push('mx-emoji-only');
     if (m.kind === 'VIDEO_NOTE' && !m.viewOnce) cls.push('mx-vn');
-    if (m.kind === 'IMAGE' && !m.viewOnce) cls.push(mxIsSticker(m) ? 'mx-sticker' : 'mx-photo');
+    if ((m.kind === 'IMAGE' || m.kind === 'STICKER') && !m.viewOnce) cls.push(mxIsSticker(m) ? 'mx-sticker' : 'mx-photo');
     if (m.kind === 'VIDEO' && !m.viewOnce) cls.push('mx-media');
     if (m.viewOnce) cls.push('mx-once-msg');
     if (m.kind === 'TEXT') cls.push('mx-tm');   // текст + время в одном потоке (Telegram)
@@ -3514,7 +3518,7 @@ function mxGalleryStep(d) { // d = +1 вперёд (свайп влево), -1 �
   });
 })();
 
-const msgPreview = (m) => m.kind === 'VOICE' ? '🎤 Голосовое сообщение' : m.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : m.kind === 'IMAGE' ? '📷 Фото' : m.kind === 'VIDEO' ? '🎬 Видео' : m.kind === 'FILE' ? '📎 ' + (m.fileName || 'Файл') : m.kind === 'POLL' ? '📊 ' + (m.poll?.question || 'Опрос') : m.kind === 'LOCATION' ? '📍 Геопозиция' : m.kind === 'CALL' ? '📞 Звонок' : m.kind === 'SYSTEM_CARD' ? '🔐 Вход в аккаунт' : m.text;
+const msgPreview = (m) => m.kind === 'VOICE' ? '🎤 Голосовое сообщение' : m.kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение' : m.kind === 'STICKER' ? '🎨 Стикер' : m.kind === 'IMAGE' ? (mxIsSticker(m) ? '🎨 Стикер' : '📷 Фото') : m.kind === 'VIDEO' ? '🎬 Видео' : m.kind === 'FILE' ? '📎 ' + (m.fileName || 'Файл') : m.kind === 'POLL' ? '📊 ' + (m.poll?.question || 'Опрос') : m.kind === 'LOCATION' ? '📍 Геопозиция' : m.kind === 'CALL' ? '📞 Звонок' : m.kind === 'SYSTEM_CARD' ? '🔐 Вход в аккаунт' : m.text;
 
 // Новое сообщение (по сокету): своё с другого устройства, либо от собеседника
 function onIncomingMessage(m) {
@@ -6261,3 +6265,4 @@ document.addEventListener('DOMContentLoaded', () => {
   setupPinchZoom(document.getElementById('pv-img'));
   setupTextPinchScale();
 });
+  

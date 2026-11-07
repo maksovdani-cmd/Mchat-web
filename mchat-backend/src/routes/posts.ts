@@ -5,7 +5,9 @@ import {
   addComment, setCommentLike, mentionCandidates, addRepost, addStoryComment, createPost, createStory, deletePost, deleteStory, getPost, listFeed, listReposts,
   listStoriesFeed, listUserPosts, listUserStories, searchPosts, setLike, setStoryLike,
 } from '../services/posts';
-import { wrap } from '../utils/errors';
+import { HttpError, wrap } from '../utils/errors';
+import { prisma } from '../db';
+import { normalizeUsername } from '../utils/validate';
 
 const mediaId = z.string().min(1).max(40);
 const intId = z.coerce.number().int().positive();
@@ -18,6 +20,10 @@ postsRouter.use(requireAuth);
 postsRouter.get('/', wrap(async (req, res) => {
   const { userId } = authOf(req);
   const username = typeof req.query.username === 'string' ? req.query.username : '';
+  if (username) {
+    const profileUser = await prisma.user.findUnique({ where: { username: normalizeUsername(username) }, select: { id: true, isSystem: true } });
+    if (profileUser?.isSystem && profileUser.id !== userId) throw new HttpError(404, 'user_not_found');
+  }
   res.json({ posts: username ? await listUserPosts(userId, username) : await listFeed(userId) });
 }));
 
@@ -28,7 +34,10 @@ postsRouter.get('/search', wrap(async (req, res) => {
 
 postsRouter.get('/reposts', wrap(async (req, res) => {
   const username = z.string().min(1).max(40).parse(req.query.username);
-  res.json({ posts: await listReposts(authOf(req).userId, username) });
+  const userId = authOf(req).userId;
+  const profileUser = await prisma.user.findUnique({ where: { username: normalizeUsername(username) }, select: { id: true, isSystem: true } });
+  if (profileUser?.isSystem && profileUser.id !== userId) throw new HttpError(404, 'user_not_found');
+  res.json({ posts: await listReposts(userId, username) });
 }));
 
 postsRouter.post('/', wrap(async (req, res) => {

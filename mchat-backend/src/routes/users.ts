@@ -167,9 +167,10 @@ usersRouter.get(
 usersRouter.get(
   '/users/:username/tracks',
   wrap(async (req, res) => {
-    const u = await prisma.user.findUnique({ where: { username: normalizeUsername(String(req.params.username)) }, select: { id: true, username: true } });
+    const u = await prisma.user.findUnique({ where: { username: normalizeUsername(String(req.params.username)) }, select: { id: true, username: true, isSystem: true } });
     if (!u) throw new HttpError(404, 'user_not_found');
     const me = authOf(req).userId;
+    if (u.isSystem && u.id !== me) throw new HttpError(404, 'user_not_found');
     const tracks = await prisma.media.findMany({ where: { ownerId: u.id, kind: 'TRACK' }, orderBy: { createdAt: 'desc' }, take: 50 });
     const saved = tracks.length
       ? new Set((await prisma.savedTrack.findMany({ where: { userId: me, mediaId: { in: tracks.map((t) => t.id) } }, select: { mediaId: true } })).map((x) => x.mediaId))
@@ -187,6 +188,7 @@ usersRouter.get(
       select: { ...publicUserSelect, bio: true, bannerUrl: true, musicTrack: true, hideOnline: true, hideFollowing: true, lastSeenAt: true },
     });
     if (!u) throw new HttpError(404, 'user_not_found');
+    if (u.isSystem && u.id !== me) throw new HttpError(404, 'user_not_found');
     const [friendship, tracks, counts, musicTrack, storyCount, followsAuthor, momentActive] = await Promise.all([
       u.id === me ? { status: 'self', id: null } : friendInfo(me, u.id),
       prisma.media.count({ where: { ownerId: u.id, kind: 'TRACK' } }),

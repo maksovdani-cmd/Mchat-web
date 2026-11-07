@@ -110,3 +110,4 @@ html.mx8-lite .general-star::before{ animation:none !important; }
 #mx-camera.mx-light .mx-cam-timer{ color:#111; }
 #mx-camera.mx-light .mx-cam-stage video{ box-shadow:0 0 0 4px #fff; }
 #mx-camera.mx-light.recording .mx-cam-stage video{ box-shadow:0 0 0 5px #ef4444; }
+#mx-camera .mx-cam-tools{ transform:none!important; }

@@ -10,6 +10,7 @@
     let body = m.text ? '<div class="mx1-prev-text">' + esc(m.text) + '</div>' : '';
     if (m.kind === 'POLL' && m.poll) body = '<div class="mx1-prev-text">📊 ' + esc(m.poll.question) + '</div>';
     if (m.kind === 'LOCATION') body = '<div class="mx1-prev-text">📍 Геопозиция</div>';
+    if (m.kind === 'STICKER') body = '<div class="mx1-prev-text">🎨 Стикер</div>';
     if (m.mediaUrl && m.kind === 'IMAGE') body += '<img class="mx1-prev-media" src="' + esc(m.mediaUrl) + '" alt="">';
     if (m.mediaUrl && (m.kind === 'VIDEO' || m.kind === 'VIDEO_NOTE')) body += '<video class="mx1-prev-media" src="' + esc(m.mediaUrl) + '" muted playsinline preload="metadata"></video>';
     if (m.kind === 'FILE') body += '<div class="mx1-prev-file">' + esc(m.fileName || 'Файл') + '</div>';
@@ -99,17 +100,44 @@
     modal.innerHTML = '<div class="mx1-modal-card"><b>Передать геопозицию</b><p>Продолжительность передачи</p><div class="mx1-durations"><button data-min="30">30 минут</button><button data-min="60">1 час</button><button data-min="480">8 часов</button></div><button class="mx1-cancel">Отмена</button></div>';
     document.body.appendChild(modal); modal.onclick = (e) => { if (e.target === modal) modal.remove(); }; modal.querySelector('.mx1-cancel').onclick = () => modal.remove();
     modal.querySelectorAll('[data-min]').forEach((b) => b.onclick = () => {
-      if (!navigator.geolocation) { if (window.showToast) showToast('Геопозиция недоступна'); return; }
+      if (!navigator.geolocation) { if (window.showToast) showToast('Геопозиция недоступна в этом браузере'); return; }
+      if (!window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') { if (window.showToast) showToast('Для геопозиции откройте Mchat через HTTPS'); return; }
       b.disabled = true; b.textContent = 'Определяем…';
-      navigator.geolocation.getCurrentPosition(async (pos) => {
+      const getPosition = (options) => new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, options));
+      const locate = async () => {
+        try { return await getPosition({ enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }); }
+        catch (firstError) {
+          if (firstError && firstError.code === 1) throw firstError;
+          return getPosition({ enableHighAccuracy: false, timeout: 30000, maximumAge: 60000 });
+        }
+      };
+      locate().then(async (pos) => {
         try {
           const durationMinutes = Number(b.dataset.min);
           const msg = await MchatAPI.createLocation(currentChatId, { latitude: pos.coords.latitude, longitude: pos.coords.longitude, durationMinutes });
           if (typeof window.onIncomingMessage === 'function') window.onIncomingMessage(msg);
           startLocationUpdates(msg.id, durationMinutes); modal.remove();
         } catch (err) { b.disabled = false; b.textContent = 'Повторить'; if (window.showToast) showToast(MchatAPI.errorText(err)); }
-      }, () => { b.disabled = false; b.textContent = 'Не удалось определить'; }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+      }).catch((error) => {
+        b.disabled = false; b.textContent = 'Повторить';
+        const reason = error && error.code === 1 ? 'Разрешите доступ к геопозиции в настройках браузера' : error && error.code === 2 ? 'Местоположение недоступно. Проверьте GPS и сеть' : error && error.code === 3 ? 'Определение заняло слишком долго. Попробуйте ещё раз' : 'Не удалось определить геопозицию';
+        if (window.showToast) showToast(reason);
+      });
     });
+  }
+
+  /* Кнопка создания скрывается только во время прокрутки списка чатов. */
+  const chatsList = document.getElementById('chats-list');
+  if (chatsList) {
+    let fabIdleTimer = null;
+    chatsList.addEventListener('scroll', () => {
+      const fab = document.getElementById('mx-fab');
+      if (!fab) return;
+      fab.classList.add('mx-scrolling');
+      if (typeof window.mxFabClose === 'function') window.mxFabClose();
+      clearTimeout(fabIdleTimer);
+      fabIdleTimer = setTimeout(() => fab.classList.remove('mx-scrolling'), 260);
+    }, { passive: true });
   }
 
   const locationWatchers = new Map();

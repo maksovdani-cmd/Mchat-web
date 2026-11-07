@@ -58,12 +58,11 @@
   window.addEventListener('resize', repositionOpen, { passive: true });
 
   /* ═════════ 7. Прокрутка: не «кидает» вниз при реакции/удалении медиа ═════════ */
-  const lastCount = {};
   let freshId = null;
   if (typeof window.openChat === 'function') {
     const _open = window.openChat;
     window.openChat = async function (id) {
-      freshId = id; lastCount[id] = undefined;
+      freshId = id;
       try { return await _open.apply(this, arguments); } finally { setTimeout(() => { if (freshId === id) freshId = null; }, 0); }
     };
   }
@@ -75,7 +74,7 @@
     const fresh = freshId === id || c.dataset.mxChat !== id || !c.firstElementChild;
     let near = true, anchor = null;
     if (!fresh) {
-      near = c.scrollHeight - c.scrollTop - c.clientHeight < 160;
+      near = c.scrollHeight - c.scrollTop - c.clientHeight < 2;
       if (!near) {
         const cr = c.getBoundingClientRect();
         for (const el of c.querySelectorAll('.msg[data-id]')) {
@@ -85,19 +84,37 @@
         }
       }
     }
-    const prev = lastCount[id], last = list[list.length - 1];
-    const ownSend = !!(last && last.outgoing && prev !== undefined && list.length > prev);
     const out = _render.apply(this, arguments);
-    c.dataset.mxChat = id; lastCount[id] = list.length;
+    c.dataset.mxChat = id;
     try { buildAlbums(c, id); } catch (e) { console.warn('albums', e); }
     try { decorateVoices(c); } catch (e) { console.warn('voices', e); }
-    if (fresh || near || ownSend) c.scrollTop = c.scrollHeight;
+    if (fresh || near) c.scrollTop = c.scrollHeight;
     else if (anchor) {
       const el2 = c.querySelector('.msg[data-id="' + CSS.escape(anchor.id) + '"]');
       if (el2 && el2.style.display !== 'none') { c.scrollTop += (el2.getBoundingClientRect().top - c.getBoundingClientRect().top) - anchor.off; }
     }
     return out;
   };
+
+  /* Ответ свайпом влево: использует тот же mxReplyTo, что и пункт меню. */
+  const messageScroller = $('messages-container');
+  if (messageScroller) {
+    let swipe = null;
+    messageScroller.addEventListener('pointerdown', (e) => {
+      const type = typeof currentChatMeta !== 'undefined' && currentChatMeta && currentChatMeta.type;
+      if (type !== 'DIRECT' && type !== 'GROUP') return;
+      const msg = e.target.closest('.msg[data-id]');
+      if (!msg || e.button !== 0 || e.target.closest('button,a,input,audio')) return;
+      swipe = { id: msg.dataset.id, x: e.clientX, y: e.clientY, pointerId: e.pointerId };
+    }, { passive: true });
+    messageScroller.addEventListener('pointerup', (e) => {
+      if (!swipe || swipe.pointerId !== e.pointerId) return;
+      const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y, id = swipe.id;
+      swipe = null;
+      if (dx < -55 && Math.abs(dx) > Math.abs(dy) * 1.3 && typeof window.mxReplyTo === 'function') window.mxReplyTo(id);
+    }, { passive: true });
+    messageScroller.addEventListener('pointercancel', () => { swipe = null; }, { passive: true });
+  }
 
   /* ═════════ 1. Реакции с мини-аватарками ═════════ */
   const GRADS = ['#6c6cf5,#9b5cf6', '#f59e0b,#ef4444', '#10b981,#06b6d4', '#ec4899,#8b5cf6', '#3b82f6,#06b6d4', '#f97316,#eab308'];
@@ -447,7 +464,7 @@
     try {
       const file = new File([blob], 'sticker.' + (blob.type === 'image/webp' ? 'webp' : 'png'), { type: blob.type });
       const media = await MchatAPI.uploadMedia('image', file, { name: file.name });
-      const saved = await MchatAPI.sendMessage(chatId, '', 'stk_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), { kind: 'IMAGE', mediaId: media.id });   // «stk_» — признак стикера (без рамки баббла)
+      const saved = await MchatAPI.sendMessage(chatId, '', 'stk_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), { kind: 'STICKER', mediaId: media.id });
       onIncomingMessage(saved);
       return true;
     } catch (e) { toast(MchatAPI.errorText(e)); return false; }

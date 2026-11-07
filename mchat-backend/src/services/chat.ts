@@ -35,6 +35,7 @@ export const messageInclude = {
   reactions: { select: { emoji: true, userId: true, user: { select: { id: true, name: true, username: true, avatarUrl: true } } } },
   media: { select: { title: true, size: true, hd: true } },
   sticker: { select: { id: true, packId: true, pack: { select: { title: true } } } },
+  poll: { include: { options: { include: { votes: { select: { userId: true, user: { select: { id: true, name: true, username: true, avatarUrl: true } } } }, orderBy: { position: 'asc' } } } },
   poll: {
     include: {
       options: {
@@ -85,6 +86,7 @@ export interface MessageDTO {
   sticker: { id: string; packId: string; packTitle: string } | null;
   /** карточка официального аккаунта (kind === 'SYSTEM_CARD'), например подтверждение входа */
   card: SystemCardDTO | null;
+  poll: { question: string; multiple: boolean; anonymous: boolean; options: { id: string; text: string; votes: number; voted: boolean; voters: { id: string; name: string; username: string; avatar: string | null }[] }[] } | null;
   poll: {
     question: string;
     description: string;
@@ -153,6 +155,7 @@ const parseCard = (text: string): SystemCardDTO | null => {
 export const previewOf = (kind: MessageKind, text: string) =>
   kind === 'TEXT' ? text : kind === 'VOICE' ? '🎤 Голосовое сообщение' : kind === 'VIDEO_NOTE' ? '🎥 Видеосообщение'
     : kind === 'VIDEO' ? '🎬 Видео' : kind === 'FILE' ? '📎 Файл' : kind === 'POLL' ? '📊 Опрос' : kind === 'LOCATION' ? '📍 Геопозиция' : kind === 'CALL' ? '📞 Звонок' : kind === 'SYSTEM_CARD' ? '🔐 Вход в аккаунт' : '📷 Фото';
+    : kind === 'STICKER' ? '🎨 Стикер' : kind === 'VIDEO' ? '🎬 Видео' : kind === 'FILE' ? '📎 Файл' : kind === 'POLL' ? '📊 Опрос' : kind === 'LOCATION' ? '📍 Геопозиция' : kind === 'CALL' ? '📞 Звонок' : kind === 'SYSTEM_CARD' ? '🔐 Вход в аккаунт' : '📷 Фото';
 
 type ReactionRow = { emoji: string; userId: string; user?: { id: string; name: string; username: string; avatarUrl: string | null } | null };
 export const groupReactions = (list: ReactionRow[]): ReactionDTO[] => {
@@ -196,6 +199,9 @@ export const toMessageDTO = (m: FullMessage, viewerId?: string): MessageDTO => (
   viewOnceOpened: !!m.viewOnceOpenedAt,
   sticker: m.sticker ? { id: m.sticker.id, packId: m.sticker.packId, packTitle: m.sticker.pack.title } : null,
   card: m.kind === 'SYSTEM_CARD' ? parseCard(m.text) : null,
+  poll: m.poll ? { question: m.poll.question, multiple: m.poll.multiple, anonymous: m.poll.anonymous,
+    options: m.poll.options.map((o) => ({ id: o.id, text: o.text, votes: o.votes.length, voted: !!viewerId && o.votes.some((v) => v.userId === viewerId),
+      voters: m.poll!.anonymous ? [] : o.votes.map((v) => ({ id: v.user.id, name: v.user.name, username: v.user.username, avatar: v.user.avatarUrl })) })) } : null,
   poll: m.poll ? (() => {
     const poll = m.poll!;
     const voted = !!viewerId && poll.options.some((o) => o.votes.some((v) => v.userId === viewerId));
@@ -562,6 +568,7 @@ export interface CreateInput {
   /** одноразовое медиа (личные и групповые чаты; фото, видео, голосовое, кружок) */
   viewOnce?: boolean;
   /** стикер из коллекции: файл берётся из самого стикера (kind=IMAGE) */
+  /** стикер из коллекции: файл берётся из самого стикера */
   stickerId?: string;
 }
 
@@ -581,11 +588,13 @@ export async function createMessage(userId: string, chatId: string, input: Creat
   if (text.length > MAX_TEXT) throw new HttpError(400, 'message_too_long');
 
   if (input.viewOnce && (!['DIRECT', 'GROUP'].includes(member.chat.type) || !['IMAGE', 'VIDEO', 'VOICE'].includes(kind))) throw new HttpError(400, 'view_once_not_allowed');   // кружки одноразовыми не бывают
+  if (kind === 'STICKER' && input.viewOnce) throw new HttpError(400, 'bad_request');
   let mediaId: string | null = null;
   let durationSec: number | null = null;
   let stickerId: string | null = null;
   if (input.stickerId) {
     if (kind !== 'IMAGE' || input.viewOnce) throw new HttpError(400, 'bad_request');
+    if (kind !== 'STICKER' && kind !== 'IMAGE' || input.viewOnce) throw new HttpError(400, 'bad_request');
     const st = await prisma.sticker.findUnique({ where: { id: input.stickerId }, select: { id: true, mediaId: true } });
     if (!st) throw new HttpError(404, 'sticker_not_found');
     stickerId = st.id;
@@ -596,6 +605,7 @@ export async function createMessage(userId: string, chatId: string, input: Creat
     if (!media) throw new HttpError(404, 'media_not_found');
     if (!input.trustedMedia && media.ownerId !== userId) throw new HttpError(403, 'forbidden_media');
     if ((media.kind as string) !== kind) throw new HttpError(400, 'media_kind_mismatch');
+    if ((kind === 'STICKER' ? media.kind !== 'IMAGE' : (media.kind as string) !== kind)) throw new HttpError(400, 'media_kind_mismatch');
     mediaId = media.id;
     durationSec = Math.min(Math.max(Math.round(input.durationSec ?? media.durationSec ?? 0), 0), 3600) || null;
   }
@@ -643,6 +653,7 @@ export async function createMessage(userId: string, chatId: string, input: Creat
   }
 }
 
+export async function createPollMessage(userId: string, chatId: string, raw: { question: string; options: string[]; multiple?: boolean; anonymous?: boolean }) {
 export async function createPollMessage(userId: string, chatId: string, raw: {
   question: string; description?: string; options: string[]; multiple?: boolean; anonymous?: boolean;
   allowAdding?: boolean; allowRevote?: boolean; shuffleOptions?: boolean; quiz?: boolean;
@@ -653,10 +664,12 @@ export async function createPollMessage(userId: string, chatId: string, raw: {
   const options = raw.options.map((x) => x.trim());
   const correctOptionPosition = raw.correctOptionPosition ?? null;
   const closesAt = raw.closesAt ? new Date(raw.closesAt) : null;
+  if (!question || question.length > 240 || options.length < 2 || options.length > 10 || options.some((x) => !x || x.length > 100) || new Set(options.map((x) => x.toLocaleLowerCase())).size !== options.length) throw new HttpError(400, 'bad_poll');
   if (!question || question.length > 240 || description.length > 500 || options.length < 2 || options.length > 12 || options.some((x) => !x || x.length > 100) || new Set(options.map((x) => x.toLocaleLowerCase())).size !== options.length) throw new HttpError(400, 'bad_poll');
   if (raw.quiz && (!Number.isInteger(correctOptionPosition) || correctOptionPosition! < 0 || correctOptionPosition! >= options.length)) throw new HttpError(400, 'bad_poll');
   if (closesAt && (!Number.isFinite(closesAt.getTime()) || closesAt.getTime() < Date.now() + 60_000 || closesAt.getTime() > Date.now() + 365 * 24 * 60 * 60_000)) throw new HttpError(400, 'bad_poll_deadline');
   const { message } = await createMessage(userId, chatId, { kind: 'POLL', clientId: randomToken(16) });
+  await prisma.messagePoll.create({ data: { messageId: message.id, question, multiple: !!raw.multiple, anonymous: raw.anonymous !== false, options: { create: options.map((text, position) => ({ text, position })) } } });
   await prisma.messagePoll.create({ data: {
     messageId: message.id,
     question,
@@ -754,6 +767,8 @@ export async function forwardMessage(userId: string, messageId: string, targetCh
   });
   if (forwarded.duplicate) return forwarded;
   if (msg.kind === 'POLL' && msg.poll) {
+    await prisma.messagePoll.create({ data: { messageId: forwarded.message.id, question: msg.poll.question, multiple: msg.poll.multiple, anonymous: msg.poll.anonymous,
+      options: { create: msg.poll.options.map((o, position) => ({ text: o.text, position })) } } });
     await prisma.messagePoll.create({
       data: {
         messageId: forwarded.message.id,

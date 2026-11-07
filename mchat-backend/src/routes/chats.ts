@@ -190,7 +190,7 @@ chatsRouter.post('/:id/messages', wrap(async (req, res) => {
   const b = z.object({
     text: z.string().max(5000).optional(),
     clientId: z.string().min(1).max(64).optional(),
-    kind: z.enum(['TEXT', 'VOICE', 'VIDEO_NOTE', 'IMAGE', 'VIDEO', 'FILE']).optional(),
+    kind: z.enum(['TEXT', 'VOICE', 'VIDEO_NOTE', 'IMAGE', 'STICKER', 'VIDEO', 'FILE']).optional(),
     mediaId: id.optional(),
     durationSec: z.number().min(0).max(3600).optional(),
     replyToId: id.optional(),

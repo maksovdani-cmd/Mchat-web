@@ -242,7 +242,7 @@
   async function sendStickerById(stickerId) {
     const chatId = curChat(); if (!chatId) { toast('Откройте чат'); return false; }
     try {
-      const saved = await MchatAPI.sendMessage(chatId, '', 'stk_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), { kind: 'IMAGE', stickerId: stickerId });
+      const saved = await MchatAPI.sendMessage(chatId, '', 'stk_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), { kind: 'STICKER', stickerId: stickerId });
       if (typeof onIncomingMessage === 'function') onIncomingMessage(saved);
       return true;
     } catch (e) { toast(errText(e)); return false; }
